@@ -1,0 +1,45 @@
+name: Daily VoC Collection
+
+on:
+  schedule:
+    # 每天 UTC 00:00（北京时间 08:00）运行
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+
+      - name: 采集 Steam 数据
+        env:
+          STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          ANALYZER_PROVIDER: deepseek
+        run: |
+          python -m src.pipeline \
+            --platform steam \
+            --target 730 \
+            --count 50 \
+            --language schinese
+
+      - name: 上传数据库
+        uses: actions/upload-artifact@v4
+        with:
+          name: voc-db-${{ github.run_number }}
+          path: data/voc.db
+          retention-days: 30

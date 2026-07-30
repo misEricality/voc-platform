@@ -1,0 +1,30 @@
+# ==========================================
+# VoC Platform 依赖清单
+# ==========================================
+# 安装命令：pip install -r requirements.txt
+
+# --- 核心依赖 ---
+requests>=2.31.0           # HTTP 客户端
+python-dotenv>=1.0.0       # 环境变量管理
+pydantic>=2.5.0            # 数据验证
+sqlalchemy>=2.0.25         # ORM
+pandas>=2.1.0              # 数据处理
+pyarrow>=14.0.0            # Parquet 读写（可选）
+
+# --- NLP 与大模型 ---
+openai>=1.6.0              # 兼容 OpenAI 协议的客户端（用于 DeepSeek/Qwen/GLM）
+transformers>=4.36.0       # HuggingFace 模型（本地情感分析，可选）
+torch>=2.1.0               # PyTorch（本地推理，可选）
+jieba>=0.42.1              # 中文分词
+
+# --- 可视化 ---
+streamlit>=1.29.0          # Dashboard
+plotly>=5.18.0             # 交互式图表
+wordcloud>=1.9.2           # 词云生成
+matplotlib>=3.8.0          # 静态图
+
+# --- 开发与测试 ---
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.12.0
+ruff>=0.1.6
