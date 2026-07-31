@@ -2,6 +2,11 @@
 
 兼容 OpenAI 协议的 API（DeepSeek / Qwen / GLM 全部支持）。
 通过环境变量配置 provider 与 key，可热切换。
+
+业务配置（prompt 模板、主题词表）从 config/ 目录加载：
+- config/prompts/sentiment.txt        — 系统提示词
+- config/prompts/sentiment_user.txt   — 用户提示词模板（含 {text} {context} 占位符）
+- config/topics/gaming.yaml           — 主题词表（key: primary/fallback）
 """
 
 from __future__ import annotations
@@ -9,40 +14,49 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 
+import yaml
 from openai import OpenAI
 
 from .base import BaseAnalyzer, AnalysisResult
 
 
-# 单条文本的情感+主题分析 prompt
-SYSTEM_PROMPT = """你是一名资深消费者洞察分析师，擅长从游戏评测、产品评论、社交媒体反馈中提取情感与主题。
-请严格按照 JSON 格式输出，不要输出任何 JSON 之外的内容。"""
+# 项目根目录（src/analyzers/sentiment_llm.py → ../../../）
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROMPTS_DIR = PROJECT_ROOT / "config" / "prompts"
+TOPICS_DIR = PROJECT_ROOT / "config" / "topics"
 
-USER_PROMPT_TEMPLATE = """请分析以下消费者评论的情感与主题：
 
-【评论文本】
-{text}
+def _load_prompt(filename: str) -> str:
+    """从 config/prompts/ 加载纯文本 prompt"""
+    path = PROMPTS_DIR / filename
+    return path.read_text(encoding="utf-8").strip()
 
-【可选上下文】
-{context}
 
-请按以下 JSON Schema 输出：
-{{
-  "sentiment": "positive" | "negative" | "neutral",
-  "sentiment_score": -1.0 到 1.0 之间的浮点数（-1=极度负面，+1=极度正面）,
-  "sentiment_confidence": 0.0 到 1.0 之间的浮点数（对判断的确信度）,
-  "topic": "主标签（一级分类，如：游戏性/性能/价格/客服/画面/剧情/音效/操作/服务/其他）",
-  "sub_topics": ["子标签1", "子标签2", ...] (0~3个),
-  "reasoning": "简要分析依据（1-2句话）"
-}}
+def _load_topic_config(category: str = "gaming") -> dict:
+    """从 config/topics/{category}.yaml 加载主题词表
 
-注意事项：
-1. 情感判断需结合语气词、情绪词、上下文
-2. 主题聚焦该评论的核心讨论对象，而非表面词
-3. 中文评论请用中文标签
-4. 严格返回 JSON，禁止 Markdown 代码块标记
-"""
+    Returns:
+        {"primary": [...], "fallback": "其他"}
+    """
+    path = TOPICS_DIR / f"{category}.yaml"
+    if not path.exists():
+        return {"primary": [], "fallback": "其他"}
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def build_user_prompt(text: str, context: dict | None, topic_primary: list[str]) -> str:
+    """构造用户提示词，主题词表动态注入"""
+    primary_str = "/".join(topic_primary) if topic_primary else "其他"
+    return _load_prompt("sentiment_user.txt").format(
+        text=text[:2000],
+        context=json.dumps(context, ensure_ascii=False) if context else "无",
+    ).replace(
+        # 提示词中"游戏性/性能/价格/..."的占位列表会被主题词表覆盖
+        "游戏性/性能/价格/客服/画面/剧情/音效/操作/服务/其他",
+        primary_str,
+    )
 
 
 class LLMSentimentAnalyzer(BaseAnalyzer):
@@ -74,7 +88,7 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
         },
     }
 
-    def __init__(self, provider: str = "deepseek", **kwargs):
+    def __init__(self, provider: str = "deepseek", topic_category: str = "gaming", **kwargs):
         super().__init__(**kwargs)
         if provider not in self.PROVIDER_CONFIG:
             raise ValueError(
@@ -94,40 +108,44 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
 
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
+        # 加载业务配置
+        topic_cfg = _load_topic_config(topic_category)
+        self.topic_primary: list[str] = topic_cfg.get("primary", [])
+        self.topic_fallback: str = topic_cfg.get("fallback", "其他")
+        self.system_prompt: str = _load_prompt("sentiment.txt")
+
     def analyze(self, text: str, *, context: dict | None = None) -> AnalysisResult:
         if not text or not text.strip():
             return AnalysisResult(
                 sentiment="neutral",
                 sentiment_score=0.0,
                 sentiment_confidence=0.0,
-                topic="其他",
+                topic=self.topic_fallback,
                 sub_topics=[],
                 reasoning="空文本",
             )
 
-        ctx_str = json.dumps(context, ensure_ascii=False) if context else "无"
-        prompt = USER_PROMPT_TEMPLATE.format(text=text[:2000], context=ctx_str)
+        user_prompt = build_user_prompt(text, context, self.topic_primary)
 
         try:
             resp = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.1,  # 低温度保证结果稳定
-                response_format={"type": "json_object"},  # 强制 JSON 输出
+                temperature=0.1,
+                response_format={"type": "json_object"},
                 timeout=30,
             )
             content = resp.choices[0].message.content
             return self._parse(content)
         except Exception as e:
-            # 失败时返回兜底结果（保证流水线不中断）
             return AnalysisResult(
                 sentiment="neutral",
                 sentiment_score=0.0,
                 sentiment_confidence=0.0,
-                topic="其他",
+                topic=self.topic_fallback,
                 sub_topics=[],
                 reasoning=f"分析失败: {str(e)[:100]}",
                 raw={"error": str(e)},
@@ -135,19 +153,16 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
 
     def _parse(self, content: str) -> AnalysisResult:
         """解析模型返回的 JSON"""
-        # 某些模型偶发返回带 Markdown 代码块
         content = re.sub(r"```(?:json)?\s*", "", content).strip().rstrip("`")
 
         try:
             data = json.loads(content)
         except json.JSONDecodeError:
-            # 尝试截取第一个 JSON 对象
             m = re.search(r"\{.*\}", content, re.DOTALL)
             if not m:
                 raise
             data = json.loads(m.group(0))
 
-        # 字段归一化
         sentiment = str(data.get("sentiment", "neutral")).lower()
         if sentiment not in {"positive", "negative", "neutral"}:
             sentiment = "neutral"
@@ -156,7 +171,7 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             sentiment=sentiment,
             sentiment_score=float(data.get("sentiment_score", 0.0)),
             sentiment_confidence=float(data.get("sentiment_confidence", 0.5)),
-            topic=data.get("topic") or "其他",
+            topic=data.get("topic") or self.topic_fallback,
             sub_topics=data.get("sub_topics") or [],
             reasoning=data.get("reasoning"),
             raw=data,

@@ -10,6 +10,7 @@ pydantic>=2.5.0            # 数据验证
 sqlalchemy>=2.0.25         # ORM
 pandas>=2.1.0              # 数据处理
 pyarrow>=14.0.0            # Parquet 读写（可选）
+pyyaml>=6.0                # 业务配置加载（config/topics/*.yaml）
 
 # --- NLP 与大模型 ---
 openai>=1.6.0              # 兼容 OpenAI 协议的客户端（用于 DeepSeek/Qwen/GLM）

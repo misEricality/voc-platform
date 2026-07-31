@@ -1,7 +1,7 @@
 # 🎙️ VoC Platform · 消费者之声洞察平台
 
 > **个人项目** —— 学习、探索、经验沉淀与作品展示  
-> 调研报告见 [VoC平台竞品调研报告.md](./VoC平台竞品调研报告.md)
+> 完整调研：[docs/research/](./docs/research/) · 开发计划：[docs/plan/DEVELOPMENT_PLAN.md](./docs/plan/DEVELOPMENT_PLAN.md)
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -79,31 +79,58 @@ streamlit run app.py
 
 ```
 voc-platform/
-├── README.md                 # 项目说明（你正在看的）
-├── VoC平台竞品调研报告.md     # 完整调研报告
-├── requirements.txt          # 依赖清单
-├── .env.example              # 环境变量示例
-├── .gitignore
-├── app.py                    # Streamlit 仪表盘入口
-├── src/
-│   ├── collectors/           # 数据采集层
-│   │   ├── base.py           # 抽象基类
-│   │   └── steam.py          # Steam 采集器
-│   ├── analyzers/            # 分析层
-│   │   ├── base.py
-│   │   ├── sentiment_llm.py  # LLM 情感分析
-│   │   └── sentiment_local.py # 本地BERT
-│   ├── storage/              # 存储层
-│   │   └── db.py             # SQLite + ORM
-│   ├── visualizer/           # 可视化
-│   │   └── charts.py
-│   └── pipeline.py           # 主流程编排
-├── scripts/                  # 工具脚本
-├── tests/                    # 单元测试
-├── data/                     # 数据文件（gitignore）
-├── docs/                     # 项目文档
-└── notebooks/                # Jupyter 分析
+├── README.md                       # 项目门面
+├── app.py                          # Streamlit 仪表盘入口
+├── requirements.txt / .env.example
+│
+├── src/                            # 【核心代码】
+│   ├── collectors/                     数据采集器（每平台一个文件）
+│   ├── analyzers/                      分析器（情感/主题/聚类）
+│   ├── storage/                        存储层
+│   ├── visualizer/                     可视化
+│   ├── api/                            ⬅ 预留：FastAPI 后端
+│   └── pipeline.py                     主流程编排
+│
+├── config/                          # 【业务配置】（与代码解耦）
+│   ├── prompts/                        LLM prompt 模板
+│   ├── topics/                         主题词表
+│   └── targets/                        监控目标清单（预留）
+│
+├── data/                            # 【运行时数据】（gitignore）
+│   ├── raw/                              L1 原始层
+│   ├── cleaned/                          L2 清洗层
+│   ├── exports/                          L5 导出层
+│   └── voc.db                            SQLite 单库
+│
+├── docs/                            # 【研发文档】（技术视角）
+│   ├── 00-index.md                      ⬅ 文档地图
+│   ├── architecture/                    架构设计
+│   ├── plan/                            计划与里程碑
+│   ├── guides/                          操作指南
+│   └── research/                        调研资料
+│
+├── product/                         # 【产品文档】（业务视角）
+│   ├── overview.md                      产品概览
+│   ├── prototype/                       设计原型
+│   ├── prd/                             需求文档（预留）
+│   └── decisions/                       决策记录（预留）
+│
+├── scripts/                         # 【运维脚本】
+│   ├── smoke_test.py                    冒烟测试
+│   ├── dev/                             开发期一次性脚本
+│   ├── ops/                             运维脚本（预留）
+│   └── analysis/                        数据分析脚本（预留）
+│
+├── tests/                           # 【测试】
+│   ├── unit/                            单元测试
+│   ├── integration/                     集成测试（预留）
+│   └── fixtures/                        测试数据（预留）
+│
+└── notebooks/                       # 【数据探索】（预留）
 ```
+
+> 📌 **目录设计原则**：研发与产品文档分离 / 代码与配置分离 / 脚本分阶段 / 数据分层映射目录。  
+> 📖 详细索引：[docs/00-index.md](./docs/00-index.md) · [product/README.md](./product/README.md)
 
 ## 💰 成本估算
 
