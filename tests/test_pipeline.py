@@ -76,18 +76,30 @@ def test_steam_to_raw_conversion():
 
 @pytest.fixture
 def repo():
-    """临时数据库 fixture"""
-    test_db_url = "sqlite:///:memory:"
-    # :memory: 模式下需要重写
+    """临时数据库 fixture（Windows 兼容性修复：先 dispose 再 unlink）
+
+    为什么不用 :memory:：SQLAlchemy + SQLite 的 :memory: 在多连接/多线程下
+    每个连接会得到独立的内存数据库，导致仓库层与测试 fixture 间数据不可见。
+    使用 NamedTemporaryFile + 本地文件更稳，但 Windows 上 SQLite 持锁，必须
+    在 unlink 前 dispose 连接池，否则会出现 WinError 32。
+    """
     import tempfile
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
     engine, SessionLocal = init_db(f"sqlite:///{tmp.name}")
     session = SessionLocal()
     r = CommentRepository(session)
-    yield r
-    session.close()
-    os.unlink(tmp.name)
+    try:
+        yield r
+    finally:
+        # 顺序很关键：先 close session，再 dispose 引擎，最后才删文件
+        session.close()
+        engine.dispose()
+        try:
+            os.unlink(tmp.name)
+        except (PermissionError, OSError):
+            # Windows 上偶发延迟释放；临时目录会在重启时清理
+            pass
 
 
 def test_db_init_and_upsert(repo):

@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterator
+
+
+def _utcnow():
+    """替代弃用的 ``datetime.utcnow()``，返回 naive UTC datetime"""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass
@@ -26,7 +31,7 @@ class RawComment:
     replies: int = 0  # 回复数
     posted_at: datetime | None = None  # 发布时间
     extra: dict = field(default_factory=dict)  # 平台特有字段
-    fetched_at: datetime = field(default_factory=datetime.utcnow)
+    fetched_at: datetime = field(default_factory=_utcnow)
 
     def to_dict(self) -> dict:
         d = asdict(self)

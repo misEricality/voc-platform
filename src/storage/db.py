@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import (
@@ -28,6 +28,15 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from ..collectors.base import RawComment
 
 Base = declarative_base()
+
+
+def _utcnow():
+    """返回 naive UTC datetime，替代弃用的 ``datetime.utcnow()``
+
+    与 ``datetime.utcnow()`` 行为等价（返回不含 tzinfo 的 UTC 时间），
+    但不会触发 Python 3.12+ 的 DeprecationWarning。
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Comment(Base):
@@ -63,7 +72,7 @@ class Comment(Base):
     sub_topics = Column(Text)  # 子标签 JSON list
 
     # 元数据
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=_utcnow)
     analyzed_at = Column(DateTime)
     extra_meta = Column(Text)  # 目标元数据（如游戏名称）
 
@@ -149,7 +158,7 @@ class CommentRepository:
             existing.posted_at = raw.posted_at
             existing.extra_json = extra_json
             existing.extra_meta = extra_meta
-            existing.fetched_at = datetime.utcnow()
+            existing.fetched_at = _utcnow()
             return existing
 
         comment = Comment(
@@ -166,7 +175,7 @@ class CommentRepository:
             posted_at=raw.posted_at,
             extra_json=extra_json,
             extra_meta=extra_meta,
-            fetched_at=datetime.utcnow(),
+            fetched_at=_utcnow(),
         )
         # target_id 兜底：使用 source_id 中的 appid（steam场景）
         if raw.platform == "steam" and raw.extra.get("appid"):
@@ -203,7 +212,7 @@ class CommentRepository:
             obj.sentiment_confidence = sentiment_confidence
             obj.topic = topic
             obj.sub_topics = json.dumps(sub_topics, ensure_ascii=False) if sub_topics else None
-            obj.analyzed_at = datetime.utcnow()
+            obj.analyzed_at = _utcnow()
 
     def commit(self) -> None:
         self.session.commit()
