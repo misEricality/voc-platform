@@ -32,7 +32,12 @@ Thumbs.db
 # Data and databases
 data/raw/
 data/processed/
+data/cleaned/
+data/exports/
+data/sample/
 *.db
+*.db-journal
+*.bak
 *.sqlite
 *.sqlite3
 
@@ -58,5 +63,6 @@ logs/
 # 项目运行时数据
 data/*.db
 data/voc.db
+data/voc.db.v*.bak
 data/raw/
 data/processed/

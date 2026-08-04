@@ -12,6 +12,7 @@ import argparse
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # 让脚本可直接运行
@@ -45,6 +46,8 @@ def run_pipeline(
     language: str = "schinese",
     analyzer_provider: str | None = None,
     skip_analysis: bool = False,
+    posted_after: datetime | None = None,
+    posted_before: datetime | None = None,
 ) -> dict:
     """运行单平台采集+分析流程
 
@@ -52,9 +55,11 @@ def run_pipeline(
         platform: 平台名（steam）
         target_id: 目标ID（Steam appid）
         max_count: 采集数量
-        language: 语言过滤
+        language: 语言过滤（项目默认 schinese；Steam 顶层原则只采中文）
         analyzer_provider: 分析器后端
         skip_analysis: 仅采集不分析
+        posted_after: 起始时间过滤（datetime 对象）
+        posted_before: 截止时间过滤（datetime 对象，应用层）
 
     Returns:
         执行报告字典
@@ -82,7 +87,11 @@ def run_pipeline(
             log.info(f"  游戏名称：{target_meta.get('name')}")
 
     raws = collector.collect(
-        target_id, max_count=max_count, language=language
+        target_id,
+        max_count=max_count,
+        language=language,
+        posted_after=posted_after,
+        posted_before=posted_before,
     )
     log.info(f"  采集到 {len(raws)} 条原始评论")
 
@@ -153,7 +162,27 @@ def main():
         help="分析器后端",
     )
     parser.add_argument("--skip-analysis", action="store_true", help="仅采集不分析")
+    parser.add_argument(
+        "--posted-after",
+        type=str,
+        default=None,
+        help="起始时间过滤，格式 YYYY-MM-DD。例：2026-08-03",
+    )
+    parser.add_argument(
+        "--posted-before",
+        type=str,
+        default=None,
+        help="截止时间过滤，格式 YYYY-MM-DD。例：2026-08-04",
+    )
     args = parser.parse_args()
+
+    # 解析日期字符串
+    posted_after = None
+    posted_before = None
+    if args.posted_after:
+        posted_after = datetime.strptime(args.posted_after, "%Y-%m-%d")
+    if args.posted_before:
+        posted_before = datetime.strptime(args.posted_before, "%Y-%m-%d")
 
     run_pipeline(
         platform=args.platform,
@@ -162,6 +191,8 @@ def main():
         language=args.language,
         analyzer_provider=args.analyzer,
         skip_analysis=args.skip_analysis,
+        posted_after=posted_after,
+        posted_before=posted_before,
     )
 
 

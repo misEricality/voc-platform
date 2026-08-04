@@ -57,8 +57,11 @@ class Comment(Base):
     author_id = Column(String(128))
     rating = Column(Integer)  # 1=好评 / 0=差评
     language = Column(String(16))
-    likes = Column(Integer, default=0)
-    replies = Column(Integer, default=0)
+    # likes / replies 默认为 NULL（表示"尚未回采"）。
+    # 数据采集策略：首次入库时不记录点赞数与回复数（避免冷启动 0 误导），
+    # 评论发布满 7 天后由 scripts/refresh_likes.py 一次性回采填回。
+    likes = Column(Integer, nullable=True)
+    replies = Column(Integer, nullable=True)
     posted_at = Column(DateTime)
     extra_json = Column(Text)  # 平台特有字段 JSON
 
@@ -73,6 +76,11 @@ class Comment(Base):
 
     # 元数据
     fetched_at = Column(DateTime, default=_utcnow)
+    # likes_refreshed_at: 最近一次回采点赞/回复数的时间（NULL = 尚未回采）
+    likes_refreshed_at = Column(DateTime)
+    # developer_response_refreshed_at: 最近一次回采开发者回复的时间（NULL = 尚未回采）
+    # 机制同 likes：评论发布满 7 天后由回采脚本拉取真实回复，避免 0 误导。
+    developer_response_refreshed_at = Column(DateTime)
     analyzed_at = Column(DateTime)
     extra_meta = Column(Text)  # 目标元数据（如游戏名称）
 
@@ -81,6 +89,10 @@ class Comment(Base):
         Index("ux_platform_source", "platform", "source_id", unique=True),
         Index("ix_target", "platform", "target_id"),
         Index("ix_sentiment", "platform", "sentiment"),
+        # 回采扫描常用：找"已发布 ≥7 天、但还没回采点赞/回复"的评论
+        Index("ix_posted_refresh", "posted_at", "likes_refreshed_at"),
+        # 回采扫描：找"已发布 ≥7 天、但还没回采开发者回复"的评论
+        Index("ix_posted_dev_response", "posted_at", "developer_response_refreshed_at"),
     )
 
     def to_dict(self) -> dict:
@@ -102,6 +114,8 @@ class Comment(Base):
             "topic": self.topic,
             "sub_topics": json.loads(self.sub_topics) if self.sub_topics else [],
             "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
+            "likes_refreshed_at": self.likes_refreshed_at.isoformat() if self.likes_refreshed_at else None,
+            "developer_response_refreshed_at": self.developer_response_refreshed_at.isoformat() if self.developer_response_refreshed_at else None,
         }
 
 
@@ -136,7 +150,12 @@ class CommentRepository:
         self.session = session
 
     def upsert(self, raw: RawComment, target_meta: dict | None = None) -> Comment:
-        """插入或更新一条评论（基于 platform+source_id 唯一性）"""
+        """插入或更新一条评论（基于 platform+source_id 唯一性）
+
+        写入规则：
+        - likes / replies 为 None（首次采集） → 不覆盖已有评论上的 likes/replies
+        - likes / replies 为整数（回采）→ 覆盖 + 写入 likes_refreshed_at
+        """
         stmt = select(Comment).where(
             Comment.platform == raw.platform,
             Comment.source_id == raw.source_id,
@@ -153,12 +172,20 @@ class CommentRepository:
             existing.author_id = raw.author_id
             existing.rating = raw.rating
             existing.language = raw.language
-            existing.likes = raw.likes
-            existing.replies = raw.replies
+            # likes / replies 只有在传入值（非 None）时才覆盖 —— 首次采集时不擦掉已有值
+            if raw.likes is not None:
+                existing.likes = raw.likes
+                existing.likes_refreshed_at = _utcnow()
+            if raw.replies is not None:
+                existing.replies = raw.replies
+                existing.likes_refreshed_at = _utcnow()
             existing.posted_at = raw.posted_at
             existing.extra_json = extra_json
             existing.extra_meta = extra_meta
             existing.fetched_at = _utcnow()
+            # developer_response 回采信号：fetch_metadata=True 时 raw.extra 里有该 key
+            if raw.extra and "developer_response" in raw.extra:
+                existing.developer_response_refreshed_at = _utcnow()
             return existing
 
         comment = Comment(
@@ -175,6 +202,13 @@ class CommentRepository:
             posted_at=raw.posted_at,
             extra_json=extra_json,
             extra_meta=extra_meta,
+            likes_refreshed_at=_utcnow() if raw.likes is not None else None,
+            # 新插入时如果 fetch_metadata=True 表示已经是回采模式，记录时间
+            developer_response_refreshed_at=(
+                _utcnow()
+                if raw.extra and "developer_response" in raw.extra
+                else None
+            ),
             fetched_at=_utcnow(),
         )
         # target_id 兜底：使用 source_id 中的 appid（steam场景）

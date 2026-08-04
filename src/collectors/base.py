@@ -27,8 +27,11 @@ class RawComment:
     author_id: str | None = None  # 作者平台ID
     rating: int | None = None  # 评分（如 Steam 的 1=推荐 0=不推荐）
     language: str | None = None  # 语言代码（如 schinese / english）
-    likes: int = 0  # 点赞数
-    replies: int = 0  # 回复数
+    # likes / replies：None 表示"尚未回采"（即首次入库），具体含义见
+    # src/storage/db.py：冷启动 0 容易被误读，所以默认 None，脚本 refresh_likes.py
+    # 会在评论发布满 7 天后回采填值。
+    likes: int | None = None  # 点赞数
+    replies: int | None = None  # 回复数
     posted_at: datetime | None = None  # 发布时间
     extra: dict = field(default_factory=dict)  # 平台特有字段
     fetched_at: datetime = field(default_factory=_utcnow)
@@ -80,7 +83,26 @@ class BaseCollector(abc.ABC):
         *,
         max_count: int = 100,
         language: str | None = None,
+        fetch_metadata: bool = False,
+        posted_after: datetime | None = None,
+        posted_before: datetime | None = None,
         **kwargs,
     ) -> list[RawComment]:
-        """便捷方法：一次性收集所有评论"""
-        return list(self.fetch_comments(target_id, max_count=max_count, language=language, **kwargs))
+        """便捷方法：一次性收集所有评论
+
+        Args:
+            fetch_metadata: 透传给 fetch_comments，控制是否回采点赞数等动态字段。
+            posted_after: 起始时间过滤（透传给 fetch_comments）。
+            posted_before: 截止时间过滤（透传给 fetch_comments）。
+        """
+        return list(
+            self.fetch_comments(
+                target_id,
+                max_count=max_count,
+                language=language,
+                fetch_metadata=fetch_metadata,
+                posted_after=posted_after,
+                posted_before=posted_before,
+                **kwargs,
+            )
+        )
