@@ -105,7 +105,7 @@ ANALYZER_PROVIDER=qwen   # 或 glm、local
 
 ## 下一步
 
-- 📖 阅读 [VoC平台竞品调研报告.md](../VoC平台竞品调研报告.md)
+- 📖 阅读 [VoC平台竞品调研报告.md](../research/VoC平台竞品调研报告.md)
 - 🛠️ 实现 B站/微博采集器
 - ⏰ 配置 GitHub Actions 自动采集
 - 📝 在掘金/CSDN 发布技术博客

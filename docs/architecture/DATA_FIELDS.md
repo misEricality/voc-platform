@@ -32,8 +32,8 @@
 | `A_author_id` | 字符串 | `author.steamid` | `"76561198348085236"` | Steam 用户 Steam64 ID（仅脱敏 ID，无昵称） |
 | `A_rating` | 整数 0/1 | `voted_up` | `1` | 1=推荐/好评；0=不推荐/差评 |
 | `A_language` | 字符串 | `language` | `"schinese"` | 评论语种（schinese=简体中文） |
-| `A_likes` | 整数 | `votes_up` | `1` | 评论被点赞数 |
-| `A_replies` | 整数 | `comment_count` | `0` | 该评论下的回复数 |
+| `A_likes` | 整数 | `votes_up` | `1` | 评论被点赞数（v0.2 起冷启动为 `NULL`=未回采，7 天后回采填充） |
+| `A_replies` | 整数 | `comment_count` | `0` | 该评论下的回复数（冷启动语义同 `A_likes`） |
 | `A_posted_at` | 时间 | `timestamp_created` | `"2026-07-30T10:57:00"` | 评论发布时间（Steam 给的是 Unix 秒） |
 
 **特别注意**：
@@ -55,6 +55,8 @@
 | `B_target_meta` | JSON 字符串 | `extra_meta`：游戏元信息 | `{"name": "Counter-Strike 2", "type": "game"}` | 目标实体（游戏）的元数据，目前只存名称和类型 |
 | `B_extra_json` | JSON 字符串 | `extra`：Steam 特有字段 | `{"appid": "730", "playtime_forever": 85435, "playtime_at_review": 85360, "steam_purchase": true, "received_for_free": false, "written_during_early_access": false}` | 平台专有数据，采集中会按平台补字段 |
 | `B_fetched_at` | 时间 | 入库时刻（`_utcnow()`） | `"2026-07-31T14:35:53"` | 本次采集入库的时间 |
+| `B_likes_refreshed_at` | 时间 | 回采脚本写入 | `"2026-08-07T09:00:00"` | 点赞/回复/开发者回复最近一次回采时间（v0.2 新增） |
+| `B_developer_response_refreshed_at` | 时间 | 回采脚本写入 | `"2026-08-07T09:00:00"` | 开发者回复最近一次回采时间（v0.2 新增） |
 
 **B_extra_json 按平台的字段差异**：
 
@@ -70,17 +72,31 @@
 
 ## 🔵 C. LLM 标注字段（DeepSeek 当前）
 
-> 取自 `src/analyzers/sentiment_llm.py`，prompt 模板见 `USER_PROMPT_TEMPLATE`。
-> 出自 `AnalysisResult` 数据类。
+> 取自 `src/analyzers/sentiment_llm.py` 与 `src/analyzers/base.py`（`AnalysisResult` / `Opinion` 数据类）。
+> 方案4（2026-08-06）后：**LLM 只提取观点短语**，标签由程序匹配，`C_topic` 由程序从核心观点映射 L1。
+> 完整流程见 [ANNOTATION_PIPELINE.md](./ANNOTATION_PIPELINE.md)。
 
-| 字段名 | 类型 | 模型输出形态 | 示例 | 业务含义 |
+| 字段名 | 类型 | 来源 | 示例 | 业务含义 |
 |---|---|---|---|---|
-| `C_sentiment` | 字符串 | 三选一 | `"positive"` | 情感倾向：`positive` / `negative` / `neutral` |
-| `C_sentiment_score` | 浮点 | -1.0 ~ +1.0 | `0.6` | 情感强弱（极负面 -1 → 极正面 +1） |
-| `C_sentiment_confidence` | 浮点 | 0.0 ~ 1.0 | `0.8` | 模型对自己的判断有多大把握 |
-| `C_topic` | 字符串 | 主标签 | `"游戏性"` | 评论核心讨论的一级主题 |
-| `C_sub_topics` | JSON 字符串 | 子标签列表 | `'["可玩性", "操作"]'` | 主标签下的更细颗粒度子项 |
-| `C_analyzed_at` | 时间 | 分析完成时刻 | `"2026-07-31T14:36:55"` | 何时分析完成 |
+| `C_sentiment` | 字符串 | 核心观点情感 | `"positive"` | 整体情感：`positive` / `negative` / `neutral`（= 核心观点 is_core 的情感） |
+| `C_sentiment_score` | 浮点 | 核心观点分数 | `0.6` | 情感强弱（极负面 -1 → 极正面 +1） |
+| `C_sentiment_confidence` | 浮点 | 模型输出 | `0.8` | 模型对自己的判断有多大把握 |
+| `C_topic` | 字符串 | **程序映射** | `"玩法与内容"` | 核心观点匹配到的 **L1**（`normalize.map_l3_to_path`） |
+| `C_sub_topics` | JSON 字符串 | 兼容保留 | `'["可玩性", "操作"]'` | v0.1 遗留列，方案4 后由 `comment_opinions` 表替代，不新增写入 |
+| `C_analyzed_at` | 时间 | 分析完成时刻 | `"2026-08-06T21:00:00"` | 何时分析完成 |
+
+### 观点级标注（comment_opinions 表）
+
+> 方案4 新增：每条评论可拆出多个观点（每观点一行，跨多个 L1 不限）。
+
+| 字段名 | 类型 | 含义 |
+|---|---|---|
+| `full_path` | 字符串 | 完整路径（`"玩法与内容/玩法机制/核心玩法"`，L1/L2/L3 三段不留空） |
+| `sentiment` | 字符串 | 观点级情感（positive/negative/neutral） |
+| `sentiment_confidence` | 浮点 | 观点级置信度 |
+| `quote` | 文本 | 观点短语（LLM 从原声提取） |
+| `quote_start` / `quote_end` | 整数 | 观点短语在原声中的字符位置（可选） |
+| `comment_id` | 整数 | 外键 → `comments.id` |
 
 **尚未落库的潜在字段**（设计稿可以预留位置）：
 
@@ -90,7 +106,9 @@
 
 ---
 
-## 📊 一个完整样本（来自 `data/exports/cs2_50_sample_5.json` 第 1 条）
+> ⚠️ 以下样本为 **v0.1 导出格式快照**（`data/exports/cs2_50_sample_5.json`，含 `C_sub_topics`）。方案4 后分析结果为 `comments` + `comment_opinions` 双表，字段语义见上文 C 类节。
+>
+> 一个完整样本（v0.1 格式）：
 
 ```json
 {

@@ -9,7 +9,9 @@
 ```
 docs/
 ├── 00-index.md             ⬅ 你在这里：文档地图
+├── STEAM_API_FIELDS.md     🎮 Steam 官方 API 字段权威清单（实拉实测）
 ├── architecture/           🏗️ 架构设计（给工程师看的"系统是怎么搭的"）
+│   ├── ANNOTATION_PIPELINE.md  方案4 标注流程（L1-L3 三级标签：观点短语→程序匹配）
 │   ├── DATA_FIELDS.md          字段三级分类（A/B/C 前缀约定）
 │   └── DATA_STORAGE_DESIGN.md  5 层数据架构 + 4 张表设计
 ├── plan/                   🗺️ 计划与里程碑
@@ -28,6 +30,8 @@ docs/
 |-------------|--------|
 | **项目在做什么、做到哪了、下一步做什么** | [plan/DEVELOPMENT_PLAN.md](./plan/DEVELOPMENT_PLAN.md) |
 | **5 分钟跑起来这个项目** | [guides/QUICK_START.md](./guides/QUICK_START.md) |
+| **L1-L3 标注流程是怎么走的** | [architecture/ANNOTATION_PIPELINE.md](./architecture/ANNOTATION_PIPELINE.md) |
+| **Steam API 能拿到哪些字段** | [STEAM_API_FIELDS.md](./STEAM_API_FIELDS.md) |
 | **数据库有哪些字段、怎么命名的** | [architecture/DATA_FIELDS.md](./architecture/DATA_FIELDS.md) |
 | **数据是怎么分层流转的、表怎么设计** | [architecture/DATA_STORAGE_DESIGN.md](./architecture/DATA_STORAGE_DESIGN.md) |
 | **为什么选这个数据源、不选别的** | [research/VoC平台竞品调研报告.md](./research/VoC平台竞品调研报告.md) |

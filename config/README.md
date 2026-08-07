@@ -11,11 +11,11 @@ config/
 ├── README.md                       ⬅ 你在这里
 ├── prompts/                        🤖 LLM prompt 模板
 │   ├── sentiment.txt                   情感分析系统提示词
-│   └── sentiment_user.txt              情感分析用户提示词模板（含占位符）
-├── topics/                         🏷️ 主题词表
-│   └── gaming.yaml                     游戏类主题词（一级分类）
-└── targets/                        🎯 监控目标清单
-    (暂空，待多目标对比功能启用)
+│   ├── sentiment_user.txt              情感分析用户提示词模板（观点短语提取，含占位符）
+│   └── sentiment_user_strict.txt       收敛轮严格版（强制 ≥1 条观点，方案4 第 2/3 轮）
+└── topics/                         🏷️ 三级标签体系
+    ├── gaming.yaml                     L1 7 / L2 28 / L3 128 三级标签树
+    └── l3_definitions.yaml             128 个 L3 定义 + 关键词（程序匹配词典）
 ```
 
 ---
@@ -25,8 +25,10 @@ config/
 | 配置 | 何时编辑 | 影响范围 |
 |------|----------|----------|
 | **prompts/sentiment.txt** | 想换 LLM 分析风格 | 全部分析器输出格式 |
-| **prompts/sentiment_user.txt** | 想调整评分标准 / 输出字段 | 全部分析器输出字段 |
-| **topics/gaming.yaml** | 想增/改/删一级主题 | 分析器的 topic 字段返回值 |
+| **prompts/sentiment_user.txt** | 想调整观点提取 / 评分标准 / 输出字段 | 分析器的 opinions 输出 |
+| **prompts/sentiment_user_strict.txt** | 想调整收敛轮强制规则 | 方案4 第 2/3 轮重打 |
+| **topics/gaming.yaml** | 想增/改/删 L1-L3 标签树 | 标签体系（需同步 l3_definitions） |
+| **topics/l3_definitions.yaml** | 想调关键词匹配词典（如新增 CS2 黑话） | `normalize.match_l3` 匹配结果 |
 
 ---
 

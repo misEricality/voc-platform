@@ -10,8 +10,9 @@
 product/
 ├── README.md                       ⬅ 你在这里：产品文档地图
 ├── overview.md                     产品概览（一句话定位 + 核心场景）
-├── prototype/                      🎨 高保真原型（HTML 文件）
-│   └── voc-platform-prototype.html     v0.1 仪表盘原型
+├── prototype/                      🎨 高保真原型
+│   ├── voc-platform-prototype.html     v2 单文件版（数据看板 + 原声列表）
+│   └── src/                            v2 多文件源码（app.js / dashboard.* / voices.*）
 ├── prd/                            📋 产品需求文档（PRD）
 │   (暂空，待 PRD 模板沉淀后启用)
 └── decisions/                      📝 产品决策记录（ADR）

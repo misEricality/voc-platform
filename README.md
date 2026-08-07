@@ -5,7 +5,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-MVP-orange)
+![Status](https://img.shields.io/badge/Status-v0.2-blue)
 
 ## ✨ 项目简介
 
@@ -18,17 +18,31 @@ VoC Platform 是一个面向个人开发者的**消费者之声（Voice of Custo
 
 > 📌 **项目定位**：学习大模型API集成、NLP应用、数据可视化全链路；非商业产品。
 
-## 🎯 当前进度（MVP 阶段一）
+## 🎯 当前进度（v0.2）
 
 | 模块 | 状态 | 备注 |
 |------|------|------|
-| Steam 评测采集 | ✅ | 官方API，无需登录 |
-| SQLite 存储 | ✅ | SQLAlchemy 2.x |
+| Steam 评测采集 | ✅ | 官方API + 翻页去重 + 验证页防漏采 |
+| SQLite 存储 | ✅ | SQLAlchemy 2.x，冷启动 NULL + 7 天回采机制 |
 | LLM 情感分析 | ✅ | 支持 DeepSeek/Qwen/GLM 切换 |
+| **L1-L3 三级标签标注** | ✅ | 方案4：观点短语 → 程序匹配（L1 7 / L2 28 / L3 128） |
 | 本地BERT情感分析 | ✅ | 零成本备选 |
+| 高保真原型 v2 | ✅ | 数据看板 + 原声列表（多文件拆分） |
 | Streamlit Dashboard | ✅ | 6个核心图表 |
 | B站/微博采集 | 🚧 | 下一阶段 |
-| 自动化流水线 | 🚧 | GitHub Actions |
+| 自动化流水线 | 🚧 | workflow 本地就绪，远端待补 |
+
+> 📊 **当前数据**：6 款游戏共 **2067 条**评论，已 100% 完成 L1-L3 标注（观点级 295 条，落 `comment_opinions` 表）。
+
+## 🏷️ L1-L3 三级标签标注管线（方案4）
+
+**LLM 自由提取观点短语 → 程序用定义词典匹配 L3 → 映射完整路径 L1/L2/L3。**
+
+相比"LLM 强制枚举标签"，方案4 把选标签从 LLM 手里拿掉：多面评论（"打击感超爽但优化太差"）不再丢观点，匹配逻辑可控、可调、可测试。
+
+- 标签体系：L1 7 类 / L2 28 类 / L3 128 类（`config/topics/gaming.yaml` + `l3_definitions.yaml`）
+- 核心逻辑：`src/analyzers/normalize.py`（match_l3 / 词典索引 / 路径映射）
+- 详细流程：[docs/architecture/ANNOTATION_PIPELINE.md](./docs/architecture/ANNOTATION_PIPELINE.md)
 
 ## 🚀 5分钟快速开始
 
@@ -84,47 +98,41 @@ voc-platform/
 ├── requirements.txt / .env.example
 │
 ├── src/                            # 【核心代码】
-│   ├── collectors/                     数据采集器（每平台一个文件）
-│   ├── analyzers/                      分析器（情感/主题/聚类）
-│   ├── storage/                        存储层
-│   ├── visualizer/                     可视化
-│   ├── api/                            ⬅ 预留：FastAPI 后端
+│   ├── collectors/                     数据采集器（Steam 官方 API）
+│   ├── analyzers/                      分析器（LLM 打标 + 程序匹配 L3）
+│   │   └── normalize.py                L3 匹配层（match_l3 / 词典索引 / 路径映射）
+│   ├── storage/                        存储层（comments + comment_opinions 双表）
+│   ├── visualizer/                     可视化图表
 │   └── pipeline.py                     主流程编排
 │
 ├── config/                          # 【业务配置】（与代码解耦）
-│   ├── prompts/                        LLM prompt 模板
-│   ├── topics/                         主题词表
-│   └── targets/                        监控目标清单（预留）
+│   ├── prompts/                        LLM prompt 模板（含 strict 收敛版）
+│   └── topics/                         三级标签体系 + L3 定义词典
 │
-├── data/                            # 【运行时数据】（gitignore）
-│   ├── raw/                              L1 原始层
-│   ├── cleaned/                          L2 清洗层
-│   ├── exports/                          L5 导出层
-│   └── voc.db                            SQLite 单库
+├── data/                            # 【运行时数据】（gitignore，不入库）
+│   ├── voc.db                            SQLite 单库（2067 条已标注）
+│   └── exports/                          导出产物（xlsx / csv / json）
 │
 ├── docs/                            # 【研发文档】（技术视角）
 │   ├── 00-index.md                      ⬅ 文档地图
-│   ├── architecture/                    架构设计
+│   ├── architecture/                    架构设计（含 ANNOTATION_PIPELINE 标注流程）
+│   ├── STEAM_API_FIELDS.md              Steam API 字段权威清单
 │   ├── plan/                            计划与里程碑
 │   ├── guides/                          操作指南
 │   └── research/                        调研资料
 │
 ├── product/                         # 【产品文档】（业务视角）
 │   ├── overview.md                      产品概览
-│   ├── prototype/                       设计原型
+│   ├── prototype/                       高保真原型（v2 多文件拆分）
 │   ├── prd/                             需求文档（预留）
 │   └── decisions/                       决策记录（预留）
 │
-├── scripts/                         # 【运维脚本】
+├── scripts/                         # 【运维/开发脚本】
 │   ├── smoke_test.py                    冒烟测试
-│   ├── dev/                             开发期一次性脚本
-│   ├── ops/                             运维脚本（预留）
-│   └── analysis/                        数据分析脚本（预留）
+│   ├── dev/                             开发期一次性脚本（采集/标注/巡检/E2E）
+│   └── ops/refresh_likes.py             7 天后回采脚本
 │
-├── tests/                           # 【测试】
-│   ├── unit/                            单元测试
-│   ├── integration/                     集成测试（预留）
-│   └── fixtures/                        测试数据（预留）
+├── tests/                           # 【测试】pytest 8 例全绿
 │
 └── notebooks/                       # 【数据探索】（预留）
 ```
@@ -174,10 +182,11 @@ voc-platform/
 
 ## 🗺️ 路线图
 
-- [x] **v0.1 (当前)** - Steam 采集 + LLM 分析 + Streamlit Dashboard
-- [ ] **v0.2** - B站视频评论接入 + 自动化（GitHub Actions）
-- [ ] **v0.3** - 微博 + 多目标横向对比
-- [ ] **v0.4** - 主题建模 + 趋势预警
+- [x] **v0.1** - Steam 采集 + LLM 分析 + Streamlit Dashboard
+- [x] **v0.2** - 采集生命周期管理（7 天回采）+ 6 款游戏批量采集 + L1-L3 标注管线（方案4）
+- [ ] **v0.3** - 词云 + 仪表盘洞察力增强（"整体评价"占比收敛）
+- [ ] **v0.4** - 多目标横向对比 + 自动化流水线（CI 远端就绪）
+- [ ] **v0.5** - 多平台接入（B 站 / 微博）
 - [ ] **v1.0** - 完整文档 + 技术博客 + 求职作品集发布
 
 ## 📄 License

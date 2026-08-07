@@ -1,4 +1,4 @@
-# Python
+# ---- Python ----
 __pycache__/
 *.py[cod]
 *$py.class
@@ -10,18 +10,18 @@ build/
 .eggs/
 *.egg
 
-# Virtual environments
+# ---- Virtual environments ----
 venv/
 env/
 .venv/
 ENV/
 
-# Environment and secrets
+# ---- Environment & secrets ----
 .env
 .env.local
 *.env
 
-# IDE
+# ---- IDE / OS ----
 .vscode/
 .idea/
 *.swp
@@ -29,40 +29,33 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Data and databases
+# ---- Data & databases（运行时产物，不入库）----
 data/raw/
 data/processed/
 data/cleaned/
-data/exports/
 data/sample/
 *.db
 *.db-journal
-*.bak
 *.sqlite
 *.sqlite3
+*.bak
+*.bak.*
+*.flag
+# 导出产物（注：cs2_50_full.csv/json、cs2_50_sample_5.json 3 个示例文件已跟踪，属文档引用例外）
+data/exports/
 
-# Logs
+# ---- Logs ----
 logs/
 *.log
 
-# OS
-.DS_Store
-
-# Cache
+# ---- Cache ----
 .cache/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-# Notebooks checkpoints
+# ---- Notebooks ----
 .ipynb_checkpoints/
 
-# WorkBuddy 本机数据（不应提交）
+# ---- WorkBuddy 本机数据（不应提交）----
 .workbuddy/
-
-# 项目运行时数据
-data/*.db
-data/voc.db
-data/voc.db.v*.bak
-data/raw/
-data/processed/
