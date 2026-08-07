@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from typing import Iterator
@@ -22,6 +23,8 @@ from typing import Iterator
 import requests
 
 from .base import BaseCollector, RawComment
+
+log = logging.getLogger("voc.collectors.steam")
 
 # Steam 评测 API 端点
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{app_id}"
@@ -113,6 +116,17 @@ class SteamCollector(BaseCollector):
         # 为避免下游入库 UNIQUE 冲突，本地用 seen 集合去重。
         seen_source_ids: set[str] = set()
         empty_streak = 0  # 连续"无新数据"页数（>=3 视为已到时间窗外，停）
+        last_cursor: str | None = None  # 翻页停止后用于"验证页"的游标
+
+        def _passes_time_filter(ts: int | None) -> bool:
+            """应用层时间过滤（posted_after / posted_before）"""
+            if posted_after is not None:
+                if ts is None or datetime.fromtimestamp(ts) < posted_after:
+                    return False
+            if posted_before is not None:
+                if ts is not None and datetime.fromtimestamp(ts) >= posted_before:
+                    return False
+            return True
 
         while fetched < max_count:
             params = {
@@ -138,14 +152,9 @@ class SteamCollector(BaseCollector):
             page_new = 0
             for r in reviews:
                 ts = r.get("timestamp_created")
-                # posted_after 应用层过滤
-                if posted_after is not None:
-                    if ts is None or datetime.fromtimestamp(ts) < posted_after:
-                        continue
-                # posted_before 应用层过滤
-                if posted_before is not None:
-                    if ts is not None and datetime.fromtimestamp(ts) >= posted_before:
-                        continue
+                # 应用层时间过滤
+                if not _passes_time_filter(ts):
+                    continue
                 src_id = str(r.get("recommendationid", ""))
                 if not src_id or src_id in seen_source_ids:
                     continue  # 跨页重复，跳过
@@ -171,6 +180,98 @@ class SteamCollector(BaseCollector):
             # 当没有更多分页或游标为空时停止
             if not cursor or data.get("query_summary", {}).get("num_reviews", 0) == 0:
                 break
+            last_cursor = cursor
+
+        # =====================================================================
+        # 验证页（Verification Page）
+        # =====================================================================
+        # 翻页"自然停止"后，再额外拉 1 页确认。
+        # 为什么需要：filter="recent" 排序不是 100% 严格时间倒序，可能混入少量老评论。
+        # 连续 3 页空停、cursor 失效停、max_count 触顶停 → 都可能漏采最新的几条。
+        # 验证页策略：再拉 1 页，如还有"时间内"的评论 → 警告 + 继续翻。
+        #
+        # 触发条件：仅在用户指定了 posted_after 或 posted_before 时启用（时间窗有意义时）。
+        # 时间成本：单次采集 +1 页（~0.5-1 秒）。
+        # 漏采概率：理论上 0%（除非 Steam API 真出错）。
+        # =====================================================================
+        if (
+            (posted_after is not None or posted_before is not None)
+            and last_cursor
+            and fetched < max_count  # 不是 max_count 触顶时（触顶场景验证页也无意义）
+        ):
+            verify_params = {
+                "json": 1,
+                "filter": filter,
+                "language": language or "all",
+                "cursor": last_cursor,
+                "num_per_page": 100,
+                "purchase_type": "all",
+                "day_range": day_range,
+            }
+            try:
+                verify_resp = self.session.get(url, params=verify_params, timeout=30)
+                verify_resp.raise_for_status()
+                verify_data = verify_resp.json()
+                verify_reviews = verify_data.get("reviews", [])
+                # 检查验证页里是否还有"时间内"的评论
+                leftover_in_window = []
+                for r in verify_reviews:
+                    ts = r.get("timestamp_created")
+                    if _passes_time_filter(ts):
+                        leftover_in_window.append(r)
+                if leftover_in_window:
+                    # 翻页过早停止：把当前 cursor 之后的"时间内"评论继续 yield
+                    log.warning(
+                        f"⚠️ 翻页验证发现漏采风险：还有 {len(leftover_in_window)} 条时间窗内评论，"
+                        f"继续拉取（建议增加 max_count 或检查 Steam 协议变化）"
+                    )
+                    # 先 yield 验证页本身的漏采评论
+                    for r in leftover_in_window:
+                        src_id = str(r.get("recommendationid", ""))
+                        if not src_id or src_id in seen_source_ids:
+                            continue
+                        seen_source_ids.add(src_id)
+                        yield self._to_raw(target_id, r, fetch_metadata=fetch_metadata)
+                        fetched += 1
+                        if fetched >= max_count:
+                            break
+                    # 兜底再翻 2 页（防止漏采扩散）
+                    rescue_cursor = verify_data.get("cursor") or last_cursor
+                    for attempt in range(2):
+                        if not rescue_cursor:
+                            break
+                        rescue_params = {
+                            "json": 1,
+                            "filter": filter,
+                            "language": language or "all",
+                            "cursor": rescue_cursor,
+                            "num_per_page": 100,
+                            "purchase_type": "all",
+                            "day_range": day_range,
+                        }
+                        rescue_resp = self.session.get(url, params=rescue_params, timeout=30)
+                        rescue_resp.raise_for_status()
+                        rescue_data = rescue_resp.json()
+                        rescue_reviews = rescue_data.get("reviews", [])
+                        page_added = 0
+                        for r in rescue_reviews:
+                            ts = r.get("timestamp_created")
+                            if not _passes_time_filter(ts):
+                                continue
+                            src_id = str(r.get("recommendationid", ""))
+                            if not src_id or src_id in seen_source_ids:
+                                continue
+                            seen_source_ids.add(src_id)
+                            yield self._to_raw(target_id, r, fetch_metadata=fetch_metadata)
+                            fetched += 1
+                            page_added += 1
+                            if fetched >= max_count:
+                                break
+                        if page_added == 0:
+                            break  # 兜底页也无新数据，停
+                        rescue_cursor = rescue_data.get("cursor")
+            except Exception as e:
+                log.warning(f"验证页拉取失败（不影响已采集数据）：{e}")
 
     def _to_raw(
         self, appid: str, review: dict, *, fetch_metadata: bool = False

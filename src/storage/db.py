@@ -66,6 +66,7 @@ class Comment(Base):
     extra_json = Column(Text)  # 平台特有字段 JSON
 
     # 分析结果（情感）
+    # sentiment = 核心 L1（topic）所表达的情感（整体情感），非整条评论所有话题综合
     sentiment = Column(String(16))  # positive / negative / neutral
     sentiment_score = Column(Float)  # -1 ~ +1
     sentiment_confidence = Column(Float)  # 0 ~ 1
@@ -116,6 +117,52 @@ class Comment(Base):
             "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
             "likes_refreshed_at": self.likes_refreshed_at.isoformat() if self.likes_refreshed_at else None,
             "developer_response_refreshed_at": self.developer_response_refreshed_at.isoformat() if self.developer_response_refreshed_at else None,
+        }
+
+
+class CommentOpinion(Base):
+    """观点表：每条完整标签路径对应一段从原声提炼的观点（颗粒度比原声细）
+
+    设计要点（2026-08-05 v2 重构，对齐工程师 A-E 决策）：
+    - full_path: 完整标签路径（如"玩法与内容/玩法机制/动作系统"或"其他/整体评价/整体评价"）
+    - sentiment: 观点级情感（positive/negative/neutral），每条观点独立
+    - quote: 必须从 comment.content 中可定位（quote_start/quote_end）
+    - 允许同路径多观点（同 full_path 不同 quote）
+    - 已删除 label / label_level（路径由 full_path 承载）
+    """
+
+    __tablename__ = "comment_opinions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    comment_id = Column(
+        Integer,
+        nullable=False,
+        index=True,
+    )
+    full_path = Column(String(255), nullable=False, index=True)  # 完整路径 L1/L2[/L3]
+    sentiment = Column(String(16), nullable=False)  # 观点级情感
+    sentiment_confidence = Column(Float)  # 观点级置信度（0~1，方案B）
+    quote = Column(Text, nullable=False)  # 对应原声片段
+    quote_start = Column(Integer)  # 在 content 中的起始字符位置（可选）
+    quote_end = Column(Integer)  # 在 content 中的结束字符位置（可选）
+    created_at = Column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_opinions_path", "full_path"),
+        Index("ix_opinions_comment", "comment_id"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "comment_id": self.comment_id,
+            "full_path": self.full_path,
+            "sentiment": self.sentiment,
+            "sentiment_confidence": self.sentiment_confidence,
+            "quote": self.quote,
+            "quote_start": self.quote_start,
+            "quote_end": self.quote_end,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -236,17 +283,87 @@ class CommentRepository:
         sentiment_confidence: float,
         topic: str | None = None,
         sub_topics: list[str] | None = None,
+        opinions: list[dict] | None = None,
+        valid_l2_labels: set[str] | None = None,
+        valid_l1_labels: set[str] | None = None,
     ) -> None:
-        """更新情感与主题分析结果"""
+        """更新情感与主题分析结果
+
+        Args:
+            opinions: 观点列表，每项 {label, level, quote, quote_start?, quote_end?}
+            valid_l2_labels: 合法 L2 标签集合；用于过滤越界 sub_topics（不留盘）
+            valid_l1_labels: 合法 L1 标签集合；用于过滤越界 topic
+        """
         stmt = select(Comment).where(Comment.id == comment_id)
         obj = self.session.execute(stmt).scalar_one_or_none()
-        if obj:
-            obj.sentiment = sentiment
-            obj.sentiment_score = sentiment_score
-            obj.sentiment_confidence = sentiment_confidence
-            obj.topic = topic
-            obj.sub_topics = json.dumps(sub_topics, ensure_ascii=False) if sub_topics else None
-            obj.analyzed_at = _utcnow()
+        if not obj:
+            return
+
+        # 1. 过滤越界标签（业务规则：越界不留盘）
+        clean_topic = topic
+        if valid_l1_labels is not None and topic not in valid_l1_labels:
+            clean_topic = None  # topic 越界 → 置空
+
+        clean_subs = list(sub_topics) if sub_topics else []
+        if valid_l2_labels is not None:
+            clean_subs = [s for s in clean_subs if s in valid_l2_labels]
+
+        obj.sentiment = sentiment
+        obj.sentiment_score = sentiment_score
+        obj.sentiment_confidence = sentiment_confidence
+        obj.topic = clean_topic
+        obj.sub_topics = json.dumps(clean_subs, ensure_ascii=False) if clean_subs else None
+        obj.analyzed_at = _utcnow()
+
+        # 2. 同步 opinion 表（先删旧再插新）
+        if opinions is not None:
+            # 删旧
+            del_stmt = select(CommentOpinion).where(
+                CommentOpinion.comment_id == comment_id
+            )
+            old_opinions = list(self.session.execute(del_stmt).scalars())
+            for op in old_opinions:
+                self.session.delete(op)
+            self.session.flush()
+
+            # 插新（每条 opinion = full_path + sentiment + quote；方案4 下 quote 存 phrase）
+            content_text = obj.content or ""
+            for op_data in opinions:
+                full_path = (op_data.get("full_path") or "").strip()
+                op_sentiment = (op_data.get("sentiment") or "neutral").strip().lower()
+                if op_sentiment not in {"positive", "negative", "neutral"}:
+                    op_sentiment = "neutral"
+                # 方案4：观点文本是 phrase；兼容旧 quote 字段名
+                quote = (op_data.get("phrase") or op_data.get("quote") or "").strip()
+                quote_start = op_data.get("quote_start")
+                quote_end = op_data.get("quote_end")
+                # 方案B：opinion 级置信度（可能缺失 → NULL）
+                op_conf = op_data.get("sentiment_confidence")
+                if op_conf is not None:
+                    try:
+                        op_conf = float(op_conf)
+                    except (TypeError, ValueError):
+                        op_conf = None
+                    if op_conf is not None and not 0.0 <= op_conf <= 1.0:
+                        op_conf = None
+
+                if not full_path or not quote:
+                    continue
+
+                # 自动定位 quote 在 content 中的位置（若 LLM 未提供）
+                if quote_start is None and quote in content_text:
+                    quote_start = content_text.index(quote)
+                    quote_end = quote_start + len(quote)
+
+                self.session.add(CommentOpinion(
+                    comment_id=comment_id,
+                    full_path=full_path,
+                    sentiment=op_sentiment,
+                    sentiment_confidence=op_conf,
+                    quote=quote,
+                    quote_start=quote_start,
+                    quote_end=quote_end,
+                ))
 
     def commit(self) -> None:
         self.session.commit()

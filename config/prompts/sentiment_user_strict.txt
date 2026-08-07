@@ -1,0 +1,30 @@
+请分析以下消费者评论的情感与观点，逐条输出。
+
+【评论文本批次】
+{batch_texts}
+
+【输出格式】严格 JSON，results 数组长度必须等于评论数，index 对应批次编号：
+{{
+  "results": [
+    {{
+      "index": 0,
+      "sentiment": "positive|negative|neutral",
+      "sentiment_score": -1到1,
+      "opinions": [
+        {{"phrase": "打击感超爽", "sentiment": "positive", "sentiment_score": 0.8, "sentiment_confidence": 0.95, "is_core": true}},
+        {{"phrase": "价格太贵", "sentiment": "negative", "sentiment_score": -0.6, "sentiment_confidence": 0.85}}
+      ]
+    }}
+  ]
+}}
+
+【规则】
+1. **每条评论必须至少提取 1 条观点**（除非是完全无意义的乱码/纯表情/纯数字）
+2. **逐句/逐方面扫描评论**，把每个独立讨论点都提取为一条观点，不要漏
+3. 每条观点 = phrase（从原声提炼的短句，尽量保留原词）+ sentiment（观点情感）+ sentiment_score（-1到1）+ sentiment_confidence（0到1，对该观点情感判断的确信度）
+4. 每条评论至多一个 is_core=true（最重要观点）；无则默认第一个
+5. **sentiment / sentiment_score 表示整条评论的整体情感**（即使 opinions 为空也必须输出）
+6. 整活/梗类评论 → phrase 保留原话即可（如"坟头草是绿的也算绿玩吗"）
+7. 无具体场景的夸/贬（如"好玩""垃圾""神作"）→ 单独一条观点，phrase 用原话
+8. **"666666""nice""good"这类纯语气词** → 归一条观点，phrase 用原话，匹配"整体评价"
+9. sentiment 只能是 positive/negative/neutral
