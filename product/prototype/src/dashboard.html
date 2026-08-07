@@ -1,0 +1,34 @@
+<section id="dashboard" class="page active"><div class="headline"><div><h2>数据看板</h2><p>多维度洞察 Steam 玩家声音 · 筛选器与原声列表联动，指标全部基于当前筛选结果实时计算</p></div></div>
+<div class="filter-panel" data-page="dashboard">
+  <div class="v2-filters">
+    <div class="v2-block"><label>时间</label><div class="v2-date-range"><input type="date" data-date="start"><span>至</span><input type="date" data-date="end"></div></div>
+    <div class="v2-block"><label>游戏</label><div class="ms" data-ms="game"><button class="ms-trigger" type="button"><span class="ms-label">全部游戏</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+    <div class="v2-block"><label>推荐</label><div class="ms" data-ms="vote"><button class="ms-trigger" type="button"><span class="ms-label">全部</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+    <div class="v2-block"><label>情感</label><div class="seg senti-seg"><button type="button" class="on" data-mode="overall">整体情感</button><button type="button" data-mode="tag">标签情感</button></div><div class="ms" data-ms="senti"><button class="ms-trigger" type="button"><span class="ms-label">全部情感</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div><div class="seg-hint">标签情感需先在「标签」中选择标签路径</div></div>
+    <div class="v2-block"><label>标签（L1 ~ L3）</label><div class="ms tag-ms" data-ms="tag"><button class="ms-trigger" type="button"><span class="ms-label">全部标签</span><span class="caret">▼</span></button><div class="ms-pop tag-pop"><div class="tag-cols"><div class="tag-col"><header>一级标签 L1</header><div class="ms-list" data-tag-col="1"></div></div><div class="tag-col"><header>二级标签 L2</header><div class="ms-list" data-tag-col="2"></div></div><div class="tag-col"><header>三级标签 L3</header><div class="ms-list" data-tag-col="3"></div></div></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+  </div>
+  <div class="v2-kw-row">
+    <div class="v2-kw"><label>关键词 · 全部包含（与）</label><input data-kw="and" placeholder="多个关键词以逗号分隔"></div>
+    <div class="v2-kw"><label>关键词 · 任一包含（或）</label><input data-kw="or" placeholder="多个关键词以逗号分隔"></div>
+    <div class="v2-kw"><label>关键词 · 不包含（非）</label><input data-kw="not" placeholder="多个关键词以逗号分隔"></div>
+    <div class="v2-actions"><button class="btn" data-act="reset" type="button">重置</button><button class="btn primary" data-act="apply" type="button">查询</button></div>
+  </div>
+</div>
+<div class="metrics dash-kpis">
+  <div class="metric" style="--tint:#edf5fa"><div class="metric-label">原声总量</div><span class="metric-value" data-kpi="total">-</span><div class="metric-sub" data-kpi="totalSub">筛选范围内全部评论</div></div>
+  <div class="metric" style="--tint:#edf8f1"><div class="metric-label">推荐率</div><span class="metric-value" data-kpi="rec">-</span><div class="metric-sub" data-kpi="recSub"></div></div>
+  <div class="metric" style="--tint:#edf8f1"><div class="metric-label">正向占比</div><span class="metric-value" data-kpi="pos">-</span><div class="metric-sub" data-kpi="posSub"></div></div>
+  <div class="metric" style="--tint:#fdeeee"><div class="metric-label">负向占比</div><span class="metric-value" data-kpi="neg">-</span><div class="metric-sub" data-kpi="negSub"></div></div>
+  <div class="metric" style="--tint:#fff7d8"><div class="metric-label">平均评论时游玩</div><span class="metric-value" data-kpi="play">-</span><div class="metric-sub" data-kpi="playSub"></div></div>
+</div>
+<div class="dash-grid">
+  <div class="card dcard sp8"><div class="card-title"><strong>每日原声量趋势</strong><span class="pri p0">P0</span></div><div class="dbody" id="dTrend"></div></div>
+  <div class="card dcard sp4"><div class="card-title"><strong>推荐构成</strong><span class="pri p0">P0</span></div><div class="dbody" id="dRec"></div></div>
+  <div class="card dcard sp4"><div class="card-title"><strong>整体情感分布</strong><span class="pri p0">P0</span></div><div class="dbody" id="dSenti"></div></div>
+  <div class="card dcard sp4"><div class="card-title"><strong>主题 L1 排行</strong><span class="pri p1">P1</span></div><div class="dbody" id="dL1"></div></div>
+  <div class="card dcard sp4"><div class="card-title"><strong>主题 L2 TOP10</strong><span class="pri p1">P1</span></div><div class="dbody" id="dL2"></div></div>
+  <div class="card dcard sp6"><div class="card-title"><strong>各游戏原声构成</strong><span class="pri p1">P1</span></div><div class="dbody" id="dGame"></div></div>
+  <div class="card dcard sp6"><div class="card-title"><strong>评论时游玩时长分布</strong><span class="pri p2">P2</span></div><div class="dbody" id="dPlay"></div></div>
+  <div class="card dcard sp12"><div class="card-title"><strong>标签级观点洞察</strong><span class="pri p2">P2</span><span style="margin-left:auto;font-size:11px;color:#94a0ad" id="dOpMeta"></span></div><div class="dbody op-wrap" id="dOps"></div></div>
+</div>
+</section>

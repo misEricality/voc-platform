@@ -1,0 +1,22 @@
+<section id="voices" class="page"><div class="headline"><div><h2>原声列表</h2><p>逐条查看 Steam 玩家评论原声与 AI 分析结果</p></div></div>
+<div class="filter-panel" data-page="voices">
+  <div class="v2-filters">
+    <div class="v2-block"><label>时间</label><div class="v2-date-range"><input type="date" data-date="start"><span>至</span><input type="date" data-date="end"></div></div>
+    <div class="v2-block"><label>游戏</label><div class="ms" data-ms="game"><button class="ms-trigger" type="button"><span class="ms-label">全部游戏</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+    <div class="v2-block"><label>推荐</label><div class="ms" data-ms="vote"><button class="ms-trigger" type="button"><span class="ms-label">全部</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+    <div class="v2-block"><label>情感</label><div class="seg senti-seg"><button type="button" class="on" data-mode="overall">整体情感</button><button type="button" data-mode="tag">标签情感</button></div><div class="ms" data-ms="senti"><button class="ms-trigger" type="button"><span class="ms-label">全部情感</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div><div class="seg-hint">标签情感需先在「标签」中选择标签路径</div></div>
+    <div class="v2-block"><label>标签（L1 ~ L3）</label><div class="ms tag-ms" data-ms="tag"><button class="ms-trigger" type="button"><span class="ms-label">全部标签</span><span class="caret">▼</span></button><div class="ms-pop tag-pop"><div class="tag-cols"><div class="tag-col"><header>一级标签 L1</header><div class="ms-list" data-tag-col="1"></div></div><div class="tag-col"><header>二级标签 L2</header><div class="ms-list" data-tag-col="2"></div></div><div class="tag-col"><header>三级标签 L3</header><div class="ms-list" data-tag-col="3"></div></div></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+  </div>
+  <div class="v2-kw-row">
+    <div class="v2-kw"><label>关键词 · 全部包含（与）</label><input data-kw="and" placeholder="多个关键词以逗号分隔"></div>
+    <div class="v2-kw"><label>关键词 · 任一包含（或）</label><input data-kw="or" placeholder="多个关键词以逗号分隔"></div>
+    <div class="v2-kw"><label>关键词 · 不包含（非）</label><input data-kw="not" placeholder="多个关键词以逗号分隔"></div>
+    <div class="v2-actions"><button class="btn" data-act="reset" type="button">重置</button><button class="btn" id="vExport" type="button">导出</button><button class="btn primary" data-act="apply" type="button">查询</button></div>
+  </div>
+</div>
+<div class="card vlist-card">
+  <div class="vlist-head"><span class="table-meta" id="vMeta"></span></div>
+  <div id="vList"></div>
+  <div class="pagination" id="vPager"></div>
+</div>
+</section>

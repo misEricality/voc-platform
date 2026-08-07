@@ -1,0 +1,89 @@
+/* ============================================================
+   数据看板 v2 —— KPI 与图表样式
+   ============================================================ */
+
+.dash-kpis{margin-top:0}
+.dash-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+.dcard{min-height:220px;display:flex;flex-direction:column}
+.dcard .dbody{flex:1;min-height:0}
+.sp4{grid-column:span 4}
+.sp6{grid-column:span 6}
+.sp8{grid-column:span 8}
+.sp12{grid-column:span 12}
+
+/* 优先级徽章 */
+.pri{font-size:10px;font-weight:800;letter-spacing:.5px;padding:2px 8px;border-radius:10px}
+.pri.p0{background:#fdeeee;color:#c25b5b;border:1px solid #f3cfcf}
+.pri.p1{background:#e6f1f9;color:#3a6c8c;border:1px solid #cfe0ec}
+.pri.p2{background:#f1f4f6;color:#8b98a5;border:1px solid #e2e8f0}
+
+/* 空态 */
+.dempty{height:100%;display:grid;place-items:center;color:#a3afbd;font-size:13px}
+
+/* ---------- 每日趋势（柱状堆叠） ---------- */
+.trend{height:185px;display:flex;align-items:flex-end;gap:10px;padding:6px 4px 0}
+.tcol{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end}
+.tcol .bars{width:100%;max-width:56px;display:flex;flex-direction:column;justify-content:flex-end;height:100%;border-radius:5px 5px 0 0;overflow:hidden}
+.tcol .seg{width:100%;border-radius:0;padding:0}
+.tcol .seg.pos{background:var(--green)}
+.tcol .seg.neu{background:var(--yellow)}
+.tcol .seg.neg{background:var(--red)}
+.tcol .tlabel{font-size:10px;color:#94a0ad;margin-top:6px;white-space:nowrap}
+.tcol .tnum{font-size:10px;color:#a3afbd;margin-bottom:3px}
+
+/* ---------- 环形图 ---------- */
+.donut-box{min-height:170px;display:flex;align-items:center;justify-content:center;gap:22px}
+.donut{width:132px;height:132px;border-radius:50%;position:relative;flex:none}
+.donut:after{content:attr(data-center);position:absolute;inset:24px;border-radius:50%;background:#fff;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:700;line-height:1.5;white-space:pre;color:#35485c}
+.donut-legend{font-size:12px;color:#6f7e8e;line-height:2.1}
+.donut-legend b{color:#35485c;margin-left:8px}
+.donut-legend .dot{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+
+/* ---------- 占比条 ---------- */
+.senti-bar{height:150px;display:flex;flex-direction:column;justify-content:center;gap:14px}
+.senti-track{height:34px;border-radius:10px;overflow:hidden;display:flex;background:#f1f4f6}
+.senti-track>div{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;min-width:34px;overflow:hidden}
+.senti-track .pos{background:var(--green)}
+.senti-track .neu{background:#d9b54e}
+.senti-track .neg{background:var(--red)}
+.senti-legend{display:flex;justify-content:space-between;font-size:12px;color:#6f7e8e}
+.senti-legend b{color:#35485c}
+
+/* ---------- 横向排行条 ---------- */
+.hbar-row{display:grid;grid-template-columns:86px 1fr 46px 44px;gap:10px;align-items:center;margin-bottom:9px;font-size:12px}
+.hbar-row .hname{color:#405166;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+.hbar-row .htrack{height:16px;background:#eef3f7;border-radius:8px;overflow:hidden}
+.hbar-row .hfill{height:100%;background:linear-gradient(90deg,var(--primary),var(--sky));border-radius:8px}
+.hbar-row .hcount{color:#405166;font-weight:700;text-align:right}
+.hbar-row .hpct{color:#94a0ad;font-size:11px;text-align:left}
+.dbody-list{padding-top:4px}
+
+/* ---------- 游戏×情感堆叠 ---------- */
+.grow{display:grid;grid-template-columns:150px 1fr 52px;gap:10px;align-items:center;margin-bottom:10px;font-size:12px}
+.grow .gname{color:#405166;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grow .gtrack{height:18px;border-radius:9px;overflow:hidden;display:flex;background:#f1f4f6}
+.grow .gtrack>div{height:100%}
+.grow .gtrack .pos{background:var(--green)}
+.grow .gtrack .neu{background:#d9b54e}
+.grow .gtrack .neg{background:var(--red)}
+.grow .gtotal{color:#405166;font-weight:700;text-align:right}
+.g-legend{display:flex;gap:14px;font-size:11px;color:#7b8998;margin-bottom:10px}
+.g-legend i{display:inline-block;width:8px;height:8px;border-radius:3px;margin-right:5px}
+
+/* ---------- 游玩时长分布 ---------- */
+.play-box{height:150px;display:flex;flex-direction:column;justify-content:center;gap:16px}
+.play-track{height:38px;border-radius:10px;overflow:hidden;display:flex;background:#f1f4f6}
+.play-track>div{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;min-width:44px}
+.play-track .b1{background:#78A4CB}
+.play-track .b2{background:#5b8fc2}
+.play-track .b3{background:#4a7fb5}
+.play-track .b4{background:#3a6fae}
+.play-legend{display:flex;justify-content:space-between;font-size:11px;color:#7b8998}
+.play-legend b{color:#35485c}
+
+/* ---------- 观点洞察两栏 ---------- */
+.op-wrap{display:grid;grid-template-columns:340px 1fr;gap:24px;min-height:210px}
+.op-left{display:flex;flex-direction:column;gap:16px;justify-content:center}
+.op-right{min-width:0}
+.op-right .hbar-row{grid-template-columns:1fr 46px 44px}
+.op-right .hname{text-align:left;color:#7e8b99;font-size:11px;font-family:Menlo,Consolas,monospace}
