@@ -15,6 +15,7 @@
 | **`A_`** | 🟢 **采样原始** | 平台 API 直接返回，没有加工（采集器照搬） |
 | **`B_`** | 🟡 **程序派生** | 我们的采集/存储层补充、加工、分拆的字段 |
 | **`C_`** | 🔵 **LLM 标注** | 由 DeepSeek / Qwen / GLM 等大模型分析后填入 |
+| **`D_`** | 🔴 **模型派生** | 本地 embedding 模型输出（语义向量，衍生数据可重建） |
 
 > 设计师如果勾选字段勾错了来源，技术同学一眼就能定位是哪一层出的问题。
 
@@ -43,6 +44,31 @@
 
 ---
 
+## 🟢 A. 采样原始字段（Bilibili · 2026-08-13 新增）
+
+> 取自 `src/collectors/bilibili.py` 中 `_to_raw()` 方法。
+> 采集定位：发布满 7 天的「口碑稳态快照」；评论抽样 K=1000（点赞 top-600 + 最新 400）。
+> 规格依据：`BILIBILI_COLLECTION.md`。
+
+| 字段名 | 类型 | 来源 reply 接口 | 示例 | 业务含义 |
+|---|---|---|---|---|
+| `A_source_id` | 字符串 | `rpid` | `"252492046737"` | B 站评论唯一 ID |
+| `A_content` | 文本 | `content.message` | `"大师兄到底是多绝望..."` | 评论正文 |
+| `A_author_id` | 字符串 | `member.mid` | `"336610383"` | B 站用户 mid |
+| `A_author` | 字符串 | `member.uname` | `"落花影I"` | 昵称（B 站公开数据，可存） |
+| `A_likes` | 整数 | `like` | `30483` | 点赞数（快照模式直接存实值，无 7 天回采语义） |
+| `A_replies` | 整数 | `rcount` | `109` | 楼中楼回复数 |
+| `A_posted_at` | 时间 | `ctime` | `"2025-01-22T12:07:58"` | 评论时间 |
+| `A_profile` | JSON | `member` 派生 | `{"uname":"落花影I","level":6,...}` | 评论者画像（存 `extra_json.profile`） |
+
+**特别注意（实测校准 2026-08-13）**：
+- `A_profile.level` 取自 `member.level_info.current_level`（非顶层 `level`，顶层实测为 None）
+- `A_profile.official` 取自 `member.official_verify`（role/title/desc）
+- **热门视频评论必须登录 cookie（SESSDATA）**：匿名访问只返回第 1 页 3 条（风控降级）——BV1UpwaeNESx（4.6 万评论）实测；SESSDATA 配在 `.env`（BILIBILI_SESSDATA）
+- 弹幕只落 `user_hash`（接口匿名 hash），不存真实身份（合规）
+
+---
+
 ## 🟡 B. 程序派生字段
 
 > 取自 `src/storage/db.py` 的 `Comment` 模型 + `CommentRepository.upsert()`。
@@ -63,7 +89,7 @@
 | 平台 | 通常存什么 |
 |---|---|
 | steam | `appid`, `playtime_forever`, `playtime_at_review`, `steam_purchase`, `received_for_free`, `written_during_early_access` |
-| bilibili | `aid`（视频ID）、`bvid`、`oid`（评论归属）|
+| bilibili | `aid`（视频ID）+ `profile`（评论者画像：level/vip/sex/official） |
 | weibo | `weibo_id`、`user_mid`、`reposts_count` |
 
 > 设计师做原型时，**平台特定字段**建议做动态展示（按平台标题分组）。如果只关心核心体验，B_id / B_target_id / B_target_meta 足够用于 P1 数据视图。
@@ -103,6 +129,30 @@
 | 字段名 | 类型 | 当前状态 | 备注 |
 |---|---|---|---|
 | `C_reasoning` | 文本 | 模型输出但**未存库** | 让模型解释"为什么这么判断"，对人工抽样审核很有用 |
+
+---
+
+## 🔴 D. 模型派生字段（本地语义向量，2026-08-11 新增）
+
+> 取自 `src/storage/db.py` 的 `CommentEmbedding` 模型 + `src/analyzers/embedder.py`。
+> 用途：语义检索 / 聚类（"其他"治理）/ 观点去重聚合。
+>
+> **关键属性：衍生数据（derived data）**——向量可由 `A_content` 随时全量重建，
+> 因此换模型 = 清表重算（`scripts/ops/backfill_embeddings.py --force`），
+> 不保留旧向量。存储 L2 归一化后的 float32 数组（内积 = 余弦相似度）。
+
+| 字段名 | 类型 | 衍生逻辑 | 示例 | 业务含义 |
+|---|---|---|---|---|
+| `D_embedding_comment_id` | 整数 | 1:1 → `comments.id` | `1` | 向量归属的评论 |
+| `D_embedding_model` | 字符串 | 编码器标识（含小版本号） | `"BAAI/bge-small-zh-v1.5"` | **强制记录**：换模型后新旧向量空间不可比，禁止混存（单空间约束） |
+| `D_embedding_dim` | 整数 | 模型维度 | `512` | 向量维度 |
+| `D_embedding_vector` | BLOB | `np.float32.tobytes()` | — | 归一化向量本体（512×4B≈2KB/条） |
+| `D_embedding_created_at` | 时间 | 生成时刻 | `"2026-08-11T21:40:24"` | 何时编码 |
+
+**单空间约束（三防线）**：
+1. 写入侧（pipeline）：表内已有其他模型 → 跳过向量化并告警（不混写）；
+2. 迁移侧（backfill）：`--force` 全量重算，单事务 DELETE+INSERT，崩溃回滚旧向量保留；
+3. 读取侧（semantic_search / 聚类）：检索前断言 `COUNT(DISTINCT model) = 1`，混合空间拒绝执行。
 
 ---
 
@@ -164,6 +214,8 @@
 | 时间趋势图 | 按 `A_posted_at` 维度聚合 `C_sentiment` |
 | 主题分布图 | `C_topic` TOP N |
 | 词云 | `A_content` 文本经过 jieba 分词 |
+| 语义检索（AI） | `D_embedding_*`（`src.analyzers.embedder.semantic_search`） |
+| 语义聚类（"其他"治理） | `D_embedding_vector` + 余弦距离 |
 | 置信度筛选 | `C_sentiment_confidence` 阈值（推荐 0.6 以上显示） |
 | 数据来源标注 | `B_platform` 显示 + `B_extra_json` 按平台差异化展开 |
 | 重新分析触发 | 后端逻辑字段，**不显示在原型** |
@@ -179,6 +231,30 @@
 | `A_author` 昵称字段缺失 | 国内用户不熟悉 Steam64 ID，列表页看起来冷 | 🟡 中（注意隐私边界） |
 | 评论原文截断长度 | 当前 200 字符上限可能丢失长评的情感 | 🟢 低 |
 | 多语言字段 | 当前只有 `A_language`，没有语义化"已翻译"的字段 | 🟢 低 |
+
+---
+
+## 📺 B 站弹幕表（danmaku · 2026-08-13 新增）
+
+> B 站独有资产：观看当下的即时情绪，带视频内时间戳。规格：`BILIBILI_COLLECTION.md` 3.3 节。
+
+| 字段 | 类型 | 来源 | 说明 |
+|---|---|---|---|
+| `id` | 整数 | 自增 | 主键 |
+| `video_id` | 字符串 | 派生 | `bilibili:video:{aid}`，对齐 `B_target_id` |
+| `cid` | 字符串 | view 接口 | 分 P 弹幕池 id |
+| `content` | 文本 | `list.so` XML | 弹幕文本 |
+| `progress` | 整数 | `p` 属性第 1 段 | **视频内时间点（秒）**——情绪-内容时间轴 |
+| `mode` | 整数 | `p` 属性第 2 段 | 弹幕类型（1=滚动 4=底部 5=顶部 7=高级） |
+| `color` | 整数 | `p` 属性第 4 段 | 弹幕颜色（可作情绪粗信号） |
+| `user_hash` | 字符串 | `p` 属性第 7 段 | 用户匿名 hash（不落真实身份） |
+| `posted_at` | 时间 | `p` 属性第 5 段 | 弹幕发送时间（与 progress 双时间戳） |
+| `fetched_at` | 时间 | 入库时刻 | 采集时间 |
+
+**实测结论（2026-08-13）**：
+- `x/v1/dm/list.so` 返回的是 B 站**防抖抽稀**后的代表性弹幕（实测 ~1200 条，progress 覆盖全程 0-357s 均匀分布），天然符合"弹幕永远抽样"策略，无需额外分片
+- **编码坑**：必须 `content.decode('utf-8')` 解析，`r.text` 会因响应头缺 charset 按 latin-1 解码产生乱码
+- 弹幕**不进 LLM 打标链路**（成本红线）：用词典匹配 + 时间窗聚合生成"情绪曲线"辅助信号
 
 ---
 

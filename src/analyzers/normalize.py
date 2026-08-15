@@ -30,7 +30,13 @@ MEME_STRONG_KEYWORDS = [
     "沙雕", "表情包", "段子", "发癫", "逆天",
 ]
 # 整体评价 判定：无具体场景的总体夸/贬（命中才归整体评价）
-OVERALL_POSITIVE = ["好玩", "神作", "太棒了", "推荐", "不错", "好评", "绝了", "神", "yyds", "nb", "NB", "牛", "垃圾", "烂", "粪作", "毁我", "差评", "不行", "拉胯", "糟糕", "烂作", "拉", "答辩", "史诗", "天花板", "经典", "完美", "love", "god", "perfect", "great", "amazing", "awesome", "nice", "good", "excellent", "best", "trash", "shit", "worst", "bad", "terrible", "awful"]
+# 注（2026-08-15 评审）：旧名 OVERALL_POSITIVE 有歧义（列表混含夸/贬词），拆分为
+# OVERALL_PRAISE / OVERALL_CRITICIZE 两个列表；OVERALL_POSITIVE 保留为兼容别名
+# （match_l3 只做成员判断，行为不变）。
+# ⚠️ scripts/dev/analyze_danmaku.py 依据这两个列表做情绪正负粗判，勿混淆成员归属。
+OVERALL_PRAISE = ["好玩", "神作", "太棒了", "推荐", "不错", "好评", "绝了", "神", "yyds", "nb", "NB", "牛", "史诗", "天花板", "经典", "完美", "love", "god", "perfect", "great", "amazing", "awesome", "nice", "good", "excellent", "best"]
+OVERALL_CRITICIZE = ["垃圾", "烂", "粪作", "毁我", "差评", "不行", "拉胯", "糟糕", "烂作", "拉", "答辩", "trash", "shit", "worst", "bad", "terrible", "awful"]
+OVERALL_POSITIVE = OVERALL_PRAISE + OVERALL_CRITICIZE  # 兼容别名（成员集合与旧版一致）
 
 
 
@@ -145,8 +151,8 @@ def match_l3(
     2. 关键词包含匹配：遍历所有 L3 的关键词，统计命中数
        - 排除兜底标签（整体评价/整活/梗）
        - 命中数 >0 的最高分标签胜出（长关键词加权）
-    3. 无具体场景总体夸/贬（OVERALL_POSITIVE 命中且无其他匹配）→ 整体评价
-    4. 兜底：短短语（<=12 字）且无任何具体关键词命中 → 整体评价
+    3. 无具体场景总体夸/贬（OVERALL_PRAISE / OVERALL_CRITICIZE 命中且无其他匹配）→ 整体评价
+    4. 兜底：短中短语（<=20 字，与下方实现一致）且无任何具体关键词命中 → 整体评价
        （短评多为整体感受；长评需谨慎，可能是有具体话题但词典没覆盖）
     5. 都未命中 → None（观点留空）
     """
@@ -241,7 +247,7 @@ if __name__ == "__main__":
         ("和朋友开黑", "组队"),
         ("坟头草是绿的也算绿玩吗", "整活/梗"),
         ("垃圾游戏", "整体评价"),
-        ("好玩", "整体评价"),
+        ("好玩", "核心玩法"),  # 词典已将"好玩"列为核心玩法关键词（与 l3_definitions.yaml 对齐，2026-08-15）
         ("2000小时留念", None),
     ]
     ok = 0

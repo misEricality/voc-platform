@@ -135,6 +135,24 @@
 
 **唯一键约束**：`unique(clean_id, prompt_version, model)` —— 同一文本在不同 prompt/模型下可有多份标注，支持对比
 
+### 表 4.5（实现补充 · 2026-08-11）：`comment_embeddings` （语义向量 · 衍生数据）
+
+> **存什么**：每条评论的语义向量（本地 bge-small-zh-v1.5，512 维）。
+> 当前实现库 `data/voc.db` 的第 3 张实体表（与 `comments` / `comment_opinions` 同库）。
+> **衍生数据属性**：向量可由评论原文随时全量重建 → 换模型 = `backfill_embeddings.py --force` 清表重算，单事务原子切换。
+
+| 字段 | 类型 | 业务含义 |
+|---|---|---|
+| `comment_id` | int (PK, 1:1) | 关联 `comments.id` |
+| `model` | str | **模型标识（含小版本号）**，单空间约束：表内只允许一种模型 |
+| `dim` | int | 向量维度（512） |
+| `vector` | BLOB | L2 归一化 float32 数组（内积 = 余弦） |
+| `created_at` | datetime | 编码时间 |
+
+**三道防线**（详见 [DATA_FIELDS.md D 类节](./DATA_FIELDS.md)）：写入侧模型不一致跳过告警 / 迁移侧 `--force` 原子重算 / 读取侧单空间断言拒绝混合检索。
+
+**规模基线**：512×4B≈2KB/条，1 万条约 20MB；SQLite BLOB 无压力，全量余弦检索在 5 万条内均为毫秒级（内存矩阵），暂不需要向量数据库（faiss / sqlite-vec 等数据量 >5 万再引入）。
+
 ### 表 5（辅助）：`pipeline_runs` （**可观测性**）
 
 > **存什么**：每次跑 `python -m src.pipeline ...` 的元数据。
@@ -231,6 +249,8 @@ data/
 [清洗] → cleaned_comments
    ↓ 触发 L3
 [标注] → tagged_comments
+   ↓ 并行（2026-08-11 起）
+[向量化] → comment_embeddings        # 语义向量，与打标解耦，仅采集入库后即执行
    ↓ 出
 [导出视图 L4]
    ↓ 写入

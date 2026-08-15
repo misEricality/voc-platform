@@ -18,9 +18,9 @@ from src.collectors.steam import SteamCollector
 
 
 def test_day_range_calculation():
-    """Steam API 的 day_range 参数行为验证：
-    - filter="recent" 时 day_range 被忽略（仅传 0）
-    - filter="all" 时 day_range 才生效
+    """day_range 参数行为验证：
+    day_range 语义未经受控验证（见 steam.py 注释），项目对任何 filter 恒传 0；
+    时间窗统一由应用层 posted_after / posted_before 实现。
     """
     collector = SteamCollector.__new__(SteamCollector)
     collector.session = MagicMock()

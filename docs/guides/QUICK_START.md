@@ -64,7 +64,13 @@ python -m src.pipeline --platform steam --target 730 --count 50 --skip-analysis
 [INFO]   采集到 50 条原始评论
 [INFO] 写入数据库...
 [INFO]   处理 50 条
+[INFO]   [2.5] 向量化 50 条（模型 BAAI/bge-small-zh-v1.5，dim=512）   # 若已安装 sentence-transformers
 ```
+
+> 💡 **语义向量化（可选）**：pipeline 会自动为新增评论生成语义向量
+> （本地 bge-small-zh，零成本）。首次运行需下载模型（约 95MB）。
+> 存量数据回填 / 换模型重算：`python scripts/ops/backfill_embeddings.py --force`
+> 未安装 `sentence-transformers` 时自动跳过，不影响主流程。
 
 ### 4.2 完整流程（采集 + 分析）
 
@@ -79,6 +85,18 @@ streamlit run app.py
 ```
 
 浏览器访问 http://localhost:8501，看到仪表盘。
+
+### 4.4 采集 B 站视频评论（可选，v0.3）
+
+```bash
+# target 传 B 站视频 BV 号；采集后自动入库 + 向量化 + 打标
+python -m src.pipeline --platform bilibili --target BV1UpwaeNESx --count 1000
+```
+
+> 💡 **B 站采集要点**：
+> - 普通视频（评论 < 2000）无需登录；**热门视频评论需在 `.env` 配 `BILIBILI_SESSDATA`**（浏览器登录后从 Cookie 复制），否则匿名只返回第 1 页 3 条
+> - 弹幕随评论一并采集（时间轴分片，≤3000 条）
+> - 完整规格见 [docs/architecture/BILIBILI_COLLECTION.md](../architecture/BILIBILI_COLLECTION.md)
 
 ## 常见问题
 

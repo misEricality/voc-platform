@@ -57,7 +57,7 @@ class SteamCollector(BaseCollector):
         *,
         max_count: int = 100,
         language: str | None = "schinese",
-        filter: str = "recent",  # 默认改为 "recent"，因为 day_range 仅在 recent 时生效
+        filter: str = "recent",  # 时间倒序（默认）；时间窗走应用层过滤（见下方 day_range 说明）
         review_type: str = "all",  # 兼容旧参数（已弃用，使用 filter）
         fetch_metadata: bool = False,
         posted_after: datetime | None = None,
@@ -73,19 +73,17 @@ class SteamCollector(BaseCollector):
                 **项目顶层原则**：Steam 平台只采集中文评论，所以默认 'schinese'。
                 如需临时拉英文等其他语言，请显式传 language='english' 等。
             filter: Steam 排序方式
-              - ``"recent"``：按创建时间倒序（**首次采集默认**，配合 day_range 限制时间窗口）
+              - ``"recent"``：按创建时间倒序（**首次采集默认**）
               - ``"updated"``：按更新时间倒序
-              - ``"all"``：按 helpfulness 排序（**day_range 会被忽略**，避免时间窗失效）
+              - ``"all"``：按 helpfulness 排序
             ⚠️ 重要：如果不传 posted_after / posted_before 且使用 filter="all"，
             会拉取游戏全量评论（按 helpfulness 排序），可能非常巨大。
             review_type: 兼容旧字段，已弃用，合并到 filter
             fetch_metadata: 是否回采点赞数与回复数。
                 业务规则：**首次入库时必须传 False**（点赞数=0 无意义），
                 评论发布满 7 天后由 scripts/refresh_likes.py 一次性回采时传 True。
-            posted_after: 起始时间过滤（仅采集该时间之后的评论，Steam API 用 day_range 实现）。
-                - day_range 范围 0-365（天），0 = 全部时间。
-                - 当 posted_after 设了未来时间（如明天），会被忽略。
-                - 当 posted_after 设了过去时间，最近 day_range 天。
+            posted_after: 起始时间过滤（仅采集该时间之后的评论，应用层实现；
+                day_range 语义未受控验证，项目恒传 0，不依赖 Steam 自身时间窗）。
             posted_before: 截止时间过滤（应用层，Steam API 不直接支持）。
                 - 拉一批后过滤 timestamp_created < posted_before 的不 yield。
 
@@ -100,17 +98,12 @@ class SteamCollector(BaseCollector):
         cursor = "*"
         fetched = 0
 
-        # 计算 day_range（向下兼容 Steam API）：取 posted_after 距今天数
-        # day_range 范围 1-365；None 表示不限制（传 0）
-        # 重要发现：Steam API 的 day_range 参数**只对 filter="all" 生效**！
-        # filter="recent" 下 day_range 被忽略，会返回游戏全量评论（按时间排序）。
-        # 所以时间过滤必须用 posted_after / posted_before（应用层）实现。
-        #
-        # Steam 的"helpful 评论 day_range 4 天"语义如下：
-        # - filter="all" + day_range=N → 仅返回最近 N 天内 Steam 标记的"helpful"评论
-        # - filter="recent" + day_range=N → **不生效**，返回全部评论按时间排序
-        # - filter="all" + day_range=0 → 全量评论按 helpfulness 排序
-        day_range: int = 0  # 保留参数（始终传 0），避免 Steam 默认值语义不明
+        # ⚠️ day_range 语义说明（2026-08-15 架构评审整理）：
+        # 项目历史上对 day_range 的生效条件存在两种相互矛盾的记载
+        # （"仅 recent 生效" vs "仅 all 生效"），两者均未经受控实验验证。
+        # 因此不依赖 Steam 自身时间窗：恒传 0，时间过滤统一用
+        # posted_after / posted_before 在应用层实现（见 _passes_time_filter）。
+        day_range: int = 0  # 恒传 0（语义未验证，不依赖）
 
         # Steam API 翻页已知 bug：跨页时偶尔返回已见过的 recommendationid。
         # 为避免下游入库 UNIQUE 冲突，本地用 seen 集合去重。

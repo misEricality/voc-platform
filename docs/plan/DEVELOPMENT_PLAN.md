@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-08-07
+> **最后更新**：2026-08-15
 
 ---
 
@@ -93,20 +93,21 @@
 
 ---
 
-## 📊 三、当前数据快照（2026-08-07）
+## 📊 三、当前数据快照（2026-08-15）
 
 | 指标 | 数值 | 业务解读 |
 |---|---|---|
-| 总评论数 | 2067 条 | CS2 全量重打 + 6 款游戏 |
-| 情感分析覆盖 | **2067/2067（100%）** | ✅ 方案4 全量重打完成（`reanalyze_all.py`） |
-| 观点级标注 | 295 条 | `comment_opinions` 表（程序匹配到的观点短语） |
-| 已支持游戏 | 6 款 | 黑神话悟空 / 巫师3 / 文明6 / 底特律 / 光与影 33号远征队 / 星际拓荒 / CS2 |
+| 总评论数 | **3073 条** | Steam 2067（6 款游戏）+ B站 1006（BV1UpwaeNESx 实测落库） |
+| 情感分析覆盖 | **3034/3073（98.7%）** | ✅ 方案4 打标（Steam 重打 + B站 新入库即打标）；余 39 条待分析 |
+| 观点级标注 | 5212 条 | `comment_opinions` 表（程序匹配到的观点短语） |
+| 语义向量覆盖 | 1021 条（单模型） | `comment_embeddings` 表（bge-small-zh-v1.5；Steam 存量 2067 待回填） |
+| 已支持游戏/视频 | 6 款游戏 + 1 条视频 | Steam 6 款 + B站 BV1UpwaeNESx |
 | 正向 / 负向 / 中性 | 见 DB | 按核心观点情感聚合 |
 | 主题 TOP1 | 见 DB | L1-L3 三级标签（L1 7 / L2 28 / L3 128） |
 | 部署方式 | 本地 Streamlit | 在内网/笔记本即可跑 |
-| 平台覆盖 | Steam 1 家（6 款游戏） | 平台单一，主扩展点 |
+| 平台覆盖 | **Steam + B站（2 家）** | 微博为下一主扩展点 |
 | 数据存储 | SQLite 单文件（data/voc.db） | 增量 7 天后回采机制 |
-| 远端 GitHub 状态 | 推送至 commit `ca04681` | workflow 文件仍缺失 |
+| 远端 GitHub 状态 | 推送至 commit `81fb045` | 本次 B站/向量化工作未提交 |
 
 ---
 
@@ -173,6 +174,25 @@
 
 ---
 
+### ✅ P2.5 · 语义向量化基础层（已完成 2026-08-11）
+
+**业务目标**：为语义检索 / 聚类（"其他"治理）/ 观点去重提供基础设施——让平台具备"按语义找评论"的能力，而非仅靠关键词/标签。
+
+**交付物（已完成）**：
+- `src/analyzers/embedder.py`：本地 bge-small-zh-v1.5（512 维，零 API 成本）+ 单例加载 + `semantic_search` 语义检索
+- `src/storage/db.py`：`comment_embeddings` 表（model/dim/vector BLOB）+ 仓储方法
+- `src/pipeline.py`：[2.5] 入库后自动向量化（与打标解耦，`--skip-analysis` 也执行；依赖缺失自动跳过）
+- `scripts/ops/backfill_embeddings.py`：增量回填（断点续跑）+ `--force` 全量重算（单事务原子切换）
+- 换模型三防线：写入侧模型不一致跳过告警 / 迁移侧 `--force` 重算 / 读取侧单空间断言
+- `tests/test_embedding.py`：pipeline 向量化集成测试（新增后共 10 例：9 通过 + 1 环境依赖跳过）
+
+**后续（待排期）**：
+- 存量 2067 条全量回填（`backfill_embeddings.py` 一次跑完，约几分钟）
+- 仪表盘语义搜索框（v2）
+- 「其他」兜底桶已升至 2032 条 / 67.0%（topic 口径，2026-08-15 实测；观点口径 62.4%，趋势恶化）→ 匹配层语义匹配升级 + embedding 聚类治理（当前数据最大痛点）
+
+---
+
 ### 🥈 P3 · 多目标横向对比（2-3 小时）
 
 **业务目标**：在一个仪表盘里同时看到"黑神话 vs 巫师3 vs 文明6 vs CS2" 等 6 款游戏的舆情对比。
@@ -201,18 +221,23 @@
 
 ---
 
-### 🥉 P5 · B 站视频评论接入（1-2 天）
+### 🥉 P5 · B 站视频评论接入（采集器已完成 2026-08-13，跨平台仪表盘待做）
 
 **为什么**：调研报告首推的扩展数据源。
 
 **业务目标**：把"游戏评测"扩展到"B 站游戏区 UP 主评测视频评论区 + 弹幕"。
 
+**✅ 状态**：`src/collectors/bilibili.py` 已实现并实测——BV1UpwaeNESx 全链路落库（评论 1006 条），规格见 [BILIBILI_COLLECTION.md](../architecture/BILIBILI_COLLECTION.md)。剩余交付物：跨平台仪表盘对比视图。
+
+**✅ 采集策略已定稿（2026-08-13）**：接口实测（probe_bilibili.py，view/reply/dm/tag 均 code=0）、数据模型映射（comments/danmaku/targets）、采样策略（7 天稳态快照 / 阈值 T=2,000 全量或 K=1,000 抽样 / 弹幕时间轴分片 ≤3,000 / 默认单次采集）已全部写入规格文档：
+> 📄 [architecture/BILIBILI_COLLECTION.md](../architecture/BILIBILI_COLLECTION.md)（开发窗口按此执行，含字段级映射与验收标准）
+
 **交付物**：
-- 接入 B 站开放平台官方 API（需要开发者申请）
-- 新增 `src/collectors/bilibili.py`
+- 接入 B 站公开 Web 接口（非开放平台，免申请；风控参数见规格文档第二节）
+- 新增 `src/collectors/bilibili.py`（基于 probe_bilibili.py 骨架 + 阈值分支 + 弹幕分片）
 - 跨平台仪表盘，能在同一个图里看"Steam 评测 vs B 站弹幕" 的情感差异
 
-**风险点**：B 站开放平台申请门槛不算低，需要资料 + 工单
+**风险点**：风控参数演进（WBI/bili_ticket 盐值会更新）；超热门视频需登录 cookie；频率必须克制（规格文档 4.5 节）。
 
 ---
 
@@ -226,8 +251,7 @@
 - 解决遗留的 PAT `workflow` scope 问题（在 GitHub 网页手动创建 workflow 也行）
 
 **前依赖**：
-- 远端 GitHub workflow 文件缺失（见底部阻塞项）
-- 当前 `.github/workflows/daily-collect.yml` 在本地仓库中，但上次推送因 PAT 缺 `workflow` scope 失败
+- ✅ 远端已含 workflow 文件（自 `81fb045` 起）。下次**修改并推送** `daily-collect.yml` 时，PAT 仍需带 `workflow` scope（或走网页端编辑），见阻塞表
 
 ---
 
@@ -278,11 +302,16 @@
 | 阻塞项 | 解决方式 | 阻塞了谁 |
 |---|---|---|
 | 🔴 **voc.db 全量重打（方案4）** | ~~跑 `reanalyze_all.py` 全量~~ ✅ **已完成（2026-08-06，2067/2067 已标注）** | ~~全部仪表盘迭代~~ |
-| GitHub 远端 workflow 缺失 | 在 GitHub 网页手动创建 `.github/workflows/daily-collect.yml`，或扩展 PAT 加 `workflow` scope | P6 自动化任务 |
+| ~~GitHub 远端 workflow 缺失~~ | ✅ 已解决（远端 `81fb045` 已含 workflow 文件）。下次**推送 workflow 变更**时 PAT 需带 `workflow` scope（或网页端编辑） | P6 自动化任务 |
 | Steam Web API key 未申请到 | 安装 Steam 手机 App → 启用 Steam Guard → 1 分钟搞定，**不阻塞任何主线** | 仅需要更大数据量时 |
 | B 站开放平台未申请 | 提交申请即可（个人开发者 1-3 天审核） | P5 B 站接入 |
 | ~~`scripts/ops/refresh_likes.py` 未实现~~ | ✅ **已实现（2026-08-07）**：回采 ≥7 天评论的 likes/replies/开发者回复 | P4 文档化收尾 |
-| "整体评价"占比偏高（~73%） | 收紧 match_l3 兜底逻辑（≤20字→改短） | 仪表盘洞察力 |
+| 🔴 "其他/整体评价"占比恶化至 67%（2026-08-15 实测） | 匹配层升级：phrase→L3 定义语义匹配（复用 bge 向量）+ 收紧 ≤20 字兜底 + 黄金集回归门禁 | 仪表盘洞察力（核心价值） |
+| 🔴 refresh_likes.py 翻页 bug（2026-08-15 评审发现） | 循环内 collect() 每次从头翻页，只覆盖最新 ~100 条且 matched 重复计数 → 改为真正游标续翻 | Steam likes 回采从未生效（全库 likes 为 NULL） |
+| 🟠 时区混用（2026-08-15 评审发现） | posted_at 存本地时间（fromtimestamp），fetched_at/refreshed_at 为 UTC → 统一 tz-aware UTC | "≥7天"判断有 8h 偏差；CI（UTC 主机）与本地采集数据不可比 |
+| 🟠 打标双主链路分叉（2026-08-15 评审发现） | pipeline 逐条调 LLM（约 10x 成本），批量+三轮收敛只在 reanalyze_all.py → 收口进主链路 | 成本与可维护性 |
+| 🟡 CI 无 pytest | GitHub Actions 增加 test job；拆分 requirements 避免 CI 安装 torch | 工程护栏 |
+| 🟡 分析结果无版本溯源 | comments 增加 analyzer_version（模型+prompt 版本） | 换模型/prompt 后存量数据无法对账 |
 | 标注算法已切换方案4 | 见 [ANNOTATION_PIPELINE.md](../architecture/ANNOTATION_PIPELINE.md) | 文档已更新 |
 
 ---
@@ -300,6 +329,7 @@
   - `filter="recent"` + `day_range=N` → **不生效**，返回游戏全量评论按时间排序
   - `filter="all"` + `day_range=N` → 仅返回最近 N 天内 Steam 标记的"helpful"评论
   - **不能依赖 Steam API 自身的时间窗过滤**，必须用应用层 `posted_after / posted_before` 实现
+    - （2026-08-15 评审注：day_range 的生效条件实际从未受控验证，且项目内两处历史记载相互矛盾；"不依赖 Steam 时间窗、恒传 0 + 应用层过滤"的结论仍然成立，详见 `src/collectors/steam.py` 注释）
 - ⚠️ **Steam API 翻页 bug**：跨页时偶尔返回已见过的 `recommendationid`，必须用 `seen_source_ids` 去重
 - ⚠️ **冷启动 likes=0 误导**：评论刚发布时点赞数=0，与"无人认可"语义不同，必须用 `NULL=未回采` 区分
 
@@ -327,7 +357,7 @@
 | M4（基础版） | smoke test + pytest 全绿 | ✅ |
 | M5（v0.1） | 完整链路跑通，仪表盘可演示（50 条 CS2） | ✅ |
 | **M6（v0.2 当前）** | **数据采集生命周期管理 + 6 款游戏批量采集 + 7 天后回采机制** | ✅ |
-| M7 · v0.3 | 主题分类精细 + 词云图，仪表盘有"洞察力" | 🔴 阻塞 P0 |
+| M7 · v0.3 | 主题分类精细（L1-L3 三级标签）+ 词云 + 语义向量化（P2.5），仪表盘有"洞察力" | ✅ |
 | M8 · v0.4 | 多目标横向对比（6 款游戏同看） | 待 M7 |
 | M9 · v0.5 | 多平台覆盖（Steam + B 站） | 待 M8 |
 | M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | 待 M9 |
@@ -353,4 +383,4 @@
 
 > 💡 **记住**：本项目核心价值 = 边学边做 + 能看到玩家真实声音。**不要为了完整功能而忘了这个核心价值**。
 >
-> 🎯 **当前最关键的一步**：把 772 条评论跑分析，让仪表盘亮起来。成本不到 ¥5，但能解锁后续所有 P1+ 任务。
+> 🎯 **当前最关键的一步**：治理标注匹配层（把「其他」占比从 67% 打下来）+ 修复 refresh_likes 翻页 bug——先巩固存量数据价值，再扩新平台。
