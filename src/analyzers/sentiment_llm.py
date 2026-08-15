@@ -88,14 +88,17 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             "base_url_env": "DEEPSEEK_BASE_URL",
             "default_base_url": "https://api.deepseek.com/v1",
             "model_env": "DEEPSEEK_MODEL",
-            "default_model": "deepseek-chat",
+            "default_model": "deepseek-v4-flash",
+            # V4-Flash 默认 thinking 开启（此时 temperature 无效）→ 标注任务显式禁用，保快+稳
+            "extra_body": {"thinking": {"type": "disabled"}},
         },
         "qwen": {
             "api_key_env": "QWEN_API_KEY",
             "base_url_env": "QWEN_BASE_URL",
-            "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            # Token Plan 个人版（千问AI平台）：OpenAI 兼容端点
+            "default_base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
             "model_env": "QWEN_MODEL",
-            "default_model": "qwen-turbo",
+            "default_model": "qwen3.7-plus",
         },
         "glm": {
             "api_key_env": "GLM_API_KEY",
@@ -118,6 +121,8 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
         self.api_key = os.getenv(cfg["api_key_env"])
         self.base_url = os.getenv(cfg["base_url_env"], cfg["default_base_url"])
         self.model = os.getenv(cfg["model_env"], cfg["default_model"])
+        # provider 级额外请求体（如 deepseek 的 thinking 禁用）
+        self.extra_body = cfg.get("extra_body")
 
         if not self.api_key:
             raise ValueError(
@@ -170,7 +175,7 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             chunk = texts[start : start + batch_size]
             prompt = build_batch_user_prompt(chunk, strict=strict)
             try:
-                resp = self.client.chat.completions.create(
+                kwargs: dict = dict(
                     model=self.model,
                     messages=[
                         {"role": "system", "content": self.system_prompt},
@@ -180,6 +185,10 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
                     response_format={"type": "json_object"},
                     timeout=60,
                 )
+                # provider 级额外参数（如 deepseek 禁用 thinking，使 temperature 生效）
+                if self.extra_body:
+                    kwargs["extra_body"] = self.extra_body
+                resp = self.client.chat.completions.create(**kwargs)
                 content = resp.choices[0].message.content
                 parsed = self._parse_batch(content, batch_size=len(chunk))
             except Exception as e:

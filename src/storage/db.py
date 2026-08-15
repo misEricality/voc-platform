@@ -19,9 +19,11 @@ from sqlalchemy import (
     Text,
     Float,
     Boolean,
+    LargeBinary,
     Index,
     create_engine,
     select,
+    delete,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
@@ -166,6 +168,71 @@ class CommentOpinion(Base):
         }
 
 
+class CommentEmbedding(Base):
+    """评论向量表：每条评论一个 embedding 向量（衍生数据，可随时全量重建）
+
+    设计要点（2026-08-11）：
+    - 独立表 + model 字段：换 embedding 模型 = 清表全量重算（衍生数据，重建即修复），
+      因此 model 字段强制记录，禁止新旧模型向量混存。
+    - vector 存 L2 归一化后的 float32 数组（tobytes()），查询用内积 = 余弦。
+    - 单空间约束：任意时刻表内只允许一种 model（由迁移脚本 --force 与读取侧断言保证）。
+    - 规模：512 维 × 4B ≈ 2KB/条，1 万条约 20MB，SQLite BLOB 无压力。
+    """
+
+    __tablename__ = "comment_embeddings"
+
+    comment_id = Column(Integer, primary_key=True)  # 1:1 → comments.id
+    model = Column(String(64), nullable=False, index=True)  # 如 BAAI/bge-small-zh-v1.5
+    dim = Column(Integer, nullable=False)  # 512
+    vector = Column(LargeBinary, nullable=False)  # float32 tobytes()
+    created_at = Column(DateTime, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<CommentEmbedding comment_id={self.comment_id} model={self.model} dim={self.dim}>"
+
+
+class Danmaku(Base):
+    """B 站弹幕表（2026-08-13 · BILIBILI_COLLECTION.md 规格）
+
+    设计要点：
+    - video_id 对齐 comments.target_id 格式（'bilibili:video:{aid}'）
+    - 双时间戳：progress（视频内秒点，对齐内容段落）+ posted_at（发送时间，区分早期/后期）
+    - user_hash 为接口匿名 hash，不落真实身份（合规）
+    - 弹幕不进 LLM 打标链路（成本红线），仅做词典匹配 + 时间窗聚合
+    """
+
+    __tablename__ = "danmaku"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String(64), nullable=False, index=True)  # bilibili:video:{aid}
+    cid = Column(String(32))  # 分 P 弹幕池 id
+    content = Column(Text, nullable=False)
+    progress = Column(Integer)  # 视频内时间点（秒）
+    mode = Column(Integer)  # 弹幕类型（1=滚动 4=底部 5=顶部 7=高级）
+    color = Column(Integer)  # 弹幕颜色（可作情绪粗信号）
+    user_hash = Column(String(32))  # 用户匿名 hash
+    posted_at = Column(DateTime)  # 弹幕发送时间
+    fetched_at = Column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_danmaku_video", "video_id", "progress"),
+        Index("ux_danmaku_dedup", "video_id", "progress", "content", "user_hash"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "video_id": self.video_id,
+            "cid": self.cid,
+            "content": self.content,
+            "progress": self.progress,
+            "mode": self.mode,
+            "color": self.color,
+            "user_hash": self.user_hash,
+            "posted_at": self.posted_at.isoformat() if self.posted_at else None,
+        }
+
+
 def init_db(db_url: str | None = None) -> tuple:
     """初始化数据库
 
@@ -261,6 +328,9 @@ class CommentRepository:
         # target_id 兜底：使用 source_id 中的 appid（steam场景）
         if raw.platform == "steam" and raw.extra.get("appid"):
             comment.target_id = f"steam:{raw.extra['appid']}"
+        # bilibili：target_id = bilibili:video:{aid}
+        if raw.platform == "bilibili" and raw.extra.get("aid"):
+            comment.target_id = f"bilibili:video:{raw.extra['aid']}"
         self.session.add(comment)
         return comment
 
@@ -400,4 +470,168 @@ class CommentRepository:
         if platform:
             stmt = stmt.where(Comment.platform == platform)
         stmt = stmt.order_by(Comment.analyzed_at.desc()).limit(limit)
+        return list(self.session.execute(stmt).scalars())
+
+    # ==================== 向量（embedding）相关 ====================
+
+    def save_embeddings(self, ids: list[int], vectors, model: str, dim: int) -> int:
+        """批量保存/覆盖评论向量（comment_id 为键，重复执行 = 幂等覆盖）
+
+        Args:
+            ids: 评论 id 列表（与 vectors 行一一对应）
+            vectors: (N, dim) float32 数组（已 L2 归一化）
+            model: embedding 模型标识（如 BAAI/bge-small-zh-v1.5）
+            dim: 向量维度
+
+        Returns:
+            写入行数
+        """
+        import numpy as np
+
+        rows = 0
+        for cid, vec in zip(ids, vectors):
+            blob = np.asarray(vec, dtype=np.float32).tobytes()
+            stmt = select(CommentEmbedding).where(CommentEmbedding.comment_id == cid)
+            exist = self.session.execute(stmt).scalar_one_or_none()
+            if exist:
+                exist.model, exist.dim, exist.vector = model, dim, blob
+                exist.created_at = _utcnow()
+            else:
+                self.session.add(
+                    CommentEmbedding(comment_id=cid, model=model, dim=dim, vector=blob)
+                )
+            rows += 1
+        self.session.commit()
+        return rows
+
+    def replace_all_embeddings(self, ids: list[int], vectors, model: str, dim: int) -> int:
+        """全量替换向量（--force 迁移用）：单事务 DELETE 全部 + INSERT 全部
+
+        原子性：全部向量先编码到内存（调用方负责），本方法内一个事务完成替换；
+        SQLite 事务中途失败自动回滚，旧向量保留 → 任意时刻表内只有完整的一种模型。
+        """
+        self.session.execute(delete(CommentEmbedding))
+        self.session.flush()
+        return self.save_embeddings(ids, vectors, model, dim)
+
+    def find_missing_embedding_ids(
+        self,
+        platform: str | None = None,
+        target_id: str | None = None,
+        limit: int = 100,
+    ) -> list[int]:
+        """找还没有向量的评论 id（增量向量化 / 断点续跑用）"""
+        stmt = (
+            select(Comment.id)
+            .outerjoin(CommentEmbedding, CommentEmbedding.comment_id == Comment.id)
+            .where(CommentEmbedding.comment_id.is_(None))
+        )
+        if platform:
+            stmt = stmt.where(Comment.platform == platform)
+        if target_id:
+            stmt = stmt.where(Comment.target_id == target_id)
+        stmt = stmt.limit(limit)
+        return [r for (r,) in self.session.execute(stmt)]
+
+    def embedding_models_in_use(self) -> list[str]:
+        """表内已有的模型标识（单空间断言用；正常应 ≤1 种）"""
+        return [r for (r,) in self.session.execute(select(CommentEmbedding.model).distinct())]
+
+    def count_embeddings(self) -> int:
+        from sqlalchemy import func
+
+        return (
+            self.session.execute(select(func.count(CommentEmbedding.comment_id))).scalar()
+            or 0
+        )
+
+    # ==================== B 站弹幕（danmaku）相关 ====================
+
+    def save_danmaku(self, video_id: str, cid: str | None, items: list[dict]) -> int:
+        """批量写入弹幕（幂等去重：video_id+progress+content+user_hash 唯一）
+
+        Args:
+            video_id: 视频 target_id（'bilibili:video:{aid}'）
+            cid: 分 P 弹幕池 id
+            items: [{content, progress, mode, color, user_hash, posted_at}, ...]
+                posted_at 可为 datetime 或 unix 秒或 None
+
+        Returns:
+            新增条数
+        """
+        from datetime import datetime as _dt
+
+        inserted = 0
+        for it in items:
+            content = (it.get("content") or "").strip()
+            progress = it.get("progress")
+            if not content:
+                continue
+            user_hash = it.get("user_hash") or ""
+            # 去重查询（唯一键：video_id+progress+content+user_hash）
+            stmt = select(Danmaku).where(
+                Danmaku.video_id == video_id,
+                Danmaku.progress == progress,
+                Danmaku.content == content,
+                Danmaku.user_hash == user_hash,
+            )
+            if self.session.execute(stmt).scalar_one_or_none():
+                continue
+            # posted_at 归一化：unix 秒 → datetime；datetime 原样；None → None
+            posted = it.get("posted_at")
+            if isinstance(posted, (int, float)):
+                posted = _dt.fromtimestamp(posted)
+            elif isinstance(posted, str):
+                try:
+                    posted = _dt.fromtimestamp(float(posted))
+                except ValueError:
+                    posted = None
+            self.session.add(
+                Danmaku(
+                    video_id=video_id,
+                    cid=cid,
+                    content=content,
+                    progress=progress,
+                    mode=it.get("mode"),
+                    color=it.get("color"),
+                    user_hash=user_hash,
+                    posted_at=posted,
+                )
+            )
+            inserted += 1
+        self.session.commit()
+        return inserted
+
+    def count_danmaku(self, video_id: str | None = None) -> int:
+        from sqlalchemy import func
+
+        stmt = select(func.count(Danmaku.id))
+        if video_id:
+            stmt = stmt.where(Danmaku.video_id == video_id)
+        return self.session.execute(stmt).scalar() or 0
+
+    def load_embedding_matrix(self, model: str | None = None) -> tuple:
+        """全量加载向量矩阵（L2 归一化存储，内积 = 余弦）
+
+        Returns:
+            (matrix: np.ndarray (N, dim) float32, ids: list[int])
+            空表返回 (zeros((0,0)), [])
+        """
+        import numpy as np
+
+        stmt = select(CommentEmbedding)
+        if model:
+            stmt = stmt.where(CommentEmbedding.model == model)
+        rows = list(self.session.execute(stmt).scalars())
+        if not rows:
+            return np.zeros((0, 0), dtype=np.float32), []
+        matrix = np.frombuffer(
+            b"".join(r.vector for r in rows), dtype=np.float32
+        ).reshape(len(rows), rows[0].dim)
+        return matrix, [r.comment_id for r in rows]
+
+    def get_comments_by_ids(self, ids: list[int]) -> list[Comment]:
+        if not ids:
+            return []
+        stmt = select(Comment).where(Comment.id.in_(ids))
         return list(self.session.execute(stmt).scalars())

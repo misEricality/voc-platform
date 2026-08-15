@@ -37,7 +37,7 @@ class LocalSentimentAnalyzer(BaseAnalyzer):
         if not text or not text.strip():
             return AnalysisResult(
                 sentiment="neutral", sentiment_score=0.0, sentiment_confidence=0.0,
-                topic="其他", sub_topics=[], reasoning="空文本",
+                topic="其他", reasoning="空文本",
             )
 
         inputs = self.tokenizer(
@@ -65,7 +65,6 @@ class LocalSentimentAnalyzer(BaseAnalyzer):
             sentiment_score=float(score),
             sentiment_confidence=float(max(probs)),
             topic=None,  # 本地模型无主题分类能力
-            sub_topics=[],
             reasoning=f"local model: neg={neg_prob:.2f} pos={pos_prob:.2f}",
             raw={"neg_prob": neg_prob, "pos_prob": pos_prob},
         )

@@ -52,40 +52,45 @@ def get_conn(db_path: str) -> sqlite3.Connection:
 
 
 def fetch_all(
-    conn: sqlite3.Connection, only_with_opinions: bool = False
+    conn: sqlite3.Connection, only_with_opinions: bool = False, platform: str | None = None
 ) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
     """查评论 + opinions
 
     Args:
         only_with_opinions: True 时只查有 opinions 的评论（抽样验证场景）
+        platform: 限定平台（steam/bilibili）
     """
+    platform_filter = f"AND c.platform = '{platform}'" if platform else ""
     if only_with_opinions:
-        comments = list(conn.execute("""
+        comments = list(conn.execute(f"""
             SELECT c.id, c.platform, c.source_id, c.target_id,
                    json_extract(c.extra_meta, '$.name') as target_name,
                    c.content, c.sentiment, c.sentiment_score, c.sentiment_confidence,
                    c.topic, c.sub_topics, c.analyzed_at
             FROM comments c
-            WHERE c.analyzed_at IS NOT NULL
+            WHERE c.analyzed_at IS NOT NULL {platform_filter}
               AND EXISTS (
                   SELECT 1 FROM comment_opinions o WHERE o.comment_id = c.id
               )
             ORDER BY c.id
         """))
     else:
-        comments = list(conn.execute("""
+        comments = list(conn.execute(f"""
             SELECT c.id, c.platform, c.source_id, c.target_id,
                    json_extract(c.extra_meta, '$.name') as target_name,
                    c.content, c.sentiment, c.sentiment_score, c.sentiment_confidence,
                    c.topic, c.sub_topics, c.analyzed_at
             FROM comments c
-            WHERE c.analyzed_at IS NOT NULL
+            WHERE c.analyzed_at IS NOT NULL {platform_filter}
             ORDER BY c.id
         """))
-    opinions = list(conn.execute("""
-        SELECT id, comment_id, full_path, sentiment, quote, quote_start, quote_end
-        FROM comment_opinions
-        ORDER BY comment_id, id
+    opinions = list(conn.execute(f"""
+        SELECT o.id, o.comment_id, o.full_path, o.sentiment, o.sentiment_confidence,
+               o.quote, o.quote_start, o.quote_end
+        FROM comment_opinions o
+        JOIN comments c ON c.id = o.comment_id
+        WHERE 1=1 {platform_filter.replace('c.platform', 'c.platform')}
+        ORDER BY o.comment_id, o.id
     """))
     return comments, opinions
 
@@ -139,6 +144,7 @@ def build_opinions_rows(
             c["target_name"] or "",
             c["sentiment"] or "",
             op["sentiment"],          # 观点级情感
+            round(op["sentiment_confidence"] or 0, 2) if op["sentiment_confidence"] is not None else "",  # 观点级置信度
             op["full_path"],          # 完整路径 L1/L2/L3
             op["quote"],
             op["quote_start"],
@@ -187,7 +193,7 @@ def write_xlsx(out_path: Path, comments_rows: list, opinions_rows: list) -> None
     ws2 = wb.create_sheet("opinions")
     ws2.append([
         "opinion_id", "comment_id", "source_id", "target_id", "target_name",
-        "comment_sentiment", "opinion_sentiment", "full_path",
+        "comment_sentiment", "opinion_sentiment", "opinion_confidence", "full_path",
         "phrase", "quote_start", "quote_end", "content",
     ])
     for row in opinions_rows:
@@ -203,11 +209,14 @@ def main() -> None:
     parser.add_argument("--db", default="data/voc.db", help="数据库路径")
     parser.add_argument("--out", help="输出路径（默认 data/exports/voc_export_时间戳.xlsx）")
     parser.add_argument("--only-with-opinions", action="store_true", help="只导出有观点的评论（抽样验证）")
+    parser.add_argument("--platform", default=None, help="限定平台（steam/bilibili）")
     parser.add_argument("--open", action="store_true", help="导出后用默认程序打开")
     args = parser.parse_args()
 
     conn = get_conn(args.db)
-    comments, opinions = fetch_all(conn, only_with_opinions=args.only_with_opinions)
+    comments, opinions = fetch_all(
+        conn, only_with_opinions=args.only_with_opinions, platform=args.platform
+    )
 
     # 统计 opinion 数量
     opinion_counts: dict[int, int] = {}

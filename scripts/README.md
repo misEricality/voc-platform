@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-08-07
+> **最后更新**：2026-08-11
 
 ---
 
@@ -19,10 +19,13 @@ scripts/
 │   │                                   migrate_opinions_v2 / dump_opinions / export_xlsx
 │   │                                   write_completion_flag
 │   ├── 诊断对比                         diag_batch_vs_single / diag_prompt_a / verify_config
+│   ├── B 站探针（2026-08-13）           probe_bilibili / probe_bili_wbi / probe_bili_ticket
+│   │                                   diag_bili_412
 │   ├── 原型构建                         build_prototype / export_prototype_data
 │   └── E2E 验证                         e2e_lifecycle
 └── ops/                            ⚙️ 运维脚本
-    └── refresh_likes.py                ✅ 7 天后回采脚本（已实现）
+    ├── refresh_likes.py                ✅ 7 天后回采脚本（已实现）
+    └── backfill_embeddings.py          ✅ 评论向量回填 / 换模型全量重算（已实现）
 ```
 
 ---
@@ -35,6 +38,7 @@ scripts/
 |------|----------|------|
 | **smoke_test.py** | 每次新增模块后跑一次 | 项目骨架回归测试 |
 | **ops/refresh_likes.py** | 发布满 7 天的评论回采点赞/回复/开发者回复 | `python -m scripts.refresh_likes --platform steam --target <appid>` |
+| **ops/backfill_embeddings.py** | 评论语义向量回填 / 换模型全量重算 | `python scripts/ops/backfill_embeddings.py --limit 100`（增量）；`--force`（清空重算，单事务原子切换） |
 
 ### dev/ · 采集与验证
 
@@ -79,6 +83,19 @@ scripts/
 | `build_prototype.py` | 以 v1 备份为骨架构建原型 v2 |
 | `export_prototype_data.py` | 导出原型所需数据（单个 JSON） |
 | `export_cs2.py` | 导出 CS2 评论明细（按字段来源分级标注） |
+
+### dev/ · B 站探针与数据（2026-08-13）
+
+| 脚本 | 用途 |
+|------|------|
+| `probe_bilibili.py <bvid>` | B 站接口探针：view/tags/reply/弹幕全链路（可用作采集器骨架参考） |
+| `probe_bili_wbi.py` | WBI 签名算法实现（UP 主空间接口用；沙箱云 IP 实测 -412） |
+| `probe_bili_ticket.py` | bili_ticket 尝试（盐值已过时，仅参考） |
+| `diag_bili_412.py` | B 站 412 风控诊断（buvid + 完整头排查） |
+| `analyze_danmaku.py` | 弹幕词典匹配分析（弹幕不进 LLM 链路，成本红线）→ L1/L2/观点路径分布 |
+| `export_bilibili.py` | B 站评论/弹幕数据导出（`--out 路径` 指定输出） |
+
+> 正式采集器在 `src/collectors/bilibili.py`（已实现并实测：BV1UpwaeNESx 全链路落库，1006 条评论入库）。
 
 ---
 

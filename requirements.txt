@@ -16,6 +16,7 @@ pyyaml>=6.0                # 业务配置加载（config/topics/*.yaml）
 openai>=1.6.0              # 兼容 OpenAI 协议的客户端（用于 DeepSeek/Qwen/GLM）
 transformers>=4.36.0       # HuggingFace 模型（本地情感分析，可选）
 torch>=2.1.0               # PyTorch（本地推理，可选）
+sentence-transformers>=2.7  # 本地语义向量化（bge-small-zh，可选；缺省时 pipeline 跳过向量化）
 jieba>=0.42.1              # 中文分词
 
 # --- 可视化 ---

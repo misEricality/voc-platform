@@ -1,4 +1,8 @@
-"""VoC 重打标脚本（方案4：观点短语 → 程序匹配 + 三轮收敛）
+"""VoC 批量重打标 / 回填工具（方案4：观点短语 → 程序匹配 + 三轮收敛）
+
+定位：**主流程（src/pipeline.py）已收口方案4 落盘**，本脚本作为「重打/回填」工具：
+- 批量重打已有评论（10 条/批，比 pipeline 单条快 5-10 倍）
+- 换标注模型后全量回填（读 .env ANALYZER_PROVIDER，不硬编码）
 
 核心流程（每批次）：
 1. 批量 LLM 打标（10 条/批，LLM 自由提取观点短语 phrase）
@@ -7,14 +11,16 @@
 4. 3 轮后仍未匹配 → 该评论观点留空（topic 用 fallback）
 
 用法：
-    python scripts/dev/reanalyze_all.py --limit 200 --random   # 随机抽样 200（seed=42）
-    python scripts/dev/reanalyze_all.py                        # 全量
+    python scripts/dev/reanalyze_all.py --platform bilibili      # 仅重打 bilibili 未分析评论
+    python scripts/dev/reanalyze_all.py --limit 200 --random     # 随机抽样 200（seed=42）
+    python scripts/dev/reanalyze_all.py                          # 全量
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import random
 import sys
 import time
@@ -45,6 +51,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="VoC 重打标（方案4 三轮收敛）")
     parser.add_argument("--limit", type=int, default=None, help="最多重打条数（None=全量）")
     parser.add_argument("--random", action="store_true", help="随机抽样（配合 --limit）")
+    parser.add_argument(
+        "--platform", default=None,
+        help="仅处理指定平台（steam/bilibili）；默认只打未分析评论",
+    )
+    parser.add_argument(
+        "--include-analyzed", action="store_true",
+        help="重打已分析评论（全量重打统一版本，如换标注模型后回填）",
+    )
     args = parser.parse_args()
 
     log.info("=" * 70)
@@ -56,10 +70,21 @@ def main() -> None:
     session = SessionLocal()
     repo = CommentRepository(session)
 
-    analyzer = get_analyzer("deepseek")
+    analyzer = get_analyzer()  # 读 .env ANALYZER_PROVIDER（默认 deepseek），不硬编码
+    log.info(f"使用分析器: {analyzer.name} (provider={os.getenv('ANALYZER_PROVIDER', 'deepseek')})")
 
-    # 2. 取评论
-    stmt = select(Comment).order_by(Comment.fetched_at)
+    # 2. 取评论（指定平台默认仅未分析；--include-analyzed 则重打该平台全部）
+    if args.platform:
+        stmt = select(Comment).where(Comment.platform == args.platform)
+        if not args.include_analyzed:
+            stmt = stmt.where(Comment.analyzed_at.is_(None))
+            log.info(f"平台过滤: {args.platform}（仅未分析评论）")
+        else:
+            log.info(f"平台过滤: {args.platform}（全量重打，含已分析）")
+        stmt = stmt.order_by(Comment.fetched_at)
+    else:
+        stmt = select(Comment).order_by(Comment.fetched_at)
+        log.info("全量重打（所有平台，含已分析）")
     comments = list(session.execute(stmt).scalars())
     total_all = len(comments)
     log.info(f"候选评论数: {total_all}")

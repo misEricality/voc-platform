@@ -20,6 +20,17 @@ config/
 
 ---
 
+## 🔌 运行时配置（.env，不在 config/ 目录）
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | 语义向量化模型。换模型 = 跑 `scripts/ops/backfill_embeddings.py --force` 全量重算（衍生数据可重建，详见该脚本注释） |
+
+> embedding 模型属于**运行时环境**（依赖本地缓存与算力），故放 `.env` 而非 `config/`；
+> 标签体系、prompt 等**业务知识**仍留在 `config/`。
+
+---
+
 ## 📌 各配置用途
 
 | 配置 | 何时编辑 | 影响范围 |

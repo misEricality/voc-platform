@@ -25,6 +25,29 @@ from src.visualizer.charts import (
     topic_distribution,
 )
 
+
+def _find_chinese_font() -> str | None:
+    """跨平台探测可用的中文字体路径（词云渲染中文必需，否则显示为方框）"""
+    candidates = [
+        # Windows
+        "C:/Windows/Fonts/msyh.ttc",       # 微软雅黑
+        "C:/Windows/Fonts/msyhbd.ttc",     # 微软雅黑粗体
+        "C:/Windows/Fonts/simhei.ttf",     # 黑体
+        "C:/Windows/Fonts/simsun.ttc",     # 宋体
+        # macOS
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        # Linux
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    ]
+    for path in candidates:
+        if Path(path).exists():
+            return path
+    return None
+
+
 st.set_page_config(
     page_title="VoC Platform · 消费者之声洞察",
     page_icon="🎙️",
@@ -41,7 +64,7 @@ st.markdown("""
 # === 侧边栏 ===
 with st.sidebar:
     st.header("⚙️ 数据筛选")
-    platform = st.selectbox("数据来源平台", ["all", "steam"], index=1)
+    platform = st.selectbox("数据来源平台", ["all", "steam", "bilibili"], index=1)
 
     engine, SessionLocal = init_db()
     session = SessionLocal()
@@ -53,14 +76,9 @@ with st.sidebar:
     st.metric("已分析数", analyzed)
 
     target_options = ["全部"]
-    if platform == "steam":
-        all_comments = repo.all_analyzed(platform="steam", limit=1000)
-        target_ids = sorted({c.target_id for c in all_comments if c.target_id})
-        target_options += target_ids
-    elif platform == "all":
-        all_comments = repo.all_analyzed(limit=1000)
-        target_ids = sorted({c.target_id for c in all_comments if c.target_id})
-        target_options += target_ids
+    _comments = repo.all_analyzed(platform=None if platform == "all" else platform, limit=1000)
+    target_ids = sorted({c.target_id for c in _comments if c.target_id})
+    target_options += target_ids
 
     selected_target = st.selectbox("目标对象", target_options)
 
@@ -150,8 +168,11 @@ with col1:
         contents = df["content"].dropna().tolist()
         keywords = extract_keywords(contents, top_k=80)
         if keywords:
+            font_path = _find_chinese_font()
+            if font_path is None:
+                st.warning("⚠️ 未检测到中文字体，词云中文可能显示为方框")
             wc = WordCloud(
-                font_path=None,  # 如需中文显示请设置字体路径
+                font_path=font_path,
                 width=800,
                 height=400,
                 background_color="white",
@@ -209,5 +230,5 @@ st.caption("""
 📌 **数据说明**  
 本项目仅采集公开可见内容用于学习研究，不存储任何用户隐私信息。  
 所有数据均来自各平台官方API或公开页面。  
-📦 技术栈：Python · FastAPI · Streamlit · SQLAlchemy · DeepSeek/Qwen
+📦 技术栈：Python · Streamlit · SQLAlchemy · DeepSeek/Qwen
 """)
