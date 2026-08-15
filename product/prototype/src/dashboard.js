@@ -1,13 +1,35 @@
 /* ============================================================
-   数据看板 v2 —— 渲染逻辑（由构建脚本拼接至 app.js 之后，
-   共享 DATA / VOICES / filtered / state / 工具函数）
+   数据看板 —— 渲染逻辑（构建脚本拼接至 app.js 之后，共享全局）
+   颗粒度感知：原声报表（评论单元）/ 观点报表（观点单元）
    ============================================================ */
 
 function dEmpty(msg){
   return `<div class="dempty">${msg || '当前筛选下无数据'}</div>`;
 }
 
+function L1Of(u){
+  if(state.granularity === 'voice') return u.topic || '未标注';
+  return u.path ? u.path.split('/')[0] : '未标注';
+}
+function opinionList(){
+  if(state.granularity === 'voice'){
+    const ops = [];
+    filtered.forEach(v => (v.opinions || []).forEach(op => ops.push(op)));
+    return ops;
+  }
+  return filtered.map(o => ({path: o.path, sentiment: o.sentiment}));
+}
+
 function renderDashboard(){
+  const isVoice = state.granularity === 'voice';
+  const setLabel = (sel, txt) => { const el = $(sel); if(el) el.textContent = txt; };
+  setLabel('[data-kpi-label-total]', isVoice ? '原声总量' : '观点总量');
+  setLabel('[data-kpi-label-play]', isVoice ? '平均评论时游玩' : '平均所属评论游玩');
+  setLabel('[data-kpi-label-trend]', isVoice ? '每日原声量趋势' : '每日观点量趋势');
+  setLabel('[data-kpi-label-senti]', isVoice ? '整体情感分布' : '观点情感分布');
+  setLabel('[data-kpi-label-playdist]', isVoice ? '评论时游玩时长分布' : '所属评论游玩时长分布');
+  setLabel('[data-kpi-label-op]', isVoice ? '标签级观点洞察' : '观点标签排行');
+
   const total = filtered.length;
   const rec = filtered.filter(v => v.rating === 1).length;
   const pos = filtered.filter(v => v.sentiment === 'positive').length;
@@ -17,17 +39,14 @@ function renderDashboard(){
   const avgH = plays.length ? plays.reduce((a, b) => a + b, 0) / plays.length / 60 : null;
 
   const setKpi = (k, v, sub) => {
-    const el = $(`[data-kpi="${k}"]`);
-    if(el) el.textContent = v;
-    const s = $(`[data-kpi="${k}Sub"]`);
-    if(s) s.textContent = sub;
+    const el = $(`[data-kpi="${k}"]`); if(el) el.textContent = v;
+    const s = $(`[data-kpi="${k}Sub"]`); if(s) s.textContent = sub;
   };
   setKpi('total', fmtNum(total), `覆盖 ${fmtNum(gamesN)} 款游戏`);
-  setKpi('rec', pct(rec, total), `${fmtNum(rec)} 条推荐评论`);
+  setKpi('rec', pct(rec, total), `${fmtNum(rec)} 条`);
   setKpi('pos', pct(pos, total), `${fmtNum(pos)} 条`);
   setKpi('neg', pct(neg, total), `${fmtNum(neg)} 条`);
-  setKpi('play', avgH === null ? '-' : avgH.toLocaleString('zh-CN', {maximumFractionDigits:1}) + ' 小时',
-    `有游玩时长样本 ${fmtNum(plays.length)} 条`);
+  setKpi('play', avgH === null ? '-' : avgH.toLocaleString('zh-CN', {maximumFractionDigits:1}) + ' 小时', `样本 ${fmtNum(plays.length)} 条`);
 
   drawTrend(total);
   drawRec(rec, total);
@@ -39,7 +58,7 @@ function renderDashboard(){
   drawOps();
 }
 
-/* ---- 每日原声量趋势（情感堆叠柱） ---- */
+/* ---- 每日趋势（情感堆叠柱） ---- */
 function drawTrend(total){
   const el = $('#dTrend');
   if(!total){ el.innerHTML = dEmpty(); return; }
@@ -75,14 +94,14 @@ function drawRec(rec, total){
   if(!total){ el.innerHTML = dEmpty(); return; }
   const recP = (rec / total * 100).toFixed(1);
   el.innerHTML = `<div class="donut-box">
-    <div class="donut" style="background:conic-gradient(var(--green) 0 ${recP}%, var(--red) ${recP}% 100%)" data-center="${fmtNum(total)}\n评论总数"></div>
+    <div class="donut" style="background:conic-gradient(var(--green) 0 ${recP}%, var(--red) ${recP}% 100%)" data-center="${fmtNum(total)}\n${state.granularity === 'voice' ? '评论总数' : '观点总数'}"></div>
     <div class="donut-legend">
       <div><span class="dot" style="background:var(--green)"></span>推荐<b>${fmtNum(rec)} · ${pct(rec, total)}</b></div>
       <div><span class="dot" style="background:var(--red)"></span>不推荐<b>${fmtNum(total - rec)} · ${pct(total - rec, total)}</b></div>
     </div></div>`;
 }
 
-/* ---- 整体情感分布（三色条） ---- */
+/* ---- 情感分布（三色条） ---- */
 function drawSenti(pos, neg, total){
   const el = $('#dSenti');
   if(!total){ el.innerHTML = dEmpty(); return; }
@@ -103,7 +122,7 @@ function drawL1(){
   const el = $('#dL1');
   if(!filtered.length){ el.innerHTML = dEmpty(); return; }
   const cnt = {};
-  filtered.forEach(v => { const k = v.topic || '未标注'; cnt[k] = (cnt[k] || 0) + 1; });
+  filtered.forEach(v => { const k = L1Of(v); cnt[k] = (cnt[k] || 0) + 1; });
   const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
   const max = rows[0][1];
   el.innerHTML = '<div class="dbody-list">' + rows.map(([k, n]) =>
@@ -115,7 +134,11 @@ function drawL1(){
 function drawL2(){
   const el = $('#dL2');
   const cnt = {};
-  filtered.forEach(v => (v.sub_topics || []).forEach(s => cnt[s] = (cnt[s] || 0) + 1));
+  if(state.granularity === 'voice'){
+    filtered.forEach(v => (v.sub_topics || []).forEach(s => cnt[s] = (cnt[s] || 0) + 1));
+  } else {
+    filtered.forEach(o => { const n = o.path.split('/')[1]; if(n) cnt[n] = (cnt[n] || 0) + 1; });
+  }
   const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 10);
   if(!rows.length){ el.innerHTML = dEmpty('当前筛选下无 L2 标签数据'); return; }
   const max = rows[0][1];
@@ -124,7 +147,7 @@ function drawL2(){
   ).join('') + '</div>';
 }
 
-/* ---- 各游戏原声构成（情感堆叠） ---- */
+/* ---- 各游戏构成（情感堆叠） ---- */
 function drawGame(){
   const el = $('#dGame');
   const cnt = {};
@@ -147,7 +170,7 @@ function drawGame(){
     ).join('');
 }
 
-/* ---- 评论时游玩时长分布 ---- */
+/* ---- 游玩时长分布 ---- */
 function drawPlay(plays){
   const el = $('#dPlay');
   if(!plays.length){ el.innerHTML = dEmpty('当前筛选下无游玩时长数据'); return; }
@@ -158,10 +181,7 @@ function drawPlay(plays){
     {lo:3600, hi:Infinity, cls:'b4', label:'100 小时以上'}
   ];
   buckets.forEach(x => x.n = 0);
-  plays.forEach(m => {
-    const b = buckets.find(x => m >= x.lo && m < x.hi);
-    if(b) b.n++;
-  });
+  plays.forEach(m => { const b = buckets.find(x => m >= x.lo && m < x.hi); if(b) b.n++; });
   const max = Math.max(1, ...buckets.map(x => x.n));
   el.innerHTML = `<div class="play-box">
     <div class="play-track">` +
@@ -172,24 +192,37 @@ function drawPlay(plays){
     `</div></div>`;
 }
 
-/* ---- 标签级观点洞察（观点情感 + 路径 TOP10） ---- */
+/* ---- 标签观点洞察 / 观点标签排行 ---- */
 function drawOps(){
   const el = $('#dOps');
   const meta = $('#dOpMeta');
-  const ops = [];
-  filtered.forEach(v => (v.opinions || []).forEach(op => ops.push(op)));
-  const covered = new Set(filtered.filter(v => v.opinions && v.opinions.length).map(v => v.id)).size;
-  meta.textContent = `观点样本 ${fmtNum(ops.length)} 条 · 覆盖 ${fmtNum(covered)} 条评论`;
+  el.classList.toggle('single', state.granularity === 'opinion');
+  const ops = opinionList();
+  const covered = state.granularity === 'voice'
+    ? new Set(filtered.filter(v => v.opinions && v.opinions.length).map(v => v.id)).size
+    : filtered.length;
+  meta.textContent = state.granularity === 'voice'
+    ? `观点样本 ${fmtNum(ops.length)} 条 · 覆盖 ${fmtNum(covered)} 条评论`
+    : `观点样本 ${fmtNum(ops.length)} 条`;
   if(!ops.length){
-    el.innerHTML = '<div class="dempty" style="grid-column:1/-1">当前筛选下无标签级观点数据（L3 观点覆盖率约 9%，可放宽筛选范围查看）</div>';
+    el.innerHTML = '<div class="dempty" style="grid-column:1/-1">当前筛选下无标签级观点数据</div>';
     return;
   }
-  const sCnt = {positive:0, neutral:0, negative:0};
   const pCnt = {};
-  ops.forEach(op => {
-    if(sCnt[op.sentiment] !== undefined) sCnt[op.sentiment]++;
-    pCnt[op.path] = (pCnt[op.path] || 0) + 1;
-  });
+  ops.forEach(op => pCnt[op.path] = (pCnt[op.path] || 0) + 1);
+  const rows = Object.entries(pCnt).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const max = rows[0][1];
+  const right = '<div class="op-right op-full"><div class="dbody-list">' + rows.map(([k, n]) =>
+    `<div class="hbar-row"><span class="hname">${esc(k)}</span><div class="htrack"><div class="hfill" style="width:${(n / max * 100).toFixed(1)}%"></div></div><span class="hcount">${fmtNum(n)}</span><span class="hpct">${pct(n, ops.length)}</span></div>`
+  ).join('') + '</div></div>';
+
+  if(state.granularity === 'opinion'){
+    el.innerHTML = right;   // 观点报表：情感分布已在独立卡，此处仅路径 TOP
+    return;
+  }
+  // 原声报表：左观点情感条 + 右路径 TOP
+  const sCnt = {positive:0, neutral:0, negative:0};
+  ops.forEach(op => { if(sCnt[op.sentiment] !== undefined) sCnt[op.sentiment]++; });
   const pos = sCnt.positive, neu = sCnt.neutral, neg = sCnt.negative;
   const s = x => Math.max(0, x / ops.length * 100);
   const left = `<div class="op-left">
@@ -200,10 +233,5 @@ function drawOps(){
     </div>
     <div class="senti-legend"><span>正向 <b>${fmtNum(pos)} · ${pct(pos, ops.length)}</b></span><span>中性 <b>${fmtNum(neu)} · ${pct(neu, ops.length)}</b></span><span>负向 <b>${fmtNum(neg)} · ${pct(neg, ops.length)}</b></span></div>
   </div>`;
-  const rows = Object.entries(pCnt).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  const max = rows[0][1];
-  const right = '<div class="op-right"><div class="dbody-list">' + rows.map(([k, n]) =>
-    `<div class="hbar-row"><span class="hname">${esc(k)}</span><div class="htrack"><div class="hfill" style="width:${(n / max * 100).toFixed(1)}%"></div></div><span class="hcount">${fmtNum(n)}</span><span class="hpct">${pct(n, ops.length)}</span></div>`
-  ).join('') + '</div></div>';
   el.innerHTML = left + right;
 }

@@ -1,0 +1,73 @@
+/* ============================================================
+   灵听 Lynx —— 全局基础样式（布局 / 顶栏 / 通用组件）
+   ============================================================ */
+:root{--primary:#78A4CB;--primary-dark:#537fa7;--sky:#B4E1EB;--blue:#95BDD7;--yellow:#F9E8A2;--ink:#24364b;--muted:#718096;--line:#e6edf3;--bg:#f5f8fb;--white:#fff;--green:#68b88e;--red:#e98484;--orange:#e9aa64;--shadow:0 8px 24px rgba(50,85,118,.08)}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);min-width:1180px}
+button,input,select{font:inherit}
+.app{min-height:100vh}
+
+/* 顶栏 */
+.topbar{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 28px;position:sticky;top:0;z-index:30}
+.brand{display:flex;align-items:center;gap:12px;width:270px}
+.logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--sky));display:grid;place-items:center;color:#fff;font-weight:800;box-shadow:0 6px 16px rgba(120,164,203,.35)}
+.brand h1{font-size:18px;margin:0;letter-spacing:1px}
+.brand small{display:block;color:#8795a5;font-size:10px;letter-spacing:2px;margin-top:2px}
+.nav{height:100%;display:flex;gap:8px;margin-left:8px}
+.nav-btn{height:100%;padding:0 22px;border:0;background:none;color:#6c7c8e;cursor:pointer;position:relative;font-weight:600}
+.nav-btn.active{color:var(--primary-dark)}
+.nav-btn.active:after{content:"";position:absolute;left:18px;right:18px;bottom:0;height:3px;background:var(--primary);border-radius:3px 3px 0 0}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:12px}
+.icon-btn{width:38px;height:38px;border:1px solid var(--line);background:#fff;border-radius:10px;color:#718096;cursor:pointer}
+.avatar{width:38px;height:38px;border-radius:50%;background:var(--yellow);display:grid;place-items:center;color:#795f25;font-weight:700}
+
+/* 主区 */
+.main{padding:22px 28px 38px;max-width:1920px;margin:auto}
+.page{display:none}
+.page.active{display:block}
+.headline{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px}
+.headline h2{margin:0 0 5px;font-size:24px;letter-spacing:-.5px}
+.headline p{margin:0;color:var(--muted);font-size:13px}
+
+/* 筛选器面板 */
+.filter-panel{background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);border-radius:16px;padding:14px 16px;margin-bottom:16px}
+
+/* 按钮 */
+.btn{height:42px;border-radius:10px;padding:0 18px;border:1px solid var(--line);background:#fff;color:#5f6e7e;cursor:pointer;font-weight:600}
+.btn.primary{border-color:var(--primary);background:var(--primary);color:#fff}
+.btn:hover{transform:translateY(-1px)}
+
+/* KPI 指标 */
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:12px}
+.metric{background:#fff;border:1px solid var(--line);border-radius:15px;padding:16px 17px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.metric:before{content:"";position:absolute;width:70px;height:70px;border-radius:50%;right:-22px;top:-25px;background:var(--tint,#edf5fa)}
+.metric-label{font-size:13px;color:#718096;margin-bottom:8px}
+.metric-value{font-size:27px;font-weight:750;letter-spacing:-1px}
+.metric-sub{font-size:11px;color:#99a5b2;margin-top:6px}
+
+/* 卡片 */
+.card{background:#fff;border:1px solid var(--line);border-radius:15px;padding:16px;box-shadow:var(--shadow);min-width:0}
+.card-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;gap:8px}
+.card-title strong{font-size:14px}
+.card-title > span:not(.pri){font-size:11px;color:#94a0ad}
+
+/* 徽章（抽屉标记） */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;font-size:11px;border-radius:6px;background:#eef2f7;color:#5a6b80;font-weight:600;letter-spacing:.2px}
+.badge-danger{background:#fdecec;color:#c65555;border:1px solid #f3caca}
+.badge-warn{background:#fff7d8;color:#8a6f1d;border:1px solid #f3e8a8}
+.badge-soft{background:#f3f6fa;color:#647585;border:1px solid #e2e8f0}
+
+/* 翻页 */
+.pagination{padding:13px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:6px}
+.page-btn{width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:8px;color:#6f7c89;cursor:pointer}
+.page-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.page-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* 抽屉关闭按钮 */
+.close{border:0;background:#f2f5f7;width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:16px;color:#718096}
+
+/* 提示 */
+.toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,20px);background:#2e4358;color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:70}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@keyframes slide{from{transform:translateX(100%)}to{transform:none}}
