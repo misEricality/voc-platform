@@ -16,7 +16,8 @@ docs/
 │   ├── DATA_STORAGE_DESIGN.md  5 层数据架构 + 5 张表设计（含 comment_embeddings）
 │   └── BILIBILI_COLLECTION.md  B 站采集规格（接口/数据映射/采样策略，开发交接文档）
 ├── plan/                   🗺️ 计划与里程碑
-│   └── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
+│   ├── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
+│   └── next-gen-tagging/       下一代标签系统（GDT+PEDM 双轨）分阶段采纳计划 + 原稿备份
 ├── guides/                 📖 操作指南（"我该怎么用"）
 │   └── QUICK_START.md          5 分钟上手指南
 └── research/               🔍 调研资料
@@ -30,6 +31,7 @@ docs/
 | 我想知道... | 看这里 |
 |-------------|--------|
 | **项目在做什么、做到哪了、下一步做什么** | [plan/DEVELOPMENT_PLAN.md](./plan/DEVELOPMENT_PLAN.md) |
+| **标签/洞察体系未来怎么演进** | [plan/next-gen-tagging/UPGRADE_PLAN_v2.0.md](./plan/next-gen-tagging/UPGRADE_PLAN_v2.0.md) |
 | **5 分钟跑起来这个项目** | [guides/QUICK_START.md](./guides/QUICK_START.md) |
 | **L1-L3 标注流程是怎么走的** | [architecture/ANNOTATION_PIPELINE.md](./architecture/ANNOTATION_PIPELINE.md) |
 | **Steam API 能拿到哪些字段** | [STEAM_API_FIELDS.md](./STEAM_API_FIELDS.md) |

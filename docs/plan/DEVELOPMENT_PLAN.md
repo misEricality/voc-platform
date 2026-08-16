@@ -270,6 +270,19 @@
 
 ---
 
+### ⏸️ P9 · 下一代标签系统（GDT+PEDM 双轨）分阶段采纳（2026-08-15 评审通过）
+
+**背景**：外部设计稿《下一代 AI 游戏洞察系统》（轨道 A GDT 监控分类 + 轨道 B PEDM 体验诊断 + L3.5 微话题下钻）完成评审。结论：**方法论方向采纳、不做整体替换**，改为三阶段嫁接式采纳；完整评审结论、修订版词表/接口/Prompt 与验收标准见 📄 [next-gen-tagging/UPGRADE_PLAN_v2.0.md](./next-gen-tagging/UPGRADE_PLAN_v2.0.md)（原稿备份：[next-gen-tagging/ORIGINAL_SPEC_v1.0.0.md](./next-gen-tagging/ORIGINAL_SPEC_v1.0.0.md)）。
+
+**执行顺序（前置依赖严格）**：
+1. 阶段 0 时序持久化（依赖 P6；当前每日全新库不累积，监控形态全部无从谈起）
+2. 阶段 1 GDT v3.1.1 词表嫁接 + 语义匹配（与"当前最关键的一步"67% 兜底治理同一事项，合并执行）
+3. 阶段 2 L3.5 本地 embedding 聚类（零 API 成本，手动触发）
+4. 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
+
+**暂缓**：Spike 监控大盘 / 跨版本聚合（数据量 ≥5 万条且稳定日增后重评）。
+
+---
 ## ⚖️ 五、决策建议（业务视角）
 
 ### ⭐ 短期冲刺组合（P0 + P1 + P2，1 天搞定）
@@ -312,6 +325,7 @@
 | 🟠 打标双主链路分叉（2026-08-15 评审发现） | pipeline 逐条调 LLM（约 10x 成本），批量+三轮收敛只在 reanalyze_all.py → 收口进主链路 | 成本与可维护性 |
 | 🟡 CI 无 pytest | GitHub Actions 增加 test job；拆分 requirements 避免 CI 安装 torch | 工程护栏 |
 | 🟡 分析结果无版本溯源 | comments 增加 analyzer_version（模型+prompt 版本） | 换模型/prompt 后存量数据无法对账 |
+| 🟡 下一代标签系统（GDT+PEDM 双轨） | 分阶段采纳，见 [next-gen-tagging/UPGRADE_PLAN_v2.0.md](./next-gen-tagging/UPGRADE_PLAN_v2.0.md) | 阶段 0 依赖 P6 持久化；阶段 1 与兜底治理合并 |
 | 标注算法已切换方案4 | 见 [ANNOTATION_PIPELINE.md](../architecture/ANNOTATION_PIPELINE.md) | 文档已更新 |
 
 ---
