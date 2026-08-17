@@ -1,4 +1,4 @@
-# VoC 平台 · 数据存储架构设计
+# 灵听 · Lynx · 数据存储架构设计
 
 > **用途**：把"原始 / 清洗 / 标注 / 仪表盘 / 导出" 5 层数据建模的约定一次性讲清楚。
 > 适用所有采集器、所有 LLM 服务商、所有数据分析师。
@@ -82,7 +82,7 @@
 | `language` | str | `schinese` / `english` |
 | `likes` | int | 点赞数 |
 | `replies` | int | 回复数 |
-| `posted_at` | datetime | 评论发布时间 |
+| `posted_at` | datetime | 评论发布时间（统一 **naive UTC**，与 `fetched_at`/`refreshed_at` 口径一致） |
 | `raw_json` | text | **全量 API 返回原文** ← 这个最关键 |
 | `extra_json` | text | 各平台特有字段（Steam `playtime_forever`、B 站 `oid` 等） |
 | `fetched_at` | datetime | 入库时间 |

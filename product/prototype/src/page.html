@@ -1,0 +1,19 @@
+<main class="main">
+<div class="headline"><h2>数据看板与列表 <span class="grain-badge" data-grain-label>原声报表</span></h2><button class="grain-toggle" id="grainToggle" type="button"><span class="gt-ico">⇄</span><span class="gt-cap">颗粒度</span><span class="gt-label"></span></button></div>
+<p class="sub">多维度洞察 Steam 玩家声音，查看评论原声与AI分析结果。</p>
+<div class="filter-panel">
+  <div class="v2-filters">
+    <div class="v2-block"><label>时间</label><div class="ms" data-ms="date"><button class="ms-trigger" type="button"><span class="ms-label">近7日</span><span class="caret">▼</span></button><div class="ms-pop date-pop"><div class="date-quick"><button type="button" data-range="7d">近7日</button><button type="button" data-range="30d">近30日</button><button type="button" data-range="all">全部时间</button></div><div class="date-custom"><span>起始</span><input type="date" data-date="start"><span>结束</span><input type="date" data-date="end"></div></div></div></div>
+    <div class="v2-block"><label>游戏</label><div class="ms" data-ms="game"><button class="ms-trigger" type="button"><span class="ms-label">全部游戏</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-search"><input type="text" placeholder="搜索游戏..."></div><label class="ms-all"><input type="checkbox" data-all> 全选</label><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+    <div class="v2-block"><label>推荐</label><div class="ms" data-ms="vote"><button class="ms-trigger" type="button"><span class="ms-label">全部</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+    <div class="v2-block"><label>情感 <small class="senti-scope" data-senti-scope>整体</small></label><div class="ms" data-ms="senti"><button class="ms-trigger" type="button"><span class="ms-label">全部情感</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+    <div class="v2-block"><label>标签</label><div class="ms tag-ms" data-ms="tag"><button class="ms-trigger" type="button"><span class="ms-label">全部标签</span><span class="caret">▼</span></button><div class="ms-pop tag-pop tag-tree-pop"><div class="tree-toolbar"><input class="tree-search" type="text" placeholder="搜索标签..."><label class="ms-all"><input type="checkbox" data-all> 全选</label></div><div class="tree-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
+    <div class="v2-block"><label>ID</label><input class="id-input" data-id-input type="text" placeholder="输入ID，支持多个"><div class="id-hint" data-id-hint>输入id包含原文和观点，请取其中1种进行查询</div></div>
+  </div>
+  <div class="v2-actions-row"><button class="btn" data-act="reset" type="button">重置</button><button class="btn" id="vExport" type="button">导出</button><button class="btn primary" data-act="apply" type="button">查询</button></div>
+</div>
+<div class="layout">
+  <div class="left-panel">__LEFT__</div>
+  <div class="right-panel">__RIGHT__</div>
+</div>
+</main>

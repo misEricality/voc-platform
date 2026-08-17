@@ -295,7 +295,8 @@ class CommentRepository:
                 existing.likes_refreshed_at = _utcnow()
             existing.posted_at = raw.posted_at
             existing.extra_json = extra_json
-            existing.extra_meta = extra_meta
+            if target_meta:
+                existing.extra_meta = extra_meta
             existing.fetched_at = _utcnow()
             # developer_response 回采信号：fetch_metadata=True 时 raw.extra 里有该 key
             if raw.extra and "developer_response" in raw.extra:
@@ -577,13 +578,13 @@ class CommentRepository:
             )
             if self.session.execute(stmt).scalar_one_or_none():
                 continue
-            # posted_at 归一化：unix 秒 → datetime；datetime 原样；None → None
+            # posted_at 归一化：unix 秒 → naive UTC datetime；datetime 原样；None → None
             posted = it.get("posted_at")
             if isinstance(posted, (int, float)):
-                posted = _dt.fromtimestamp(posted)
+                posted = _dt.fromtimestamp(posted, tz=timezone.utc).replace(tzinfo=None)
             elif isinstance(posted, str):
                 try:
-                    posted = _dt.fromtimestamp(float(posted))
+                    posted = _dt.fromtimestamp(float(posted), tz=timezone.utc).replace(tzinfo=None)
                 except ValueError:
                     posted = None
             self.session.add(

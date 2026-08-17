@@ -18,7 +18,7 @@ import os
 import random
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterator
 
 import requests
@@ -233,7 +233,8 @@ class BilibiliCollector(BaseCollector):
             language="zh-CN",
             likes=c.get("like"),
             replies=c.get("rcount"),
-            posted_at=datetime.fromtimestamp(ctime) if ctime else None,
+            # 统一落库为 naive UTC（与 fetched_at/_utcnow 口径一致）
+            posted_at=datetime.fromtimestamp(ctime, tz=timezone.utc).replace(tzinfo=None) if ctime else None,
             extra={"aid": aid, "profile": profile},
         )
 
@@ -277,7 +278,7 @@ class BilibiliCollector(BaseCollector):
                     "mode": int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None,
                     "color": int(parts[3]) if len(parts) > 3 and parts[3].lstrip('-').isdigit() else None,
                     "user_hash": parts[6] if len(parts) > 6 else None,
-                    "posted_at": datetime.fromtimestamp(ts) if ts else None,
+                    "posted_at": datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None) if ts else None,
                 }
             )
         # progress 时间轴均匀分片抽样（保持时间分布，不截头截尾）

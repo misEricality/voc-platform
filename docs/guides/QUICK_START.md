@@ -10,7 +10,7 @@
 ## 步骤 1：克隆仓库
 
 ```bash
-git clone https://github.com/yourname/voc-platform.git
+git clone https://github.com/misEricality/voc-platform.git
 cd voc-platform
 ```
 
@@ -70,6 +70,7 @@ python -m src.pipeline --platform steam --target 730 --count 50 --skip-analysis
 > 💡 **语义向量化（可选）**：pipeline 会自动为新增评论生成语义向量
 > （本地 bge-small-zh，零成本）。首次运行需下载模型（约 95MB）。
 > 存量数据回填 / 换模型重算：`python scripts/ops/backfill_embeddings.py --force`
+> 本地 ML 环境搭建详见 [SETUP_ML_ENV.md](./SETUP_ML_ENV.md)。
 > 未安装 `sentence-transformers` 时自动跳过，不影响主流程。
 
 ### 4.2 完整流程（采集 + 分析）

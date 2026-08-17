@@ -1,15 +1,15 @@
-# 🎙️ VoC Platform · 消费者之声洞察平台
+# 🎙️ 灵听 · Lynx · 消费者之声洞察平台
 
 > **个人项目** —— 学习、探索、经验沉淀与作品展示  
 > 完整调研：[docs/research/](./docs/research/) · 开发计划：[docs/plan/DEVELOPMENT_PLAN.md](./docs/plan/DEVELOPMENT_PLAN.md)
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-v0.2-blue)
+![Status](https://img.shields.io/badge/Status-v0.3-blue)
 
 ## ✨ 项目简介
 
-VoC Platform 是一个面向个人开发者的**消费者之声（Voice of Customer）分析平台**，目标是用最低成本、最简单的架构，实现：
+灵听 · Lynx（原 VoC Platform）是一个面向个人开发者的**消费者之声（Voice of Customer）分析平台**，目标是用最低成本、最简单的架构，实现：
 
 - 📥 **多平台数据采集**（Steam / B站 / 微博 / 京东等）
 - 🤖 **AI 情感与主题分析**（DeepSeek / Qwen / GLM / 本地BERT）
@@ -27,15 +27,15 @@ VoC Platform 是一个面向个人开发者的**消费者之声（Voice of Custo
 | **B站采集** | ✅ | 公开 Web 接口（免申请），7 天稳态快照 + 弹幕分片，已实测落库 |
 | SQLite 存储 | ✅ | SQLAlchemy 2.x，冷启动 NULL + 7 天回采机制 |
 | LLM 情感分析 | ✅ | 支持 DeepSeek/Qwen/GLM 切换 |
-| **L1-L3 三级标签标注** | ✅ | 方案4：观点短语 → 程序匹配（L1 7 / L2 28 / L3 128） |
+| **L1-L3 三级标签标注** | ✅ | 方案4：观点短语 → 程序匹配（GDT v3.1.1，L1 10 / L2 28 / L3 111） |
 | **语义向量化** | ✅ | 本地 bge-small-zh（P2.5，零 API 成本，语义检索/聚类基建） |
 | 本地BERT情感分析 | ✅ | 零成本备选 |
-| 高保真原型 v2 | ✅ | 数据看板 + 原声列表（多文件拆分） |
+| 高保真原型 v3 | ✅ | 数据看板 + 原声列表（单文件自包含：内嵌子集字体 + logo） |
 | Streamlit Dashboard | ✅ | 6个核心图表 |
 | 微博采集 | 🚧 | 下一阶段 |
 | 自动化流水线 | 🚧 | workflow 已在远端；定时任务数据持久化方案待设计（当前每日全新库，不累积） |
 
-> 📊 **当前数据**（2026-08-15）：**3073 条**评论（Steam 2067 + B站 1006，已分析 3034），观点级标注 5212 条，语义向量 1021 条（单模型 `bge-small-zh-v1.5`，覆盖约 1/3 待回填）。
+> 📊 **当前数据**（2026-08-17）：**3073 条**评论（Steam 2067 + B站 1006，已分析 3041），观点级标注 5205 条，语义向量 1021 条（单模型 `bge-small-zh-v1.5`，覆盖约 1/3 待回填）。新标签体系（GDT v3.1.1）已落地配置并完成 500 条验证样本重打，全量重打与旧标签清洗待收口。
 
 ## 🏷️ L1-L3 三级标签标注管线（方案4）
 
@@ -43,7 +43,7 @@ VoC Platform 是一个面向个人开发者的**消费者之声（Voice of Custo
 
 相比"LLM 强制枚举标签"，方案4 把选标签从 LLM 手里拿掉：多面评论（"打击感超爽但优化太差"）不再丢观点，匹配逻辑可控、可调、可测试。
 
-- 标签体系：L1 7 类 / L2 28 类 / L3 128 类（`config/topics/gaming.yaml` + `l3_definitions.yaml`）
+- 标签体系：L1 10 类 / L2 28 类 / L3 111 类（GDT v3.1.1；`config/topics/gaming.yaml` + `l3_definitions.yaml`）
 - 核心逻辑：`src/analyzers/normalize.py`（match_l3 / 词典索引 / 路径映射）
 - 详细流程：[docs/architecture/ANNOTATION_PIPELINE.md](./docs/architecture/ANNOTATION_PIPELINE.md)
 
@@ -52,7 +52,7 @@ VoC Platform 是一个面向个人开发者的**消费者之声（Voice of Custo
 ### 1. 克隆并安装依赖
 
 ```bash
-git clone https://github.com/yourname/voc-platform.git
+git clone https://github.com/misEricality/voc-platform.git
 cd voc-platform
 pip install -r requirements.txt
 ```
@@ -127,7 +127,7 @@ voc-platform/
 │
 ├── product/                         # 【产品文档】（业务视角）
 │   ├── overview.md                      产品概览
-│   ├── prototype/                       高保真原型（v2 多文件拆分）
+│   ├── prototype/                       高保真原型（v3 单文件自包含）
 │   ├── prd/                             需求文档（预留）
 │   └── decisions/                       决策记录（预留）
 │
@@ -136,7 +136,7 @@ voc-platform/
 │   ├── dev/                             开发期一次性脚本（采集/标注/巡检/E2E）
 │   └── ops/                             refresh_likes 回采 / backfill_embeddings 向量回填
 │
-├── tests/                           # 【测试】pytest 10 例（9 通过 + 1 环境依赖跳过）
+├── tests/                           # 【测试】pytest 11 例（含黄金集回归门禁；bge 用例在无 ML 环境时跳过）
 │
 └── notebooks/                       # 【数据探索】（预留）
 ```

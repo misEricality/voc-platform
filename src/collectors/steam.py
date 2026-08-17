@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterator
 
 import requests
@@ -112,12 +112,15 @@ class SteamCollector(BaseCollector):
         last_cursor: str | None = None  # 翻页停止后用于"验证页"的游标
 
         def _passes_time_filter(ts: int | None) -> bool:
-            """应用层时间过滤（posted_after / posted_before）"""
+            """应用层时间过滤（posted_after / posted_before）
+
+            时间统一按 UTC 处理（naive），与 posted_at 落库口径一致。
+            """
             if posted_after is not None:
-                if ts is None or datetime.fromtimestamp(ts) < posted_after:
+                if ts is None or datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None) < posted_after:
                     return False
             if posted_before is not None:
-                if ts is not None and datetime.fromtimestamp(ts) >= posted_before:
+                if ts is not None and datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None) >= posted_before:
                     return False
             return True
 
@@ -280,9 +283,9 @@ class SteamCollector(BaseCollector):
         Returns:
             RawComment 对象
         """
-        # Steam 时间戳是 Unix 秒
+        # Steam 时间戳是 Unix 秒；统一落库为 naive UTC（与 fetched_at/_utcnow 口径一致）
         ts = review.get("timestamp_created")
-        posted_at = datetime.fromtimestamp(ts) if ts else None
+        posted_at = datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None) if ts else None
 
         # 推荐状态：1=推荐(好评) 0=不推荐(差评)
         voted_up = review.get("voted_up")

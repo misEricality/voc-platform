@@ -1,10 +1,13 @@
-/* 灵听 Lynx 原型 —— 全页面脚本 v4
-   共享筛选器（数据看板 / 原声列表 双页联动）+ 全局颗粒度切换（原声/观点）
+/* 灵听 Lynx 原型 —— 全页面脚本 v5（单页：左看板 + 右列表/AI）
    注：dashboard.js 由构建脚本拼接在本文件末尾（同一 <script> 作用域） */
 const DATA = /*__DATA__*/ null;
 const VOICES = DATA.voices, OPINIONS = DATA.opinions;
 const GAMES = DATA.games, TAG_TREE = DATA.tags;
 const PAGE_SIZE = 20;
+
+/* 预计算 id 集合（用于 ID 筛选类型识别） */
+const VOICE_ID_SET = new Set(VOICES.map(v => String(v.source_id)));
+const OPINION_ID_SET = new Set(OPINIONS.map(o => String(o.id)));
 
 /* ---------------- 工具 ---------------- */
 const $ = s => document.querySelector(s);
@@ -12,7 +15,6 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 function esc(s){return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 const SENTI_LABEL = {positive:'正向', neutral:'中性', negative:'负向'};
 const SENTI_CLASS = {positive:'t-pos', neutral:'t-neu', negative:'t-neg'};
-const LANG_LABEL = {schinese:'简体中文', tchinese:'繁体中文', english:'英语'};
 function fmtTime(t){return t ? t.slice(0,16) : '-'}
 function fmtDate(t){return t ? t.slice(0,10) : ''}
 function fmtPlay(min){if(min === null || min === undefined) return '-'; if(min < 60) return min + ' 分钟'; return (min/60).toLocaleString('zh-CN',{maximumFractionDigits:1}) + ' 小时'}
@@ -21,7 +23,7 @@ function pct(a, b){return b ? (a / b * 100).toFixed(1) + '%' : '0%'}
 function toast(msg){const t = $('#toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1800)}
 function toDateStr(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 
-/* 标签树工具：L2 名 -> L1 名（L2 名全局唯一） */
+/* 标签树工具 */
 const L2_TO_L1 = {};
 TAG_TREE.forEach(n1 => n1.children.forEach(n2 => L2_TO_L1[n2.name] = n1.name));
 function findNode(nodes, path){
@@ -42,22 +44,20 @@ function collectLeafPaths(node, prefix){
 }
 function parentOf(path){const i = path.lastIndexOf('/'); return i === -1 ? '' : path.slice(0, i)}
 
-/* ---------------- 全局状态（双页共享 + 颗粒度） ---------------- */
+/* ---------------- 全局状态 ---------------- */
 const state = {
-  granularity: 'voice',   // 'voice' 原声报表 | 'opinion' 观点报表
+  granularity: 'voice',
   dateStart: '', dateEnd: '',
   games: new Set(), votes: new Set(), sentiments: new Set(),
-  tags: new Set(),        // 完整展开的标签叶子路径集合
-  tagExpanded: new Set(), // 树展开状态
+  tags: new Set(), tagExpanded: new Set(),
+  idInput: '', ids: [], idType: 'none',
   page: 1
 };
 let filtered = VOICES.slice();
-let activePage = 'dashboard';
-
 function units(){ return state.granularity === 'voice' ? VOICES : OPINIONS; }
 function grainName(){ return state.granularity === 'voice' ? '原声报表' : '观点报表'; }
 
-/* ---------------- 多选下拉组件（支持搜索 + 全选） ---------------- */
+/* ---------------- 多选下拉（支持搜索 + 全选；修复面板内点击不关闭） ---------------- */
 function initMS(container, items, allLabel, set){
   const list = container.querySelector('.ms-list');
   const label = container.querySelector('.ms-label');
@@ -101,19 +101,27 @@ function initMS(container, items, allLabel, set){
   return {render};
 }
 
-/* 下拉开合（全局委托） */
+/* 下拉开合：点 trigger 切换；点面板内部不关闭；点外部关闭所有
+   用 composedPath 判断，避免面板内操作重建 DOM 后 target 脱离导致误关 */
 document.addEventListener('click', e => {
-  const ms = e.target.closest('.ms');
-  if(ms){
-    const was = ms.classList.contains('open');
-    $$('.ms.open').forEach(m => m.classList.remove('open'));
-    if(!was) ms.classList.add('open');
-  } else {
+  const path = e.composedPath();
+  const isEl = n => n && n.classList;
+  const trigger = path.find(n => isEl(n) && n.classList.contains('ms-trigger'));
+  if(trigger){
+    const ms = path.find(n => isEl(n) && n.classList.contains('ms'));
+    if(ms){
+      const was = ms.classList.contains('open');
+      $$('.ms.open').forEach(m => m.classList.remove('open'));
+      if(!was) ms.classList.add('open');
+    }
+    return;
+  }
+  if(!path.some(n => isEl(n) && n.classList.contains('ms'))){
     $$('.ms.open').forEach(m => m.classList.remove('open'));
   }
 });
 
-/* ---------------- 时间范围控件（默认近7日） ---------------- */
+/* ---------------- 时间范围（默认近7日） ---------------- */
 function setRangeDays(n){
   const end = new Date();
   const start = new Date();
@@ -142,6 +150,7 @@ function bindDatePickers(){
       else if(r === '30d') setRangeDays(30);
       else { state.dateStart = ''; state.dateEnd = ''; }
       refreshDateLabels();
+      container.classList.remove('open');  // 点快捷按钮后关闭面板
     }));
     container.querySelectorAll('input[data-date]').forEach(i => i.addEventListener('input', () => {
       state[i.dataset.date === 'start' ? 'dateStart' : 'dateEnd'] = i.value;
@@ -150,7 +159,7 @@ function bindDatePickers(){
   });
 }
 
-/* ---------------- 标签树组件（树状 + 级联勾选 + 搜索 + 全选） ---------------- */
+/* ---------------- 标签树 ---------------- */
 function searchTagTree(q){
   const out = [];
   TAG_TREE.forEach(n => { const sub = searchNode(n, q); if(sub) out.push(sub); });
@@ -163,9 +172,7 @@ function searchNode(node, q){
   if(children.length) return {name: node.name, count: node.count, children};
   return null;
 }
-function cloneFull(node){
-  return {name: node.name, count: node.count, children: node.children.map(cloneFull)};
-}
+function cloneFull(node){ return {name: node.name, count: node.count, children: node.children.map(cloneFull)}; }
 function renderTagNode(node, parentPath, forceExpand){
   const path = parentPath ? parentPath + '/' + node.name : node.name;
   const hasChild = node.children && node.children.length;
@@ -175,9 +182,7 @@ function renderTagNode(node, parentPath, forceExpand){
   const expanded = forceExpand || state.tagExpanded.has(path);
   let h = '<div class="tnode">';
   h += '<div class="tnode-row">';
-  h += hasChild
-    ? `<button class="tcaret${expanded ? ' open' : ''}" data-toggle="${esc(path)}" type="button">▸</button>`
-    : '<span class="tcaret-sp"></span>';
+  h += hasChild ? `<button class="tcaret${expanded ? ' open' : ''}" data-toggle="${esc(path)}" type="button">▸</button>` : '<span class="tcaret-sp"></span>';
   h += `<label class="tnode-label"><input type="checkbox" data-node="${esc(path)}"${checked ? ' checked' : ''}> <span>${esc(node.name)}</span><em>${node.count}</em></label>`;
   h += '</div>';
   if(hasChild && expanded) h += '<div class="tnode-children">' + node.children.map(ch => renderTagNode(ch, path, forceExpand)).join('') + '</div>';
@@ -201,16 +206,11 @@ function renderTagTree(container){
     ? tree.map(n => renderTagNode(n, '', !!q)).join('')
     : '<div class="tag-empty">无匹配标签</div>';
   applyIndeterminate(container);
-  refreshTagLabel(container);
-}
-function refreshTagLabel(container){
   const n = state.tags.size;
   container.querySelector('.ms-label').textContent = n ? `已选 ${n} 项` : '全部标签';
   container.querySelector('.ms-count').textContent = n ? `${n} 项` : '';
 }
-function syncTagUI(){
-  $$('[data-ms="tag"]').forEach(c => renderTagTree(c));
-}
+function syncTagUI(){ $$('[data-ms="tag"]').forEach(c => renderTagTree(c)); }
 function bindTagTree(container){
   const search = container.querySelector('.tree-search');
   const list = container.querySelector('.tree-list');
@@ -244,79 +244,82 @@ function bindTagTree(container){
   container.querySelector('.ms-clear').addEventListener('click', () => { state.tags.clear(); syncTagUI(); });
 }
 
-/* ---------------- 情感炸开 + 语义标注 ---------------- */
+/* ---------------- 情感（下拉多选，语义随颗粒度） ---------------- */
 function syncSentiScope(){
   const txt = state.granularity === 'voice' ? '整体' : '观点';
   $$('[data-senti-scope]').forEach(s => s.textContent = txt);
 }
-function bindSentiFlat(){
-  $$('[data-ms="senti"]').forEach(flat => {
-    flat.addEventListener('change', e => {
-      const cb = e.target.closest('input[type=checkbox]');
-      if(!cb) return;
-      cb.checked ? state.sentiments.add(cb.value) : state.sentiments.delete(cb.value);
-      syncSentiFlat();
-    });
+
+/* ---------------- ID 筛选 ---------------- */
+function parseIds(){
+  const raw = state.idInput.trim();
+  if(!raw) return { type:'none', ids:[] };
+  const tokens = [...new Set(raw.split(/[\s,;，；、\n\r]+/).filter(Boolean))];
+  let hasVoice = false, hasOpinion = false;
+  tokens.forEach(t => {
+    if(VOICE_ID_SET.has(t)) hasVoice = true;
+    if(OPINION_ID_SET.has(t)) hasOpinion = true;
   });
+  if(hasVoice && hasOpinion) return { type:'mixed', ids:tokens };
+  if(hasVoice) return { type:'voice', ids:tokens };
+  if(hasOpinion) return { type:'opinion', ids:tokens };
+  return { type:'none', ids:tokens };
 }
-function syncSentiFlat(){
-  $$('[data-ms="senti"]').forEach(flat => {
-    flat.querySelectorAll('.senti-chip').forEach(chip => {
-      const cb = chip.querySelector('input[type=checkbox]');
-      cb.checked = state.sentiments.has(cb.value);
-      chip.classList.toggle('on', cb.checked);
-    });
-  });
+function showIdHint(msg){
+  const h = $('[data-id-hint]');
+  h.textContent = msg;
+  h.classList.add('show');
+  setTimeout(() => h.classList.remove('show'), 3000);
+}
+function matchId(u){
+  if(!state.ids.length) return true;
+  const idSet = new Set(state.ids);
+  if(state.idType === 'mixed') return false;
+  if(state.idType === 'voice') return idSet.has(String(u.source_id));
+  if(state.idType === 'opinion'){
+    return state.granularity === 'voice'
+      ? (u.opinions || []).some(op => idSet.has(String(op.id)))
+      : idSet.has(String(u.id));
+  }
+  return false;
 }
 
-/* ---------------- 全量 UI 同步 ---------------- */
+/* ---------------- UI 同步 ---------------- */
 function syncAllUI(){
   refreshDateLabels();
   $$('[data-ms="game"]').forEach(c => c.__ms.render());
   $$('[data-ms="vote"]').forEach(c => c.__ms.render());
-  syncSentiFlat();
+  $$('[data-ms="senti"]').forEach(c => c.__ms.render());
   syncTagUI();
   syncSentiScope();
-  syncGrainUI();
-}
-function syncGrainUI(){
   $$('[data-grain-label]').forEach(s => s.textContent = grainName());
   const gt = $('#grainToggle .gt-label');
   if(gt) gt.textContent = state.granularity === 'voice' ? '观点报表' : '原声报表';
 }
 
-/* ---------------- 筛选器初始化 ---------------- */
+/* ---------------- 初始化 ---------------- */
 function initFilters(){
   $$('[data-ms="game"]').forEach(c => c.__ms = initMS(c, GAMES.map(g => ({value:g.appid, label:g.name, count:g.count})), '全部游戏', state.games));
   $$('[data-ms="vote"]').forEach(c => c.__ms = initMS(c, [{value:'1', label:'推荐'}, {value:'0', label:'不推荐'}], '全部', state.votes));
+  $$('[data-ms="senti"]').forEach(c => c.__ms = initMS(c, [{value:'positive', label:'正向'}, {value:'neutral', label:'中性'}, {value:'negative', label:'负向'}], '全部情感', state.sentiments));
   bindDatePickers();
-  bindSentiFlat();
   $$('[data-ms="tag"]').forEach(c => bindTagTree(c));
+  $('[data-id-input]').addEventListener('input', e => { state.idInput = e.target.value; });
   $$('[data-act="apply"]').forEach(b => b.addEventListener('click', applyFilters));
   $$('[data-act="reset"]').forEach(b => b.addEventListener('click', resetFilters));
-  setRangeDays(7);  // 默认近7日（含今日）
+  setRangeDays(7);
   syncAllUI();
 }
 
 /* ---------------- 颗粒度切换 ---------------- */
-function injectGrainToggle(){
-  const nav = document.querySelector('.topbar .nav');
-  if(!nav) return;
-  const btn = document.createElement('button');
-  btn.className = 'grain-toggle';
-  btn.id = 'grainToggle';
-  btn.type = 'button';
-  btn.innerHTML = '<span class="gt-ico">⇄</span><span class="gt-cap">颗粒度</span><span class="gt-label"></span>';
-  nav.after(btn);
-  btn.addEventListener('click', () => {
-    state.granularity = state.granularity === 'voice' ? 'opinion' : 'voice';
-    state.page = 1;
-    computeFiltered();
-    renderActive();
-    syncAllUI();
-    toast(`已切换到${grainName()}（${filtered.length.toLocaleString('zh-CN')} 条）`);
-  });
-}
+$('#grainToggle').addEventListener('click', () => {
+  state.granularity = state.granularity === 'voice' ? 'opinion' : 'voice';
+  state.page = 1;
+  computeFiltered();
+  renderAll();
+  syncAllUI();
+  toast(`已切换到${grainName()}（${filtered.length.toLocaleString('zh-CN')} 条）`);
+});
 
 /* ---------------- 筛选逻辑 ---------------- */
 function unitTagPaths(u){
@@ -340,44 +343,43 @@ function matchUnit(u){
   if(state.votes.size && !state.votes.has(String(u.rating))) return false;
   if(state.sentiments.size && !state.sentiments.has(u.sentiment)) return false;
   if(!tagHit(unitTagPaths(u))) return false;
+  if(!matchId(u)) return false;
   return true;
 }
-function computeFiltered(){
-  filtered = units().filter(matchUnit);
-}
+function computeFiltered(){ filtered = units().filter(matchUnit); }
 function applyFilters(){
-  computeFiltered();
+  const parsed = parseIds();
+  state.ids = parsed.ids;
+  state.idType = parsed.type;
+  if(parsed.type === 'mixed'){
+    filtered = [];
+    showIdHint('输入id包含原文和观点，请取其中1种进行查询');
+  } else {
+    computeFiltered();
+  }
   state.page = 1;
-  renderActive();
+  renderAll();
   toast(`筛选完成，共 ${filtered.length.toLocaleString('zh-CN')} 条`);
 }
 function resetFilters(){
   setRangeDays(7);
   state.games.clear(); state.votes.clear(); state.sentiments.clear(); state.tags.clear();
   state.tagExpanded.clear();
+  state.idInput = ''; state.ids = []; state.idType = 'none';
+  $('[data-id-input]').value = '';
   computeFiltered();
   state.page = 1;
   syncAllUI();
-  renderActive();
+  renderAll();
   toast('筛选条件已重置');
 }
-function renderActive(){
-  if(activePage === 'voices') renderList();
-  else renderDashboard();
+function renderAll(){
+  renderDashboard();
+  renderList();
 }
 
-/* ---------------- 导航 ---------------- */
-document.querySelectorAll('.nav-btn').forEach(btn => btn.onclick = () => {
-  document.querySelectorAll('.nav-btn,.page').forEach(x => x.classList.remove('active'));
-  btn.classList.add('active');
-  activePage = btn.dataset.page;
-  document.getElementById(activePage).classList.add('active');
-  syncAllUI();
-  renderActive();
-});
-
 /* ============================================================
-   原声列表（颗粒度感知：原声显示评论 / 观点显示观点）
+   原声列表（右侧抽屉，颗粒度感知）
    ============================================================ */
 function voiceRowHTML(v){
   const vote = v.rating === 1 ? '<span class="v-vote up">推荐</span>' : '<span class="v-vote down">不推荐</span>';
@@ -392,19 +394,40 @@ function voiceRowHTML(v){
     if(v.topic) chips.push(`<span class="t-chip t-plain">${esc(v.topic)}</span>`);
     (v.sub_topics || []).forEach(s => chips.push(`<span class="t-chip t-plain">${esc(s)}</span>`));
   }
-  const MAX = 5;
+  const MAX = 4;
   const tagHtml = chips.length > MAX ? chips.slice(0, MAX - 1).join('') + `<span class="t-chip t-more">+${chips.length - MAX + 1}</span>` : chips.join('');
   return `<div class="vrow" data-id="${v.id}" data-type="voice">
     <div class="v-main">
-      <div class="v-top"><span class="v-game">${esc(v.game)}</span><span class="v-time">${esc(fmtTime(v.posted_at))}</span>${vote}</div>
+      <div class="v-top"><span class="v-game">${esc(v.game)}</span><span class="v-time">${esc(fmtTime(v.posted_at))}</span>${vote}<span class="v-id">#${esc(v.source_id)}</span></div>
       <div class="v-text">${esc(v.content)}</div>
       <div class="v-tags">${tagHtml}</div>
     </div>
     <div class="v-side">
-      <div class="v-stat"><small>评论时游玩</small>${play}</div>
+      <div class="v-stat"><small>游玩</small>${play}</div>
       <div class="v-stat"><small>点赞</small>${likes}</div>
       <div class="v-stat"><small>回帖</small>${replies}</div>
     </div>
+  </div>`;
+}
+function voiceDetailHTML(v){
+  const sLabel = SENTI_LABEL[v.sentiment] || v.sentiment || '-';
+  const sClass = SENTI_CLASS[v.sentiment] || 't-plain';
+  const tags = [];
+  if(v.topic) tags.push(`<span class="t-chip t-plain">L1 · ${esc(v.topic)}</span>`);
+  (v.sub_topics || []).forEach(s => tags.push(`<span class="t-chip t-plain">L2 · ${esc(s)}</span>`));
+  const ops = (v.opinions || []).map(op =>
+    `<div class="op"><div class="op-head"><span class="op-path">${esc(op.path)}</span><span class="t-chip ${SENTI_CLASS[op.sentiment] || 't-plain'}">${esc(SENTI_LABEL[op.sentiment] || op.sentiment)}</span></div><div class="op-quote">${esc(op.quote)}</div></div>`
+  ).join('');
+  const badges = [];
+  if(v.refunded) badges.push('<span class="badge badge-danger">已退款</span>');
+  if(v.early_access) badges.push('<span class="badge badge-warn">抢先体验</span>');
+  if(v.steam_deck) badges.push('<span class="badge badge-soft">Steam Deck</span>');
+  if(v.received_for_free) badges.push('<span class="badge">免费获取</span>');
+  return `<div class="v-detail" data-detail="${v.id}">
+    <div class="vd-item"><div class="vd-label">整体情感</div><div class="vd-chips"><span class="t-chip ${sClass}">${esc(sLabel)}</span><span class="t-chip t-plain">分数 ${v.sentiment_score === null ? '-' : Number(v.sentiment_score).toFixed(2)}</span></div></div>
+    <div class="vd-item"><div class="vd-label">主题标签</div><div class="vd-chips">${tags.join('') || '<span style="color:var(--dim)">-</span>'}</div></div>
+    ${ops ? `<div class="vd-item"><div class="vd-label">观点明细</div>${ops}</div>` : ''}
+    <div class="vd-item"><div class="vd-grid"><div class="vd-cell"><small>累计游玩</small><b>${esc(fmtPlay(v.playtime_forever))}</b></div><div class="vd-cell"><small>Steam 标记</small><b>${badges.join('') || '-'}</b></div></div></div>
   </div>`;
 }
 function opinionRowHTML(o){
@@ -414,18 +437,34 @@ function opinionRowHTML(o){
   const replies = o.replies === null ? '<b class="nil">-</b>' : `<b>${fmtNum(o.replies)}</b>`;
   return `<div class="vrow" data-id="${o.id}" data-type="opinion">
     <div class="v-main">
-      <div class="v-top"><span class="v-game">${esc(o.game)}</span><span class="v-time">${esc(fmtTime(o.posted_at))}</span>${vote}</div>
+      <div class="v-top"><span class="v-game">${esc(o.game)}</span><span class="v-time">${esc(fmtTime(o.posted_at))}</span>${vote}<span class="v-id">#${o.id}</span></div>
       <div class="v-text">${esc(o.quote)}</div>
       <div class="v-tags"><span class="t-chip ${SENTI_CLASS[o.sentiment] || 't-plain'}">${esc(o.path)}</span></div>
     </div>
     <div class="v-side">
-      <div class="v-stat"><small>评论时游玩</small>${play}</div>
+      <div class="v-stat"><small>游玩</small>${play}</div>
       <div class="v-stat"><small>点赞</small>${likes}</div>
       <div class="v-stat"><small>回帖</small>${replies}</div>
     </div>
   </div>`;
 }
-function rowHTML(u){ return state.granularity === 'voice' ? voiceRowHTML(u) : opinionRowHTML(u); }
+function opinionDetailHTML(o){
+  const badges = [];
+  if(o.refunded) badges.push('<span class="badge badge-danger">已退款</span>');
+  if(o.early_access) badges.push('<span class="badge badge-warn">抢先体验</span>');
+  if(o.steam_deck) badges.push('<span class="badge badge-soft">Steam Deck</span>');
+  if(o.received_for_free) badges.push('<span class="badge">免费获取</span>');
+  const tags = [];
+  if(o.topic) tags.push(`<span class="t-chip t-plain">L1 · ${esc(o.topic)}</span>`);
+  (o.sub_topics || []).forEach(s => tags.push(`<span class="t-chip t-plain">L2 · ${esc(s)}</span>`));
+  return `<div class="v-detail" data-detail="${o.id}">
+    <div class="vd-item"><div class="vd-label">所属评论 · 整体情感</div><div class="vd-chips"><span class="t-chip ${SENTI_CLASS[o.overall_sentiment] || 't-plain'}">${esc(SENTI_LABEL[o.overall_sentiment] || o.overall_sentiment || '-')}</span></div></div>
+    <div class="vd-item"><div class="vd-label">所属评论原声</div><div class="vd-quote">${esc(o.content)}</div></div>
+    <div class="vd-item"><div class="vd-label">主题标签</div><div class="vd-chips">${tags.join('') || '<span style="color:var(--dim)">-</span>'}</div></div>
+    <div class="vd-item"><div class="vd-grid"><div class="vd-cell"><small>累计游玩</small><b>${esc(fmtPlay(o.playtime_forever))}</b></div><div class="vd-cell"><small>Steam 标记</small><b>${badges.join('') || '-'}</b></div></div></div>
+  </div>`;
+}
+function rowHTML(u){ return state.granularity === 'voice' ? voiceRowHTML(u) + voiceDetailHTML(u) : opinionRowHTML(u) + opinionDetailHTML(u); }
 function renderList(){
   const total = filtered.length;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -433,10 +472,10 @@ function renderList(){
   const start = (state.page - 1) * PAGE_SIZE;
   const slice = filtered.slice(start, start + PAGE_SIZE);
   const unitWord = state.granularity === 'voice' ? '原声' : '观点';
-  $('#vMeta').textContent = `共 ${total.toLocaleString('zh-CN')} 条${unitWord} · 第 ${state.page}/${pages} 页`;
+  $('#vCount').textContent = `· 共 ${total.toLocaleString('zh-CN')} 条${unitWord}`;
   $('#vList').innerHTML = slice.length
     ? slice.map(rowHTML).join('')
-    : `<div class="vempty">当前筛选下无数据 · 当前时间范围为「${dateLabelText()}」，可点「时间」筛选器选择「全部时间」后重新查询</div>`;
+    : `<div class="vempty">当前筛选下无数据 · 时间范围为「${dateLabelText()}」，可点「时间」选「全部时间」后查询</div>`;
   renderPager(pages);
 }
 function renderPager(pages){
@@ -458,126 +497,87 @@ $('#vPager').addEventListener('click', e => {
   if(!btn || btn.disabled) return;
   state.page = +btn.dataset.p;
   renderList();
-  $('#voices').scrollIntoView({behavior:'smooth', block:'start'});
 });
 
-/* 悬浮全文 */
-const textTip = $('#textTip');
-$('#vList').addEventListener('mouseover', e => {
-  const t = e.target.closest('.v-text');
-  if(!t) return;
-  textTip.textContent = t.textContent;
-  textTip.style.display = 'block';
-  const r = t.getBoundingClientRect();
-  const tipW = Math.min(600, window.innerWidth - 40);
-  let left = Math.min(r.left, window.innerWidth - tipW - 20);
-  let top = r.bottom + 8;
-  if(top + textTip.offsetHeight > window.innerHeight - 12) top = Math.max(12, r.top - textTip.offsetHeight - 8);
-  textTip.style.left = Math.max(12, left) + 'px';
-  textTip.style.top = top + 'px';
-});
-$('#vList').addEventListener('mouseout', e => {
-  if(e.target.closest('.v-text')) textTip.style.display = 'none';
-});
-
-/* ---------------- 详情抽屉（颗粒度感知） ---------------- */
-function fillStatGrid(rows){
-  return rows.map(([k, val]) => `<div class="d2-item"><small>${k}</small><b>${esc(val)}</b></div>`).join('');
-}
-function renderVoiceDetail(v){
-  $('#d2OpMain').style.display = 'none';
-  $('#d2ContentSec').style.display = 'none';
-  $('#d2QuoteHeader').textContent = '评论原声';
-  $('#d2SentiHeader').textContent = '情感分析 · 整体';
-  $('#d2Game').textContent = v.game;
-  $('#d2Meta').innerHTML = (v.rating === 1 ? '<span class="v-vote up">推荐</span>' : '<span class="v-vote down">不推荐</span>') + `<span>${esc(fmtTime(v.posted_at))}</span><span>作者 ${esc(v.author)}</span>`;
-  $('#d2Quote').textContent = v.content;
-  $('#d2Senti').innerHTML = `<span class="t-chip ${SENTI_CLASS[v.sentiment] || 't-plain'}">${esc(SENTI_LABEL[v.sentiment] || v.sentiment || '-')}</span>` +
-    `<span class="d2-score">情感分数 <b>${v.sentiment_score === null ? '-' : Number(v.sentiment_score).toFixed(2)}</b></span>` +
-    `<span class="d2-score">置信度 <b>${v.sentiment_confidence === null ? '-' : (Number(v.sentiment_confidence) * 100).toFixed(0) + '%'}</b></span>`;
-  const tags = [];
-  if(v.topic) tags.push(`<span class="t-chip t-plain">L1 · ${esc(v.topic)}</span>`);
-  (v.sub_topics || []).forEach(s => tags.push(`<span class="t-chip t-plain">L2 · ${esc(s)}</span>`));
-  $('#d2Tags').innerHTML = tags.join('') || '<span style="color:#a3afbd;font-size:13px">-</span>';
-  const opSec = $('#d2OpSec');
-  if(v.opinions && v.opinions.length){
-    opSec.style.display = '';
-    $('#d2Ops').innerHTML = v.opinions.map(op => `<div class="op"><div class="op-head"><span class="op-path">${esc(op.path)}</span><span class="t-chip ${SENTI_CLASS[op.sentiment] || 't-plain'}">${esc(SENTI_LABEL[op.sentiment] || op.sentiment)}</span></div><div class="op-quote">${esc(op.quote)}</div></div>`).join('');
-  } else opSec.style.display = 'none';
-  $('#d2Stats').innerHTML = fillStatGrid([['评论时游玩时长', fmtPlay(v.playtime_at_review)], ['累计游玩时长', fmtPlay(v.playtime_forever)], ['点赞数', fmtNum(v.likes)], ['回帖数', fmtNum(v.replies)]]);
-  const wvs = v.weighted_vote_score ? Number(v.weighted_vote_score).toFixed(2) : '-';
-  $('#d2Src').innerHTML = fillStatGrid([['作者 Steam64', v.author || '-'], ['语言', LANG_LABEL[v.language] || v.language || '-'], ['AppID', v.appid], ['评论 ID', v.source_id || '-'], ['加权投票分', wvs], ['数据来源', 'Steam 官方 API']]);
-  const badges = [];
-  if(v.refunded) badges.push('<span class="badge badge-danger">已退款</span>');
-  if(v.early_access) badges.push('<span class="badge badge-warn">抢先体验</span>');
-  if(v.steam_deck) badges.push('<span class="badge badge-soft">Steam Deck</span>');
-  if(v.received_for_free) badges.push('<span class="badge">免费获取</span>');
-  $('#d2Badges').innerHTML = badges.join('') || '<span style="color:#a3afbd;font-size:12px">无特殊标记</span>';
-}
-function renderOpinionDetail(o){
-  $('#d2OpMain').style.display = '';
-  $('#d2ContentSec').style.display = '';
-  $('#d2QuoteHeader').textContent = '观点原文';
-  $('#d2SentiHeader').textContent = '所属评论 · 整体情感';
-  $('#d2Game').textContent = o.game;
-  $('#d2Meta').innerHTML = (o.rating === 1 ? '<span class="v-vote up">推荐</span>' : '<span class="v-vote down">不推荐</span>') + `<span>${esc(fmtTime(o.posted_at))}</span><span>作者 ${esc(o.author)}</span>`;
-  $('#d2OpPath').innerHTML = `<span class="op-path">${esc(o.path)}</span><span class="t-chip ${SENTI_CLASS[o.sentiment] || 't-plain'}">${esc(SENTI_LABEL[o.sentiment] || o.sentiment)}</span>` + `<span class="d2-score">置信度 <b>${o.sentiment_confidence === null ? '-' : (Number(o.sentiment_confidence) * 100).toFixed(0) + '%'}</b></span>`;
-  $('#d2Quote').textContent = o.quote;
-  $('#d2Content').textContent = o.content;
-  $('#d2Senti').innerHTML = `<span class="t-chip ${SENTI_CLASS[o.overall_sentiment] || 't-plain'}">${esc(SENTI_LABEL[o.overall_sentiment] || o.overall_sentiment || '-')}</span>`;
-  const tags = [];
-  if(o.topic) tags.push(`<span class="t-chip t-plain">L1 · ${esc(o.topic)}</span>`);
-  (o.sub_topics || []).forEach(s => tags.push(`<span class="t-chip t-plain">L2 · ${esc(s)}</span>`));
-  $('#d2Tags').innerHTML = tags.join('') || '<span style="color:#a3afbd;font-size:13px">-</span>';
-  $('#d2OpSec').style.display = 'none';
-  $('#d2Stats').innerHTML = fillStatGrid([['评论时游玩时长', fmtPlay(o.playtime_at_review)], ['累计游玩时长', fmtPlay(o.playtime_forever)], ['点赞数', fmtNum(o.likes)], ['回帖数', fmtNum(o.replies)]]);
-  const wvs = o.weighted_vote_score ? Number(o.weighted_vote_score).toFixed(2) : '-';
-  $('#d2Src').innerHTML = fillStatGrid([['作者 Steam64', o.author || '-'], ['语言', LANG_LABEL[o.language] || o.language || '-'], ['AppID', o.appid], ['评论 ID', o.source_id || '-'], ['观点 ID', o.id], ['数据来源', 'Steam 官方 API']]);
-  const badges = [];
-  if(o.refunded) badges.push('<span class="badge badge-danger">已退款</span>');
-  if(o.early_access) badges.push('<span class="badge badge-warn">抢先体验</span>');
-  if(o.steam_deck) badges.push('<span class="badge badge-soft">Steam Deck</span>');
-  if(o.received_for_free) badges.push('<span class="badge">免费获取</span>');
-  $('#d2Badges').innerHTML = badges.join('') || '<span style="color:#a3afbd;font-size:12px">无特殊标记</span>';
-}
-function openDetail(id, type){
-  const u = (type === 'opinion' || state.granularity === 'opinion') ? OPINIONS.find(x => x.id === id) : VOICES.find(x => x.id === id);
-  if(!u) return;
-  if(state.granularity === 'voice') renderVoiceDetail(u);
-  else renderOpinionDetail(u);
-  $('#d2Mask').classList.add('open');
-}
+/* 详情展开（行内 accordion） */
 $('#vList').addEventListener('click', e => {
   const row = e.target.closest('.vrow');
-  if(row) openDetail(+row.dataset.id, row.dataset.type);
+  if(!row) return;
+  const detail = row.nextElementSibling;
+  if(detail && detail.classList.contains('v-detail')){
+    detail.classList.toggle('open');
+    row.classList.toggle('expanded');
+  }
 });
-$('#d2Close').addEventListener('click', () => $('#d2Mask').classList.remove('open'));
-$('#d2Mask').addEventListener('click', e => { if(e.target.id === 'd2Mask') e.target.classList.remove('open') });
-document.addEventListener('keydown', e => { if(e.key === 'Escape') $('#d2Mask').classList.remove('open') });
 
-/* ---------------- 导出 CSV（颗粒度感知） ---------------- */
+/* ---------------- 右侧抽屉折叠 + 高度调节 ---------------- */
+function bindDrawers(){
+  $$('[data-toggle]').forEach(head => {
+    head.addEventListener('click', () => {
+      const drawer = head.closest('.rdrawer');
+      const caret = head.querySelector('.rcaret');
+      if(drawer.dataset.drawer === 'list'){
+        drawer.classList.toggle('collapsed');
+        if(caret) caret.classList.toggle('up', drawer.classList.contains('collapsed'));
+      } else {
+        drawer.classList.toggle('open');
+        if(caret) caret.classList.toggle('up', drawer.classList.contains('open'));
+        const body = drawer.querySelector('.rdrawer-body');
+        if(drawer.classList.contains('open') && body) body.style.height = '';  // 回到默认 33vh
+      }
+    });
+  });
+  initResize();
+}
+function initResize(){
+  const resize = $('[data-resize]');
+  if(!resize) return;
+  const drawer = resize.closest('.rdrawer');
+  const body = drawer.querySelector('.rdrawer-body');
+  let dragging = false;
+  resize.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+  });
+  document.addEventListener('mousemove', e => {
+    if(!dragging) return;
+    const bottom = window.innerHeight - 40;  // 页脚高度
+    let h = bottom - e.clientY - 6;
+    const minH = Math.round(window.innerHeight * 0.33);
+    const maxH = Math.round(window.innerHeight * 0.66);
+    h = Math.max(minH, Math.min(maxH, h));
+    body.style.height = h + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if(!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+}
+
+/* ---------------- 导出 CSV ---------------- */
 function csvCell(x){
   const s = String(x ?? '');
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
-const vExport = $('#vExport');
-if(vExport) vExport.addEventListener('click', () => {
+$('#vExport').addEventListener('click', () => {
   const isVoice = state.granularity === 'voice';
   const header = isVoice
-    ? ['评论ID','游戏','AppID','发布时间','推荐','整体情感','情感分数','L1标签','L2标签','观点数','评论时游玩(小时)','点赞','回帖','作者','评论内容']
-    : ['观点ID','评论ID','标签路径','观点情感','置信度','游戏','发布时间','推荐','所属评论整体情感','评论时游玩(小时)','点赞','回帖','作者','观点原文'];
+    ? ['原声ID','游戏','发布时间','推荐','整体情感','情感分数','L1标签','L2标签','观点数','评论时游玩(小时)','点赞','回帖','评论内容']
+    : ['观点ID','所属原声ID','标签路径','观点情感','游戏','发布时间','推荐','所属评论整体情感','观点原文'];
   const rows = filtered.map(u => isVoice ? [
-    u.id, u.game, u.appid, fmtTime(u.posted_at), u.rating === 1 ? '推荐' : '不推荐',
+    u.source_id, u.game, fmtTime(u.posted_at), u.rating === 1 ? '推荐' : '不推荐',
     SENTI_LABEL[u.sentiment] || u.sentiment || '', u.sentiment_score ?? '',
     u.topic || '', (u.sub_topics || []).join('|'), (u.opinions || []).length,
     u.playtime_at_review === null ? '' : (u.playtime_at_review / 60).toFixed(1),
-    u.likes ?? '', u.replies ?? '', u.author || '', u.content || ''
+    u.likes ?? '', u.replies ?? '', u.content || ''
   ] : [
-    u.id, u.comment_id, u.path, SENTI_LABEL[u.sentiment] || u.sentiment, u.sentiment_confidence ?? '',
+    u.id, u.source_id, u.path, SENTI_LABEL[u.sentiment] || u.sentiment,
     u.game, fmtTime(u.posted_at), u.rating === 1 ? '推荐' : '不推荐',
-    SENTI_LABEL[u.overall_sentiment] || u.overall_sentiment || '',
-    u.playtime_at_review === null ? '' : (u.playtime_at_review / 60).toFixed(1),
-    u.likes ?? '', u.replies ?? '', u.author || '', u.quote || ''
+    SENTI_LABEL[u.overall_sentiment] || u.overall_sentiment || '', u.quote || ''
   ]);
   const csv = '\ufeff' + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
@@ -590,7 +590,7 @@ if(vExport) vExport.addEventListener('click', () => {
 });
 
 /* ---------------- 启动 ---------------- */
-injectGrainToggle();
 initFilters();
+bindDrawers();
 computeFiltered();
-renderDashboard();
+/* 首次渲染在 dashboard.js 末尾执行（chartState 初始化后，避免 TDZ） */

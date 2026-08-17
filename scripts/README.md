@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-08-11
+> **最后更新**：2026-08-17
 
 ---
 
@@ -17,11 +17,16 @@ scripts/
 │   ├── 数据巡检与修复                   db_stats / inspect_aug3_data / cleanup_cs2 / debug_*
 │   ├── 标注管线（方案4）               reanalyze_all / reanalyze_outliers / gen_l3_definitions
 │   │                                   migrate_opinions_v2 / dump_opinions / export_xlsx
-│   │                                   write_completion_flag
+│   │                                   write_completion_flag / curate_l3_definitions
+│   │                                   rebuild_golden_set / calibrate_semantic_match
+│   │                                   select_random500 / export_sample_xlsx
+│   │                                   export_validation_sample
 │   ├── 诊断对比                         diag_batch_vs_single / diag_prompt_a / verify_config
 │   ├── B 站探针（2026-08-13）           probe_bilibili / probe_bili_wbi / probe_bili_ticket
 │   │                                   diag_bili_412
-│   ├── 原型构建                         build_prototype / export_prototype_data
+│   ├── 原型构建                         build_prototype / export_prototype_data / subset_font
+│   ├── L3.5 微话题下钻                  l35_cluster
+│   ├── 数据修复                         backfill_steam_target_names
 │   └── E2E 验证                         e2e_lifecycle
 └── ops/                            ⚙️ 运维脚本
     ├── refresh_likes.py                ✅ 7 天后回采脚本（已实现）
@@ -60,6 +65,7 @@ scripts/
 | `check_likes_status.py` | 检查评论 likes 状态分布（冷启动 NULL 语义） |
 | `debug_dup_source_id.py` / `debug_pagination_loss.py` / `debug_recent_order.py` | Steam API 翻页/去重/排序 bug 排查 |
 | `show_refreshed_sample.py` | 回采样本展示 |
+| `backfill_steam_target_names.py` | 回填 Steam 历史评论缺失的 `target_name`（extra_meta.name 为空时按 appid 兜底） |
 
 ### dev/ · 标注管线（方案4）
 
@@ -67,11 +73,17 @@ scripts/
 |------|------|
 | **`reanalyze_all.py`** | 核心：全量重打标（观点短语 → 程序匹配 + 三轮收敛），`--limit 200 --random` 抽样可复现 |
 | `reanalyze_outliers.py` | 只重打"未匹配/无观点"的离群评论 |
-| `gen_l3_definitions.py` | 生成 `config/topics/l3_definitions.yaml`（128 个 L3 定义 + 关键词） |
+| `gen_l3_definitions.py` | 生成 L3 定义词典（早期版本；GDT v3.1.1 后由 `curate_l3_definitions.py` 重建） |
+| `curate_l3_definitions.py` | 精编 GDT v3.1.1 的 111 个 L3 关键词词典（按新词表重建 `l3_definitions.yaml`） |
 | `migrate_opinions_v2.py` | opinions 表结构迁移（v1 → v2） |
 | `dump_opinions.py` | 导出观点明细检查匹配质量 |
-| `export_xlsx.py` | 导出标注结果为 xlsx（comments + opinions 双 Sheet） |
+| `export_xlsx.py` | 导出标注结果为 xlsx（comments + opinions 双 Sheet；v3.1.1 起不再导出 `sub_topics` / `content` 冗余列，`target_name` 缺失按 appid 兜底） |
 | `write_completion_flag.py` | 收敛完成后写 `data/analysis_done.flag` + 输出报告 |
+| `rebuild_golden_set.py` | 按 GDT v3.1.1 重建黄金集并生成 pytest fixture（`tests/fixtures/golden_match_set.json`） |
+| `calibrate_semantic_match.py` | bge 语义匹配校准（诊断用，只读；已证伪语义兜底路线） |
+| `select_random500.py` | 复现 `reanalyze_all.py` 的随机抽样，固定 500 条重打样本 ID |
+| `export_sample_xlsx.py` | 按固定评论 ID 列表导出重打结果为 xlsx |
+| `export_validation_sample.py` | 从打标结果 xlsx 提取 500 条抽样验证样本（供黄金集重建） |
 
 ### dev/ · 诊断对比 / 原型
 
@@ -80,8 +92,9 @@ scripts/
 | `diag_batch_vs_single.py` | 批量 vs 单条打标质量对比（方案4 选型依据） |
 | `diag_prompt_a.py` | prompt A（强制枚举 L3）缺陷诊断 |
 | `verify_config.py` | 配置（gaming.yaml / l3_definitions.yaml）加载验证 |
-| `build_prototype.py` | 以 v1 备份为骨架构建原型 v2 |
+| `build_prototype.py` | 组装 v3 单文件自包含原型（内嵌子集字体 + logo base64，源文件含 `page.html`） |
 | `export_prototype_data.py` | 导出原型所需数据（单个 JSON） |
+| `subset_font.py` | OPPO Sans 字体子集化（仅保留原型实际用到的字符，供 `build_prototype.py` 内嵌） |
 | `export_cs2.py` | 导出 CS2 评论明细（按字段来源分级标注） |
 
 ### dev/ · B 站探针与数据（2026-08-13）
@@ -94,6 +107,12 @@ scripts/
 | `diag_bili_412.py` | B 站 412 风控诊断（buvid + 完整头排查） |
 | `analyze_danmaku.py` | 弹幕词典匹配分析（弹幕不进 LLM 链路，成本红线）→ L1/L2/观点路径分布 |
 | `export_bilibili.py` | B 站评论/弹幕数据导出（`--out 路径` 指定输出） |
+
+### dev/ · L3.5 动态微话题下钻（2026-08-17）
+
+| 脚本 | 用途 |
+|------|------|
+| `l35_cluster.py` | 手动触发的本地 bge 聚类，输出簇的样本评论 ID + 代表短语；窗口样本 <30 条时告警。需 ML 环境（见 `docs/guides/SETUP_ML_ENV.md`） |
 
 > 正式采集器在 `src/collectors/bilibili.py`（已实现并实测：BV1UpwaeNESx 全链路落库，1006 条评论入库）。
 

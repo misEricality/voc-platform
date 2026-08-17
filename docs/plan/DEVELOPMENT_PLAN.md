@@ -1,4 +1,4 @@
-# VoC 平台 · 开发计划与进度速查
+# 灵听 · Lynx · 开发计划与进度速查
 
 > **用途**：项目从 0 到 1 全部里程碑 + 下一步候选 + 当前状态快照。随时查阅。
 >
@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-08-15
+> **最后更新**：2026-08-17
 
 ---
 
@@ -51,7 +51,7 @@
   - `upsert` 规则升级：`likes / replies` 为 `None` 不覆盖旧值
 
 **新增 scripts（位于 `scripts/dev/`）：**
-- `refresh_likes.py`：发布满 7 天的评论回采点赞/回复/开发者回复（**未实现，待补**）
+- `refresh_likes.py`：发布满 7 天的评论回采点赞/回复/开发者回复（后于 2026-08-07 补全，2026-08-17 修复游标续翻 bug）
 - `collect_6_games.py`：6 款 Steam 游戏批量采集（黑神话悟空 / 巫师3 / 文明6 / 底特律 / 光与影 33号远征队 / 星际拓荒）
 - `check_likes_status.py`：检查评论 likes 状态分布
 - `cleanup_cs2.py` / `inspect_aug3_data.py`：数据清理与巡检
@@ -98,16 +98,16 @@
 | 指标 | 数值 | 业务解读 |
 |---|---|---|
 | 总评论数 | **3073 条** | Steam 2067（6 款游戏）+ B站 1006（BV1UpwaeNESx 实测落库） |
-| 情感分析覆盖 | **3034/3073（98.7%）** | ✅ 方案4 打标（Steam 重打 + B站 新入库即打标）；余 39 条待分析 |
-| 观点级标注 | 5212 条 | `comment_opinions` 表（程序匹配到的观点短语） |
+| 情感分析覆盖 | **3041/3073（98.9%）** | ✅ 方案4 打标（Steam 2067/2067 + B站 974/1006）；余 32 条待分析 |
+| 观点级标注 | 5205 条 | `comment_opinions` 表（程序匹配到的观点短语） |
 | 语义向量覆盖 | 1021 条（单模型） | `comment_embeddings` 表（bge-small-zh-v1.5；Steam 存量 2067 待回填） |
 | 已支持游戏/视频 | 6 款游戏 + 1 条视频 | Steam 6 款 + B站 BV1UpwaeNESx |
 | 正向 / 负向 / 中性 | 见 DB | 按核心观点情感聚合 |
-| 主题 TOP1 | 见 DB | L1-L3 三级标签（L1 7 / L2 28 / L3 128） |
+| 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111；旧标签残留待清洗） |
 | 部署方式 | 本地 Streamlit | 在内网/笔记本即可跑 |
 | 平台覆盖 | **Steam + B站（2 家）** | 微博为下一主扩展点 |
 | 数据存储 | SQLite 单文件（data/voc.db） | 增量 7 天后回采机制 |
-| 远端 GitHub 状态 | 推送至 commit `81fb045` | 本次 B站/向量化工作未提交 |
+| 远端 GitHub 状态 | 待提交 | 本次 GDT v3.1.1 词表 / 回采修复 / 时区统一 / 原型 v3 / 文档同步 |
 
 ---
 
@@ -189,7 +189,7 @@
 **后续（待排期）**：
 - 存量 2067 条全量回填（`backfill_embeddings.py` 一次跑完，约几分钟）
 - 仪表盘语义搜索框（v2）
-- 「其他」兜底桶已升至 2032 条 / 67.0%（topic 口径，2026-08-15 实测；观点口径 62.4%，趋势恶化）→ 匹配层语义匹配升级 + embedding 聚类治理（当前数据最大痛点）
+- 「其他」兜底桶治理已进入阶段 1：GDT v3.1.1 词表落地（L1 10 / L2 28 / L3 111），bge 语义匹配已证伪，黄金集回归门禁已上线；新标签体系 500 条验证样本观点级 L3 严格准确率 76.6%，兜底承载仍偏重（71.9%），下一步扩充战斗/动作/文化词典并收口全量重打。
 
 ---
 
@@ -272,12 +272,12 @@
 
 ### ⏸️ P9 · 下一代标签系统（GDT+PEDM 双轨）分阶段采纳（2026-08-15 评审通过）
 
-**背景**：外部设计稿《下一代 AI 游戏洞察系统》（轨道 A GDT 监控分类 + 轨道 B PEDM 体验诊断 + L3.5 微话题下钻）完成评审。结论：**方法论方向采纳、不做整体替换**，改为三阶段嫁接式采纳；完整评审结论、修订版词表/接口/Prompt 与验收标准见 📄 [next-gen-tagging/UPGRADE_PLAN_v2.0.md](./next-gen-tagging/UPGRADE_PLAN_v2.0.md)（原稿备份：[next-gen-tagging/ORIGINAL_SPEC_v1.0.0.md](./next-gen-tagging/ORIGINAL_SPEC_v1.0.0.md)）。
+**背景**：外部设计稿《下一代 AI 游戏洞察系统》（轨道 A GDT 监控分类 + 轨道 B PEDM 体验诊断 + L3.5 微话题下钻）完成评审。结论：**方法论方向采纳、不做整体替换**，改为三阶段嫁接式采纳；完整评审结论、修订版词表/接口/Prompt 与验收标准见 📄 [next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md)（原稿备份：[next-gen-tagging/ORIGINAL_SPEC_v1.0.0.md](./next-gen-tagging/ORIGINAL_SPEC_v1.0.0.md)）。
 
 **执行顺序（前置依赖严格）**：
 1. 阶段 0 时序持久化（依赖 P6；当前每日全新库不累积，监控形态全部无从谈起）
-2. 阶段 1 GDT v3.1.1 词表嫁接 + 语义匹配（与"当前最关键的一步"67% 兜底治理同一事项，合并执行）
-3. 阶段 2 L3.5 本地 embedding 聚类（零 API 成本，手动触发）
+2. 阶段 1 GDT v3.1.1 词表嫁接（**词表与词典已落地，2026-08-17**；语义匹配已证伪、黄金集门禁已上线；全量重打与旧标签清洗待收口）
+3. 阶段 2 L3.5 本地 embedding 聚类（零 API 成本，手动触发；`l35_cluster.py` 骨架已就绪）
 4. 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
 
 **暂缓**：Spike 监控大盘 / 跨版本聚合（数据量 ≥5 万条且稳定日增后重评）。
@@ -319,13 +319,13 @@
 | Steam Web API key 未申请到 | 安装 Steam 手机 App → 启用 Steam Guard → 1 分钟搞定，**不阻塞任何主线** | 仅需要更大数据量时 |
 | B 站开放平台未申请 | 提交申请即可（个人开发者 1-3 天审核） | P5 B 站接入 |
 | ~~`scripts/ops/refresh_likes.py` 未实现~~ | ✅ **已实现（2026-08-07）**：回采 ≥7 天评论的 likes/replies/开发者回复 | P4 文档化收尾 |
-| 🔴 "其他/整体评价"占比恶化至 67%（2026-08-15 实测） | 匹配层升级：phrase→L3 定义语义匹配（复用 bge 向量）+ 收紧 ≤20 字兜底 + 黄金集回归门禁 | 仪表盘洞察力（核心价值） |
-| 🔴 refresh_likes.py 翻页 bug（2026-08-15 评审发现） | 循环内 collect() 每次从头翻页，只覆盖最新 ~100 条且 matched 重复计数 → 改为真正游标续翻 | Steam likes 回采从未生效（全库 likes 为 NULL） |
-| 🟠 时区混用（2026-08-15 评审发现） | posted_at 存本地时间（fromtimestamp），fetched_at/refreshed_at 为 UTC → 统一 tz-aware UTC | "≥7天"判断有 8h 偏差；CI（UTC 主机）与本地采集数据不可比 |
+| 🟡 "总体体验评价"兜底承载仍偏重（2026-08-17 验证样本观点级 L3 准确率 76.6%，兜底占 71.9%） | 阶段 1 已落地 GDT v3.1.1 词表 + 黄金集门禁；下一步扩充战斗/动作/文化词典 + 全量重打 + 旧标签清洗 | 仪表盘洞察力（核心价值） |
+| ~~🔴 refresh_likes.py 翻页 bug（2026-08-15 评审发现）~~ | ✅ **已修复（2026-08-17）**：循环内 collect() 改为单次游标续翻遍历 `fetch_comments` 生成器 | Steam likes 回采现已真正生效 |
+| ~~🟠 时区混用（2026-08-15 评审发现）~~ | ✅ **已统一（2026-08-17）**：posted_at 统一落库为 naive UTC（fromtimestamp 加 tz=UTC 后去 tzinfo） | "≥7天"判断与 CI 主机口径一致 |
 | 🟠 打标双主链路分叉（2026-08-15 评审发现） | pipeline 逐条调 LLM（约 10x 成本），批量+三轮收敛只在 reanalyze_all.py → 收口进主链路 | 成本与可维护性 |
 | 🟡 CI 无 pytest | GitHub Actions 增加 test job；拆分 requirements 避免 CI 安装 torch | 工程护栏 |
 | 🟡 分析结果无版本溯源 | comments 增加 analyzer_version（模型+prompt 版本） | 换模型/prompt 后存量数据无法对账 |
-| 🟡 下一代标签系统（GDT+PEDM 双轨） | 分阶段采纳，见 [next-gen-tagging/UPGRADE_PLAN_v2.0.md](./next-gen-tagging/UPGRADE_PLAN_v2.0.md) | 阶段 0 依赖 P6 持久化；阶段 1 与兜底治理合并 |
+| 🟡 下一代标签系统（GDT+PEDM 双轨） | 分阶段采纳，见 [next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md)；阶段 1 词表已落地，语义匹配已证伪，黄金集门禁已上线 | 阶段 0 依赖 P6 持久化；阶段 1 待全量重打收口 |
 | 标注算法已切换方案4 | 见 [ANNOTATION_PIPELINE.md](../architecture/ANNOTATION_PIPELINE.md) | 文档已更新 |
 
 ---
@@ -397,4 +397,4 @@
 
 > 💡 **记住**：本项目核心价值 = 边学边做 + 能看到玩家真实声音。**不要为了完整功能而忘了这个核心价值**。
 >
-> 🎯 **当前最关键的一步**：治理标注匹配层（把「其他」占比从 67% 打下来）+ 修复 refresh_likes 翻页 bug——先巩固存量数据价值，再扩新平台。
+> 🎯 **当前最关键的一步**：收口阶段 1 —— 按 GDT v3.1.1 完成全量重打 + 旧标签清洗，并把「总体体验评价」兜底占比压下来（500 条验证样本当前 L3 严格准确率 76.6%）；refresh_likes 翻页 bug 与时区混用已修复。

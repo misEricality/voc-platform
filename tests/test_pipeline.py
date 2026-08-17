@@ -7,7 +7,7 @@
 - LLM 分析器 mock 注入
 """
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -61,7 +61,7 @@ def test_posted_after_app_layer_filter():
     collector.session.get.return_value = mock_resp
 
     # 传 posted_after = 8/2 的时间戳：只 yield 第 2 条 + 第 3 条
-    posted_after = datetime.fromtimestamp(1754086400)  # 8/2 时间戳
+    posted_after = datetime.fromtimestamp(1754086400, tz=timezone.utc).replace(tzinfo=None)  # 8/2 时间戳（UTC）
     raws = list(
         collector.fetch_comments(
             "730",
@@ -100,7 +100,7 @@ def test_posted_before_app_layer_filter():
 
     # 传 posted_before：只 yield timestamp < posted_before 的
     # 8/2 23:59:59 之前应只 yield 第 1 条
-    posted_before = datetime.fromtimestamp(1754172800)  # 正好是第 3 条时间戳
+    posted_before = datetime.fromtimestamp(1754172800, tz=timezone.utc).replace(tzinfo=None)  # 正好是第 3 条时间戳（UTC）
     raws = list(
         collector.fetch_comments(
             "730",
@@ -239,8 +239,8 @@ def test_fetch_comments_verification_page_safe():
         MagicMock(json=lambda: verify_page),
     ]
 
-    posted_after = datetime.fromtimestamp(posted_after_ts)
-    posted_before = datetime.fromtimestamp(posted_before_ts)
+    posted_after = datetime.fromtimestamp(posted_after_ts, tz=timezone.utc).replace(tzinfo=None)
+    posted_before = datetime.fromtimestamp(posted_before_ts, tz=timezone.utc).replace(tzinfo=None)
     raws = list(
         collector.fetch_comments(
             "730",
@@ -320,8 +320,8 @@ def test_fetch_comments_verification_page_rescue():
         MagicMock(json=lambda: rescue2),         # 兜底页 2（无新数据，停止）
     ]
 
-    posted_after = datetime.fromtimestamp(posted_after_ts)
-    posted_before = datetime.fromtimestamp(posted_before_ts)
+    posted_after = datetime.fromtimestamp(posted_after_ts, tz=timezone.utc).replace(tzinfo=None)
+    posted_before = datetime.fromtimestamp(posted_before_ts, tz=timezone.utc).replace(tzinfo=None)
     raws = list(
         collector.fetch_comments(
             "730",

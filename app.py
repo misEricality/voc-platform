@@ -1,4 +1,4 @@
-"""Streamlit 仪表盘 - VoC Platform
+"""Streamlit 仪表盘 - 灵听 · Lynx
 
 启动：streamlit run app.py
 """
@@ -26,6 +26,9 @@ from src.visualizer.charts import (
 )
 
 
+LOGO_PATH = Path(__file__).resolve().parent / "product" / "logo" / "lynx_logo_v4a_clean.png"
+
+
 def _find_chinese_font() -> str | None:
     """跨平台探测可用的中文字体路径（词云渲染中文必需，否则显示为方框）"""
     candidates = [
@@ -49,13 +52,15 @@ def _find_chinese_font() -> str | None:
 
 
 st.set_page_config(
-    page_title="VoC Platform · 消费者之声洞察",
-    page_icon="🎙️",
+    page_title="灵听 · Lynx",
+    page_icon=str(LOGO_PATH),
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("🎙️ VoC Platform · 消费者之声洞察")
+st.sidebar.image(str(LOGO_PATH), width=48)
+st.sidebar.caption("灵听 · Lynx")
+st.title("灵听 · Lynx")
 st.markdown("""
 > **个人项目** —— 基于多平台数据的消费者反馈采集、情感分析与可视化  
 > 数据源：Steam 公开评测 · 分析引擎：DeepSeek/Qwen/GLM  

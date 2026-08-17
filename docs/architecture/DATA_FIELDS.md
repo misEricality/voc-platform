@@ -1,4 +1,4 @@
-# VoC 平台 · 数据字段说明
+# 灵听 · Lynx · 数据字段说明
 
 > **用途**：让设计师/产品/技术对"一条评论在我们数据库里到底有什么"有共同语言。
 >
@@ -35,7 +35,7 @@
 | `A_language` | 字符串 | `language` | `"schinese"` | 评论语种（schinese=简体中文） |
 | `A_likes` | 整数 | `votes_up` | `1` | 评论被点赞数（v0.2 起冷启动为 `NULL`=未回采，7 天后回采填充） |
 | `A_replies` | 整数 | `comment_count` | `0` | 该评论下的回复数（冷启动语义同 `A_likes`） |
-| `A_posted_at` | 时间 | `timestamp_created` | `"2026-07-30T10:57:00"` | 评论发布时间（Steam 给的是 Unix 秒） |
+| `A_posted_at` | 时间 | `timestamp_created` | `"2026-07-30T10:57:00"` | 评论发布时间（Steam 给的是 Unix 秒；统一落库为 **naive UTC**，与 `fetched_at`/`refreshed_at` 口径一致） |
 
 **特别注意**：
 - `A_author` 字段本来该是昵称，但因为合规要求（**不存用户隐私**），代码只存了 steamid（即作者匿名 ID）作为 `A_author_id`，没有昵称
@@ -58,7 +58,7 @@
 | `A_author` | 字符串 | `member.uname` | `"落花影I"` | 昵称（B 站公开数据，可存） |
 | `A_likes` | 整数 | `like` | `30483` | 点赞数（快照模式直接存实值，无 7 天回采语义） |
 | `A_replies` | 整数 | `rcount` | `109` | 楼中楼回复数 |
-| `A_posted_at` | 时间 | `ctime` | `"2025-01-22T12:07:58"` | 评论时间 |
+| `A_posted_at` | 时间 | `ctime` | `"2025-01-22T12:07:58"` | 评论时间（统一落库为 **naive UTC**） |
 | `A_profile` | JSON | `member` 派生 | `{"uname":"落花影I","level":6,...}` | 评论者画像（存 `extra_json.profile`） |
 
 **特别注意（实测校准 2026-08-13）**：
@@ -107,8 +107,8 @@
 | `C_sentiment` | 字符串 | 核心观点情感 | `"positive"` | 整体情感：`positive` / `negative` / `neutral`（= 核心观点 is_core 的情感） |
 | `C_sentiment_score` | 浮点 | 核心观点分数 | `0.6` | 情感强弱（极负面 -1 → 极正面 +1） |
 | `C_sentiment_confidence` | 浮点 | 模型输出 | `0.8` | 模型对自己的判断有多大把握 |
-| `C_topic` | 字符串 | **程序映射** | `"玩法与内容"` | 核心观点匹配到的 **L1**（`normalize.map_l3_to_path`） |
-| `C_sub_topics` | JSON 字符串 | 兼容保留 | `'["可玩性", "操作"]'` | v0.1 遗留列，方案4 后由 `comment_opinions` 表替代，不新增写入 |
+| `C_topic` | 字符串 | **程序映射** | `"机制与内容"` | 核心观点匹配到的 **L1**（`normalize.map_l3_to_path`，GDT v3.1.1） |
+| `C_sub_topics` | JSON 字符串 | 兼容保留 | `'["可玩性", "操作"]'` | v0.1 遗留列，方案4 后由 `comment_opinions` 表替代，不新增写入；`export_xlsx.py` 已不再导出 |
 | `C_analyzed_at` | 时间 | 分析完成时刻 | `"2026-08-06T21:00:00"` | 何时分析完成 |
 
 ### 观点级标注（comment_opinions 表）
@@ -117,7 +117,7 @@
 
 | 字段名 | 类型 | 含义 |
 |---|---|---|
-| `full_path` | 字符串 | 完整路径（`"玩法与内容/玩法机制/核心玩法"`，L1/L2/L3 三段不留空） |
+| `full_path` | 字符串 | 完整路径（`"机制与内容/核心机制与循环/战斗系统"`，L1/L2/L3 三段不留空） |
 | `sentiment` | 字符串 | 观点级情感（positive/negative/neutral） |
 | `sentiment_confidence` | 浮点 | 观点级置信度 |
 | `quote` | 文本 | 观点短语（LLM 从原声提取） |
@@ -248,7 +248,7 @@
 | `mode` | 整数 | `p` 属性第 2 段 | 弹幕类型（1=滚动 4=底部 5=顶部 7=高级） |
 | `color` | 整数 | `p` 属性第 4 段 | 弹幕颜色（可作情绪粗信号） |
 | `user_hash` | 字符串 | `p` 属性第 7 段 | 用户匿名 hash（不落真实身份） |
-| `posted_at` | 时间 | `p` 属性第 5 段 | 弹幕发送时间（与 progress 双时间戳） |
+| `posted_at` | 时间 | `p` 属性第 5 段 | 弹幕发送时间（与 progress 双时间戳；落库为 **naive UTC**） |
 | `fetched_at` | 时间 | 入库时刻 | 采集时间 |
 
 **实测结论（2026-08-13）**：

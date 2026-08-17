@@ -14,8 +14,8 @@ config/
 │   ├── sentiment_user.txt              情感分析用户提示词模板（观点短语提取，含占位符）
 │   └── sentiment_user_strict.txt       收敛轮严格版（强制 ≥1 条观点，方案4 第 2/3 轮）
 └── topics/                         🏷️ 三级标签体系
-    ├── gaming.yaml                     L1 7 / L2 28 / L3 128 三级标签树
-    └── l3_definitions.yaml             128 个 L3 定义 + 关键词（程序匹配词典）
+    ├── gaming.yaml                     GDT v3.1.1：L1 10 / L2 28 / L3 111 三级标签树
+    └── l3_definitions.yaml             111 个 L3 定义 + 关键词（程序匹配词典）
 ```
 
 ---

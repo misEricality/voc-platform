@@ -9,7 +9,6 @@
 - target_name
 - sentiment
 - topic（L1）
-- sub_topics（L2 列表）
 - opinion_count
 - content（原声）
 
@@ -25,7 +24,6 @@
 - quote（观点）
 - quote_start
 - quote_end
-- content（原声，简短版）
 
 默认输出到 `data/exports/voc_export_YYYYMMDD_HHMMSS.xlsx`
 """
@@ -43,6 +41,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
+
+
+# Steam 历史数据部分 extra_meta.name 为空；导出时按 appid 兜底。
+STEAM_APP_NAMES = {
+    "730": "Counter-Strike 2",
+    "570": "Dota 2",
+    "578080": "PUBG: BATTLEGROUNDS",
+    "1172470": "Apex Legends",
+    "2358720": "黑神话：悟空",
+    "1222140": "底特律：化身为人",
+    "292030": "巫师 3：狂猎",
+    "289070": "文明 6",
+    "1903340": "光与影：33号远征队",
+    "753640": "星际拓荒",
+}
+
+
+def resolve_target_name(platform: str, target_id: str, meta_name: str | None) -> str:
+    if meta_name:
+        return meta_name
+    if platform == "steam":
+        appid = target_id.removeprefix("steam:")
+        return STEAM_APP_NAMES.get(appid, target_id)
+    return target_id or ""
 
 
 def get_conn(db_path: str) -> sqlite3.Connection:
@@ -102,20 +124,18 @@ def build_comments_rows(
     """构造 Sheet 1 行"""
     rows = []
     for c in comments:
-        try:
-            subs = json.loads(c["sub_topics"]) if c["sub_topics"] else []
-        except Exception:
-            subs = []
+        target_name = resolve_target_name(
+            c["platform"], c["target_id"], c["target_name"]
+        )
         rows.append([
             c["id"],
             c["source_id"],
             c["target_id"],
-            c["target_name"] or "",
+            target_name,
             c["sentiment"] or "",
             round(c["sentiment_score"] or 0, 2),
             round(c["sentiment_confidence"] or 0, 2),
             c["topic"] or "",
-            "、".join(subs),
             opinion_counts.get(c["id"], 0),
             c["content"] or "",
         ])
@@ -132,16 +152,15 @@ def build_opinions_rows(
         c = comments_map.get(op["comment_id"])
         if not c:
             continue
-        # 截短 content（避免单元格过长）
-        content_short = (c["content"] or "")[:120]
-        if (c["content"] or "") and len(c["content"]) > 120:
-            content_short += "..."
+        target_name = resolve_target_name(
+            c["platform"], c["target_id"], c["target_name"]
+        )
         rows.append([
             op["id"],
             op["comment_id"],
             c["source_id"],
             c["target_id"],
-            c["target_name"] or "",
+            target_name,
             c["sentiment"] or "",
             op["sentiment"],          # 观点级情感
             round(op["sentiment_confidence"] or 0, 2) if op["sentiment_confidence"] is not None else "",  # 观点级置信度
@@ -149,7 +168,6 @@ def build_opinions_rows(
             op["quote"],
             op["quote_start"],
             op["quote_end"],
-            content_short,
         ])
     return rows
 
@@ -183,7 +201,7 @@ def write_xlsx(out_path: Path, comments_rows: list, opinions_rows: list) -> None
     ws1.append([
         "comment_id", "source_id", "target_id", "target_name",
         "sentiment", "sentiment_score", "sentiment_confidence",
-        "topic", "sub_topics", "opinion_count", "content",
+        "topic", "opinion_count", "content",
     ])
     for row in comments_rows:
         ws1.append(row)
@@ -194,7 +212,7 @@ def write_xlsx(out_path: Path, comments_rows: list, opinions_rows: list) -> None
     ws2.append([
         "opinion_id", "comment_id", "source_id", "target_id", "target_name",
         "comment_sentiment", "opinion_sentiment", "opinion_confidence", "full_path",
-        "phrase", "quote_start", "quote_end", "content",
+        "phrase", "quote_start", "quote_end",
     ])
     for row in opinions_rows:
         ws2.append(row)

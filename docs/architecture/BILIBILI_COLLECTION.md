@@ -53,7 +53,7 @@ VoC 平台已跑通 Steam 评论全链路（2067 条：采集→打标→观点�
 | `language` | 常量 | `"zh-CN"` |
 | `likes` | `like` | 点赞数（冷启动语义同 Steam：NULL=未回采，本项目固定快照模式，直接存实值） |
 | `replies` | `rcount` | 楼中楼回复数 |
-| `posted_at` | `ctime`（unix 秒） | 评论时间 |
+| `posted_at` | `ctime`（unix 秒） | 评论时间（落库为 **naive UTC**） |
 | `extra_json` | 见 3.2 | 评论者画像 |
 
 ### 3.2 评论者画像 → `comments.extra_json`（玩家画像第一桶数据，零增量成本）
@@ -80,7 +80,7 @@ CREATE TABLE danmaku (
     mode         INTEGER,                     -- 弹幕类型（1=滚动 4=底部 5=顶部 7=高级）
     color        INTEGER,                     -- 弹幕颜色（可作情绪粗信号）
     user_hash    VARCHAR(32),                 -- 用户 hash（匿名，不落真实身份）
-    posted_at    DATETIME,                    -- 弹幕发送时间（与 progress 双时间戳）
+    posted_at    DATETIME,                    -- 弹幕发送时间（与 progress 双时间戳；naive UTC）
     fetched_at   DATETIME DEFAULT (datetime('now'))
 );
 CREATE INDEX ix_danmaku_video ON danmaku(video_id, progress);

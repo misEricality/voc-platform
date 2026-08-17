@@ -1,4 +1,4 @@
-# 下一代标签系统（GDT + PEDM 双轨）· 分阶段升级计划
+# 标注系统升级计划（GDT + PEDM 双轨）· 分阶段采纳
 
 > **文档状态**：✅ 评审通过并采纳（2026-08-15）· **分阶段待办，禁止整套立即执行**
 > **版本**：v2.0（基于外部设计稿 v1.0.0 修订；原稿逐字备份见 [ORIGINAL_SPEC_v1.0.0.md](./ORIGINAL_SPEC_v1.0.0.md)）
@@ -76,9 +76,9 @@
 - **保留方案4 骨架**：LLM 只提取观点短语，程序负责匹配；按新树重建 l3_definitions.yaml（每 L3：定义 + 关键词 + 黑话，如 CS2 挂壁/绿玩/开黑/坟头草）。
 - **保留证据链**：opinions 落 quote + 字符偏移（quote_start/quote_end），新 Schema 不得丢弃。
 - **合并落地 67% 兜底治理**（与 DEVELOPMENT_PLAN"当前最关键的一步"同一事项）：
-  1. bge 语义匹配：phrase ↔ L3 定义 embedding 相似度（复用现有 bge-small-zh 基建，零 API 成本）；
-  2. 收紧 ≤20 字无关键词兜底；
-  3. 黄金集回归门禁（见第 3 节）。
+  1. ~~bge 语义匹配：phrase ↔ L3 定义 embedding 相似度~~ **已证伪（2026-08-16 校准：`scripts/dev/calibrate_semantic_match.py`，bge-small-zh 对游戏黑话/专名 top-1 命中仅 19%、正确 L3 平均排名第 25，不足以做 L3 兜底）**；
+  2. 收紧 ≤20 字无关键词兜底（**需谨慎：直接删除会导致正确样本保持率跌至 52.9%，已回退；需配合信号词/语义再收**）；
+  3. 黄金集回归门禁 ✅ **已实现（2026-08-16：`tests/test_golden_match.py` + 410 条黄金集 `tests/fixtures/golden_match_set.json`）**。
 - **搁置项**：v1.0 稿 5.1"GDT 封闭词表分类器 Prompt"（方案 A 已证伪，见 0.2-1）。
 - **验收**：整体评价/其他兜底占比 topic 口径 ≤30%（当前 67%）；黄金集回归通过；现有 pytest 全绿；全量重打成本在年度预算内。
 

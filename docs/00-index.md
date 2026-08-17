@@ -11,7 +11,7 @@ docs/
 ├── 00-index.md             ⬅ 你在这里：文档地图
 ├── STEAM_API_FIELDS.md     🎮 Steam 官方 API 字段权威清单（实拉实测）
 ├── architecture/           🏗️ 架构设计（给工程师看的"系统是怎么搭的"）
-│   ├── ANNOTATION_PIPELINE.md  方案4 标注流程（L1-L3 三级标签：观点短语→程序匹配）
+│   ├── ANNOTATION_PIPELINE.md  方案4 标注流程（GDT v3.1.1：观点短语→程序匹配）
 │   ├── DATA_FIELDS.md          字段四级分类（A/B/C/D 前缀约定，D=本地模型派生向量）
 │   ├── DATA_STORAGE_DESIGN.md  5 层数据架构 + 5 张表设计（含 comment_embeddings）
 │   └── BILIBILI_COLLECTION.md  B 站采集规格（接口/数据映射/采样策略，开发交接文档）
@@ -19,7 +19,8 @@ docs/
 │   ├── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
 │   └── next-gen-tagging/       下一代标签系统（GDT+PEDM 双轨）分阶段采纳计划 + 原稿备份
 ├── guides/                 📖 操作指南（"我该怎么用"）
-│   └── QUICK_START.md          5 分钟上手指南
+│   ├── QUICK_START.md          5 分钟上手指南
+│   └── SETUP_ML_ENV.md         ML 环境搭建（torch + sentence-transformers）
 └── research/               🔍 调研资料
     └── VoC平台竞品调研报告.md     国际 + 国内主流 VoC 平台对比与启示
 ```
@@ -31,8 +32,9 @@ docs/
 | 我想知道... | 看这里 |
 |-------------|--------|
 | **项目在做什么、做到哪了、下一步做什么** | [plan/DEVELOPMENT_PLAN.md](./plan/DEVELOPMENT_PLAN.md) |
-| **标签/洞察体系未来怎么演进** | [plan/next-gen-tagging/UPGRADE_PLAN_v2.0.md](./plan/next-gen-tagging/UPGRADE_PLAN_v2.0.md) |
+| **标签/洞察体系未来怎么演进** | [plan/next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./plan/next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md) |
 | **5 分钟跑起来这个项目** | [guides/QUICK_START.md](./guides/QUICK_START.md) |
+| **本地 ML 环境怎么搭** | [guides/SETUP_ML_ENV.md](./guides/SETUP_ML_ENV.md) |
 | **L1-L3 标注流程是怎么走的** | [architecture/ANNOTATION_PIPELINE.md](./architecture/ANNOTATION_PIPELINE.md) |
 | **Steam API 能拿到哪些字段** | [STEAM_API_FIELDS.md](./STEAM_API_FIELDS.md) |
 | **B 站采集怎么设计（接口/采样/落库）** | [architecture/BILIBILI_COLLECTION.md](./architecture/BILIBILI_COLLECTION.md) |

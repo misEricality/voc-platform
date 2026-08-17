@@ -1,29 +1,20 @@
-<section id="dashboard" class="page active"><div class="headline"><div><h2>数据看板 <span class="grain-badge" data-grain-label>原声报表</span></h2><p>多维度洞察 Steam 玩家声音 · 指标随颗粒度与原声列表联动</p></div></div>
-<div class="filter-panel" data-page="dashboard">
-  <div class="v2-filters">
-    <div class="v2-block"><label>时间</label><div class="ms" data-ms="date"><button class="ms-trigger" type="button"><span class="ms-label">近7日</span><span class="caret">▼</span></button><div class="ms-pop date-pop"><div class="date-quick"><button type="button" data-range="7d">近7日</button><button type="button" data-range="30d">近30日</button><button type="button" data-range="all">全部时间</button></div><div class="date-custom"><span>起始</span><input type="date" data-date="start"><span>结束</span><input type="date" data-date="end"></div></div></div></div>
-    <div class="v2-block"><label>游戏</label><div class="ms" data-ms="game"><button class="ms-trigger" type="button"><span class="ms-label">全部游戏</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-search"><input type="text" placeholder="搜索游戏..."></div><label class="ms-all"><input type="checkbox" data-all> 全选</label><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
-    <div class="v2-block"><label>推荐</label><div class="ms" data-ms="vote"><button class="ms-trigger" type="button"><span class="ms-label">全部</span><span class="caret">▼</span></button><div class="ms-pop"><div class="ms-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
-    <div class="v2-block"><label>情感 <small class="senti-scope" data-senti-scope>整体</small></label><div class="senti-flat" data-ms="senti"><label class="senti-chip"><input type="checkbox" value="positive"><i class="sdot pos"></i>正向</label><label class="senti-chip"><input type="checkbox" value="neutral"><i class="sdot neu"></i>中性</label><label class="senti-chip"><input type="checkbox" value="negative"><i class="sdot neg"></i>负向</label></div></div>
-    <div class="v2-block"><label>标签</label><div class="ms tag-ms" data-ms="tag"><button class="ms-trigger" type="button"><span class="ms-label">全部标签</span><span class="caret">▼</span></button><div class="ms-pop tag-pop tag-tree-pop"><div class="tree-toolbar"><input class="tree-search" type="text" placeholder="搜索标签..."><label class="ms-all"><input type="checkbox" data-all> 全选</label></div><div class="tree-list"></div><div class="ms-foot"><span class="ms-count"></span><button class="ms-clear" type="button">清空</button></div></div></div></div>
-  </div>
-  <div class="v2-actions-row"><button class="btn" data-act="reset" type="button">重置</button><button class="btn primary" data-act="apply" type="button">查询</button></div>
+<div class="kpi-row">
+  <div class="kpi" data-kpi="total"><div class="kpi-label" data-kpi-label>原声总量</div><div class="kpi-value" data-kpi-val="total">-</div><div class="kpi-sub" data-kpi-sub="total"></div><div class="hint">悬停下钻</div></div>
+  <div class="kpi" data-kpi="rec"><div class="kpi-label" data-kpi-label>好评率</div><div class="kpi-value" data-kpi-val="rec">-</div><div class="kpi-sub" data-kpi-sub="rec"></div><div class="hint">悬停下钻</div></div>
 </div>
-<div class="metrics dash-kpis">
-  <div class="metric" style="--tint:#edf5fa"><div class="metric-label" data-kpi-label-total>原声总量</div><span class="metric-value" data-kpi="total">-</span><div class="metric-sub" data-kpi="totalSub">筛选范围内全部评论</div></div>
-  <div class="metric" style="--tint:#edf8f1"><div class="metric-label">推荐率</div><span class="metric-value" data-kpi="rec">-</span><div class="metric-sub" data-kpi="recSub"></div></div>
-  <div class="metric" style="--tint:#edf8f1"><div class="metric-label">正向占比</div><span class="metric-value" data-kpi="pos">-</span><div class="metric-sub" data-kpi="posSub"></div></div>
-  <div class="metric" style="--tint:#fdeeee"><div class="metric-label">负向占比</div><span class="metric-value" data-kpi="neg">-</span><div class="metric-sub" data-kpi="negSub"></div></div>
-  <div class="metric" style="--tint:#fff7d8"><div class="metric-label" data-kpi-label-play>平均评论时游玩</div><span class="metric-value" data-kpi="play">-</span><div class="metric-sub" data-kpi="playSub"></div></div>
+<div class="chart-card">
+  <div class="chart-head"><strong>每日趋势</strong><div class="chart-tools"><button class="ctool on" data-daily="day" type="button">按日</button><button class="ctool" data-daily="week" type="button">按周</button><button class="ctool" data-daily="game" type="button">按游戏</button></div></div>
+  <div class="chart-body" id="dailyBody"></div>
 </div>
-<div class="dash-grid">
-  <div class="card dcard sp8"><div class="card-title"><strong data-kpi-label-trend>每日原声量趋势</strong><span class="pri p0">P0</span></div><div class="dbody" id="dTrend"></div></div>
-  <div class="card dcard sp4"><div class="card-title"><strong>推荐构成</strong><span class="pri p0">P0</span></div><div class="dbody" id="dRec"></div></div>
-  <div class="card dcard sp4"><div class="card-title"><strong data-kpi-label-senti>整体情感分布</strong><span class="pri p0">P0</span></div><div class="dbody" id="dSenti"></div></div>
-  <div class="card dcard sp4"><div class="card-title"><strong>主题 L1 排行</strong><span class="pri p1">P1</span></div><div class="dbody" id="dL1"></div></div>
-  <div class="card dcard sp4"><div class="card-title"><strong>主题 L2 TOP10</strong><span class="pri p1">P1</span></div><div class="dbody" id="dL2"></div></div>
-  <div class="card dcard sp6"><div class="card-title"><strong>各游戏构成</strong><span class="pri p1">P1</span></div><div class="dbody" id="dGame"></div></div>
-  <div class="card dcard sp6"><div class="card-title"><strong data-kpi-label-playdist>评论时游玩时长分布</strong><span class="pri p2">P2</span></div><div class="dbody" id="dPlay"></div></div>
-  <div class="card dcard sp12"><div class="card-title"><strong data-kpi-label-op>标签级观点洞察</strong><span class="pri p2">P2</span><span style="margin-left:auto;font-size:11px;color:#94a0ad" id="dOpMeta"></span></div><div class="dbody op-wrap" id="dOps"></div></div>
+<div class="chart-card">
+  <div class="chart-head"><strong>好评率趋势</strong><div class="chart-tools"><button class="ctool on" data-praise="day" type="button">按日</button><button class="ctool" data-praise="week" type="button">按周</button><button class="ctool" data-praise="game" type="button">按游戏</button></div></div>
+  <div class="chart-body" id="praiseBody"></div>
 </div>
-</section>
+<div class="chart-card">
+  <div class="chart-head"><strong>情感分布</strong><div class="chart-tools"><button class="ctool" data-senti="game" type="button">按游戏</button></div></div>
+  <div class="chart-body" id="sentiBody"></div>
+</div>
+<div class="chart-card">
+  <div class="chart-head"><strong>主题分布</strong><div class="chart-tools"><button class="ctool on" data-topic="L1" type="button">L1</button><button class="ctool" data-topic="L2" type="button">L2</button><button class="ctool" data-topic="L3" type="button">L3</button><button class="ctool" data-topic="game" type="button">按游戏</button></div></div>
+  <div class="chart-body" id="topicBody"></div>
+</div>

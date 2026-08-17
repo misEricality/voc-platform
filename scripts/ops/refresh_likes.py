@@ -96,55 +96,43 @@ def refresh_likes(
     log.info(f"找到 {len(rows)} 条 ≥{min_age_days} 天前的评论，准备回采")
     target_ids = {src for (src, _) in rows}
 
-    # 2. 按需翻页回采评论数据（fetch_metadata=True 时会写入 likes/replies/developer_response）
+    # 2. 单次游标续翻回采（fetch_metadata=True 时会写入 likes/replies/developer_response）
     #    必须用 filter="recent" 按时间排序拉取。
     #    原因：Steam 默认 ranking（"all" 按 helpfulness）会随 votes_up 变化，跨时间拉取
     #    同一游戏的 Top 100 评论 ID 集合不稳定；按时间排序则 source_id 稳定，便于对账。
     #
-    #    翻页策略：每拉一页就立即对账，matched == 期望就停止，避免浪费请求。
+    #    重要：fetch_comments 内部已按 cursor 前进翻页，这里必须一次性遍历生成器，
+    #    不能循环调用 collect() —— collect() 每次都会从 cursor="*" 重新开始，
+    #    导致永远只看最新一页（历史 bug：likes 从未真正回采成功）。
     #    max_count 是"翻页安全上限"（防止 Steam 返回过多数据时失控）。
-    PAGE_SIZE = 100
     matched = 0
     skipped = 0
     fetched_total = 0
     with SessionLocal() as s:
         repo = CommentRepository(s)
-        # 持续翻页直到对账完所有目标评论，或达到安全上限
-        while matched < len(target_ids) and fetched_total < max_count:
-            remaining = min(PAGE_SIZE, max_count - fetched_total)
-            page = list(
-                collector.collect(
-                    target_id,
-                    max_count=remaining,
-                    language=language,
-                    fetch_metadata=True,
-                    filter="recent",
-                )
-            )
-            if not page:
-                break
-            fetched_total += len(page)
-            page_matched = 0
-            for raw in page:
-                if raw.source_id in target_ids:
-                    repo.upsert(raw)
-                    matched += 1
-                    page_matched += 1
-                else:
-                    skipped += 1
-            log.info(
-                f"  翻页：已拉 {fetched_total} 条，匹配 {matched}/{len(target_ids)} "
-                f"（本页匹配 {page_matched}）"
-            )
-            if page_matched == 0:
-                # 本页没有命中任何目标评论，说明剩余目标 ID 不在 recent 排序前 N 页里
-                log.warning(
-                    "本页无命中目标评论，提前停止翻页。"
-                    "可能原因：发布超过一定时间的评论会被 Steam 折叠出 recent 排序。"
-                    "请增大 --max-count 参数，或在调用方按 posted_at 单独跑老评论。"
-                )
-                break
+        for raw in collector.fetch_comments(
+            target_id,
+            max_count=max_count,
+            language=language,
+            fetch_metadata=True,
+            filter="recent",
+        ):
+            fetched_total += 1
+            if raw.source_id in target_ids:
+                repo.upsert(raw)
+                matched += 1
+                if matched >= len(target_ids):
+                    break
+            else:
+                skipped += 1
         repo.commit()
+
+    if matched < len(target_ids):
+        log.warning(
+            f"回采未覆盖全部目标：匹配 {matched}/{len(target_ids)}。"
+            "可能原因：Steam recent 流只返回较新评论，老评论已超出可翻页范围；"
+            "可尝试增大 --max-count 或按 posted_at 分批处理老评论。"
+        )
 
     log.info(
         f"回采完成：matched={matched}, skipped={skipped}, total_fetched={fetched_total} "

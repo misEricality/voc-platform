@@ -138,7 +138,7 @@ def main() -> None:
         }
         opinions.append(op)
         c["opinions"].append(
-            {"path": op["path"], "sentiment": op["sentiment"], "quote": op["quote"]}
+            {"id": op["id"], "path": op["path"], "sentiment": op["sentiment"], "quote": op["quote"]}
         )
 
     # ---- 标签树计数（仅 Steam） ----

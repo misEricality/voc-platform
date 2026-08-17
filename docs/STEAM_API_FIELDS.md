@@ -42,7 +42,7 @@
 |---|---|---|
 | `review` | 评论正文 | 卡片主体 |
 | `voted_up` | true=推荐 / false=不推荐（Steam 玩家投票） | 头像左下角徽标 |
-| `timestamp_created` | 评论创建时间（Unix 秒） | **绝对时间（北京时区 YYYY-MM-DD HH:mm），不显示相对时间** |
+| `timestamp_created` | 评论创建时间（Unix 秒） | **绝对时间（北京时区 YYYY-MM-DD HH:mm），不显示相对时间；存储统一为 naive UTC** |
 | `votes_up` | 评论被点赞数 | 评论右侧"赞"图标旁数字 —— **注意：只有 7 天后回采的真实值；首次 7 天内显示「未知」** |
 | `comment_count` | 该评论下的回帖数 | 评论右侧"评论"图标旁数字 —— **同理：只有 7 天后回采的真实值** |
 | ~~`language`~~ | ~~多语言过滤~~ | ❌ **不展示** |
@@ -368,7 +368,7 @@
 
 ### 6.5 时区
 - Steam Unix 时间戳默认**UTC**
-- 我们统一用 `_utcnow()`（UTC）+ 显式语义，避免时区错乱
+- 我们统一用 `_utcnow()`（UTC）+ `posted_at` 落库为 **naive UTC**，避免时区错乱；前端展示时再转 Asia/Shanghai
 
 ### 6.6 隐私字段处理
 - ⚠️ **永远不要把 `personaname` / `avatar` / `profile_url` 写进 DB 或导出 CSV**
