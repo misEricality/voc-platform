@@ -9,7 +9,7 @@
    - 对已确认错误的样本做定向覆盖（打击感、写作、外挂、剧情死亡等）。
 
 运行：
-    .venv-review\\Scripts\\python.exe scripts/dev/curate_l3_definitions.py
+    .venv-ml\\Scripts\\python.exe scripts/dev/curate_l3_definitions.py
 """
 
 from __future__ import annotations

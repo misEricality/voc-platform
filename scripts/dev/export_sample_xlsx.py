@@ -1,6 +1,6 @@
 """按固定评论 ID 列表导出重打结果为 xlsx。
 
-依赖 workspace 自带 Python（含 openpyxl），项目 .venv-review 未装 openpyxl。
+依赖 workspace 自带 Python（含 openpyxl）。
 """
 
 from __future__ import annotations

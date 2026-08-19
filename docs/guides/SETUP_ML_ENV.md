@@ -47,7 +47,7 @@ python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); pr
    # 方式 B：pip（若遇 SAFE_DELETE_FAIL_CLOSED，须在沙箱外执行）
    D:\projects\voc_platform\.venv-ml\Scripts\python.exe -m pip install <pkg>
    ```
-4. **不要动 `.venv-review`**：它是 3.14 环境，装 torch 会失败；两个环境职责分离。
+4. **环境说明**：本项目只有一个虚拟环境 `.venv-ml`（Python 3.12，全量依赖）；早期 `.venv-review`（3.14）已删除。
 
 ### 0.4 运行须知
 
@@ -62,7 +62,7 @@ python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); pr
 本项目当前开发机默认 Python 为 **3.14**，而截至本文撰写时，PyTorch 尚未发布稳定的 `cp314` wheel。
 直接 `pip install torch` 会退回到源码编译，在 Windows 上往往**静默失败**。
 
-因此建议：**安装 Python 3.12，并新建一个独立的 ML 虚拟环境（`.venv-ml`）**，不要污染现有的 `.venv-review`（基于 3.14）。
+因此建议：**安装 Python 3.12，并新建一个独立的 ML 虚拟环境（`.venv-ml`）**（早期 `.venv-review` 3.14 已删除）。
 
 ## 前置检查
 
@@ -154,5 +154,5 @@ python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); pr
 ## 注意事项
 
 1. **模型已缓存**：`BAAI/bge-small-zh-v1.5` 通常已在 `C:\Users\<用户>\.cache\huggingface\hub` 里，不会重复下载；若缓存缺失，首次运行会自动联网下载约 95MB。
-2. **不要使用 `.venv-review`**：它是 Python 3.14 环境，装 torch 会失败。
+2. **用 `.venv-ml`**：它是唯一且正确的 Python 3.12 环境。
 3. **CPU 即可**：bge-small-zh-v1.5 单条评论向量化在 CPU 上毫秒级完成，无需 CUDA。

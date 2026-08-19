@@ -1,6 +1,6 @@
 """从 输出打标结果.xlsx 提取 500 条抽样验证样本（供黄金集重建）。
 
-运行环境：使用 workspace 自带 Python（含 openpyxl），项目 .venv-review 未装 openpyxl。
+运行环境：使用 workspace 自带 Python（含 openpyxl）。
 """
 
 from __future__ import annotations
