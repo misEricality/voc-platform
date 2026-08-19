@@ -45,7 +45,7 @@ COLLECTORS = {
 def run_pipeline(
     platform: str,
     target_id: str,
-    max_count: int = 50,
+    max_count: int | None = 50,
     language: str = "schinese",
     analyzer_provider: str | None = None,
     skip_analysis: bool = False,
@@ -57,7 +57,8 @@ def run_pipeline(
     Args:
         platform: 平台名（steam）
         target_id: 目标ID（Steam appid）
-        max_count: 采集数量
+        max_count: 采集数量上限；``None`` = 自动模式（配时间窗时各游戏量自适应，
+            靠采集器自然耗尽窗口；Steam 自动模式必须配 posted_after/posted_before）。
         language: 语言过滤（项目默认 schinese；Steam 顶层原则只采中文）
         analyzer_provider: 分析器后端
         skip_analysis: 仅采集不分析
@@ -163,7 +164,7 @@ def run_pipeline(
                 missing_ids = repo.find_missing_embedding_ids(
                     platform=platform,
                     target_id=db_full_target,
-                    limit=max_count,
+                    limit=max_count,  # None=自动模式：向量化该目标全部缺失
                 )
                 if missing_ids:
                     comments = repo.get_comments_by_ids(missing_ids)

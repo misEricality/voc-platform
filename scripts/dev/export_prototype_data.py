@@ -92,6 +92,7 @@ def main() -> None:
             "steam_deck": bool(extra.get("primarily_steam_deck")),
             "received_for_free": bool(extra.get("received_for_free")),
             "weighted_vote_score": extra.get("weighted_vote_score"),
+            "developer_response": (extra.get("developer_response") or None) and str(extra.get("developer_response")).strip() or None,
             "source_id": row["source_id"],
             "opinions": [],
         }

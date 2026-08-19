@@ -316,6 +316,7 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
         - 若 opinions 全未匹配/为空 → topic 用 fallback（Q3-B：sentiment 保留）
         """
         from .normalize import (
+            FALLBACK_L3,
             build_keyword_index,
             load_definitions,
             match_l3,
@@ -381,9 +382,16 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             if op is not core:
                 op.is_core = False
 
-        # 3. topic = core 的 L1
-        if core.full_path:
-            topic = core.full_path.split("/")[0]
+        # 3. topic = 具体维度的 L1（兜底治理：topic 应回答"谈什么"）
+        #    若 core 是兜底/元表达（总体体验评价/网络梗/推荐度等），但评论里另有具体维度观点，
+        #    则改用第一个具体观点作为 topic 锚点；整体情感仍取 core（整体褒贬）不变。
+        topic_op = core
+        if core.l3 in FALLBACK_L3:
+            specific = [op for op in valid_opinions if op.l3 not in FALLBACK_L3]
+            if specific:
+                topic_op = specific[0]
+        if topic_op.full_path:
+            topic = topic_op.full_path.split("/")[0]
         else:
             topic = self.topic_fallback
         if topic not in self.topic_primary:

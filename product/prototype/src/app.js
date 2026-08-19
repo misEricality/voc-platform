@@ -378,100 +378,113 @@ function renderAll(){
   renderList();
 }
 
+/* ---------------- URL 参数（?game=appid 跳转自动筛选） ---------------- */
+function applyURLParams(){
+  const params = new URLSearchParams(location.search);
+  const game = params.get('game');
+  if(game && GAMES.some(g => g.appid === game)){
+    state.games.clear();
+    state.games.add(game);
+    state.dateStart = ''; state.dateEnd = '';  // 跳转后看全量数据，避免默认近7日查空
+    syncAllUI();
+  }
+}
+
+/* ============================================================
 /* ============================================================
    原声列表（右侧抽屉，颗粒度感知）
    ============================================================ */
+function summarize(t, limit = 80){
+  if(!t) return {text:'', full:'', truncated:false};
+  const clean = String(t).replace(/\s+/g, ' ').trim();
+  if(clean.length <= limit) return {text: clean, full: clean, truncated: false};
+  return {text: clean.slice(0, limit) + '…', full: clean.slice(0, 200), truncated: true};
+}
 function voiceRowHTML(v){
   const vote = v.rating === 1 ? '<span class="v-vote up">推荐</span>' : '<span class="v-vote down">不推荐</span>';
+  const sLabel = SENTI_LABEL[v.sentiment] || v.sentiment || '-';
+  const sClass = SENTI_CLASS[v.sentiment] || 't-plain';
   const play = v.playtime_at_review === null || v.playtime_at_review === undefined ? '<b class="nil">-</b>' : `<b>${esc(fmtPlay(v.playtime_at_review))}</b>`;
-  const likes = v.likes === null ? '<b class="nil">-</b>' : `<b>${fmtNum(v.likes)}</b>`;
-  const replies = v.replies === null ? '<b class="nil">-</b>' : `<b>${fmtNum(v.replies)}</b>`;
-  const chips = [];
-  if(v.opinions && v.opinions.length){
-    const seen = new Set();
-    v.opinions.forEach(op => { const leaf = op.path.split('/').pop(); if(seen.has(leaf)) return; seen.add(leaf); chips.push(`<span class="t-chip ${SENTI_CLASS[op.sentiment] || 't-plain'}">${esc(leaf)}</span>`); });
-  } else {
-    if(v.topic) chips.push(`<span class="t-chip t-plain">${esc(v.topic)}</span>`);
-    (v.sub_topics || []).forEach(s => chips.push(`<span class="t-chip t-plain">${esc(s)}</span>`));
-  }
-  const MAX = 4;
-  const tagHtml = chips.length > MAX ? chips.slice(0, MAX - 1).join('') + `<span class="t-chip t-more">+${chips.length - MAX + 1}</span>` : chips.join('');
+  const l1 = v.topic;
+  const l2s = (v.sub_topics || []).slice(0, 2);
+  const tagHtml = (l1 ? `<span class="t-chip t-plain">${esc(l1)}</span>` : '') + l2s.map(s => `<span class="t-chip t-plain">${esc(s)}</span>`).join('');
+  const sum = summarize(v.content);
+  const textAttr = sum.truncated ? ` data-fulltext="${esc(sum.full)}"` : '';
   return `<div class="vrow" data-id="${v.id}" data-type="voice">
     <div class="v-main">
-      <div class="v-top"><span class="v-game">${esc(v.game)}</span><span class="v-time">${esc(fmtTime(v.posted_at))}</span>${vote}<span class="v-id">#${esc(v.source_id)}</span></div>
-      <div class="v-text">${esc(v.content)}</div>
-      <div class="v-tags">${tagHtml}</div>
+      <div class="v-top"><span class="v-game">${esc(v.game)}</span><span class="v-time">${esc(fmtTime(v.posted_at))}</span><span class="v-id">#${esc(v.source_id)}</span>${vote}<span class="t-chip ${sClass}">${esc(sLabel)}</span>${tagHtml}</div>
+      <div class="v-text${sum.truncated ? ' trunc' : ''}"${textAttr}>${esc(sum.text)}</div>
     </div>
     <div class="v-side">
       <div class="v-stat"><small>游玩</small>${play}</div>
-      <div class="v-stat"><small>点赞</small>${likes}</div>
-      <div class="v-stat"><small>回帖</small>${replies}</div>
     </div>
   </div>`;
 }
 function voiceDetailHTML(v){
-  const sLabel = SENTI_LABEL[v.sentiment] || v.sentiment || '-';
-  const sClass = SENTI_CLASS[v.sentiment] || 't-plain';
-  const tags = [];
-  if(v.topic) tags.push(`<span class="t-chip t-plain">L1 · ${esc(v.topic)}</span>`);
-  (v.sub_topics || []).forEach(s => tags.push(`<span class="t-chip t-plain">L2 · ${esc(s)}</span>`));
-  const ops = (v.opinions || []).map(op =>
-    `<div class="op"><div class="op-head"><span class="op-path">${esc(op.path)}</span><span class="t-chip ${SENTI_CLASS[op.sentiment] || 't-plain'}">${esc(SENTI_LABEL[op.sentiment] || op.sentiment)}</span></div><div class="op-quote">${esc(op.quote)}</div></div>`
-  ).join('');
-  const badges = [];
-  if(v.refunded) badges.push('<span class="badge badge-danger">已退款</span>');
-  if(v.early_access) badges.push('<span class="badge badge-warn">抢先体验</span>');
-  if(v.steam_deck) badges.push('<span class="badge badge-soft">Steam Deck</span>');
-  if(v.received_for_free) badges.push('<span class="badge">免费获取</span>');
-  return `<div class="v-detail" data-detail="${v.id}">
-    <div class="vd-item"><div class="vd-label">整体情感</div><div class="vd-chips"><span class="t-chip ${sClass}">${esc(sLabel)}</span><span class="t-chip t-plain">分数 ${v.sentiment_score === null ? '-' : Number(v.sentiment_score).toFixed(2)}</span></div></div>
-    <div class="vd-item"><div class="vd-label">主题标签</div><div class="vd-chips">${tags.join('') || '<span style="color:var(--dim)">-</span>'}</div></div>
-    ${ops ? `<div class="vd-item"><div class="vd-label">观点明细</div>${ops}</div>` : ''}
-    <div class="vd-item"><div class="vd-grid"><div class="vd-cell"><small>累计游玩</small><b>${esc(fmtPlay(v.playtime_forever))}</b></div><div class="vd-cell"><small>Steam 标记</small><b>${badges.join('') || '-'}</b></div></div></div>
+  const likes = v.likes === null ? '<b class="nil">-</b>' : `<b>${fmtNum(v.likes)}</b>`;
+  const replies = v.replies === null ? '<b class="nil">-</b>' : `<b>${fmtNum(v.replies)}</b>`;
+  const playForever = v.playtime_forever === null || v.playtime_forever === undefined ? '<b class="nil">-</b>' : `<b>${esc(fmtPlay(v.playtime_forever))}</b>`;
+  const ops = (v.opinions || []).map(op => {
+    const osLabel = SENTI_LABEL[op.sentiment] || op.sentiment || '-';
+    const osClass = SENTI_CLASS[op.sentiment] || 't-plain';
+    return `<div class="op">
+      <div class="op-head"><span class="t-chip ${osClass}">${esc(osLabel)}</span><span class="op-path">${esc(op.path)}</span></div>
+      <div class="op-quote">${esc(op.quote)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="v-detail v-detail-voice" data-detail="${v.id}">
+    <div class="vd-row3">
+      <div class="vd-cell"><div class="vd-lbl">点赞数</div><div class="vd-val"><b>${likes}</b></div></div>
+      <div class="vd-cell"><div class="vd-lbl">回帖数</div><div class="vd-val"><b>${replies}</b></div></div>
+      <div class="vd-cell"><div class="vd-lbl">累计游玩时长</div><div class="vd-val"><b>${playForever}</b></div></div>
+    </div>
+    ${ops ? `<div class="vd-item"><div class="vd-label">观点明细</div>${ops}</div>` : '<div class="vd-item"><div class="vd-label">观点明细</div><div class="vd-quote" style="color:var(--dim)">-</div></div>'}
   </div>`;
 }
 function opinionRowHTML(o){
-  const vote = o.rating === 1 ? '<span class="v-vote up">推荐</span>' : '<span class="v-vote down">不推荐</span>';
+  const sLabel = SENTI_LABEL[o.sentiment] || o.sentiment || '-';
+  const sClass = SENTI_CLASS[o.sentiment] || 't-plain';
   const play = o.playtime_at_review === null || o.playtime_at_review === undefined ? '<b class="nil">-</b>' : `<b>${esc(fmtPlay(o.playtime_at_review))}</b>`;
-  const likes = o.likes === null ? '<b class="nil">-</b>' : `<b>${fmtNum(o.likes)}</b>`;
-  const replies = o.replies === null ? '<b class="nil">-</b>' : `<b>${fmtNum(o.replies)}</b>`;
+  const sum = summarize(o.quote);
+  const textAttr = sum.truncated ? ` data-fulltext="${esc(sum.full)}"` : '';
   return `<div class="vrow" data-id="${o.id}" data-type="opinion">
     <div class="v-main">
-      <div class="v-top"><span class="v-game">${esc(o.game)}</span><span class="v-time">${esc(fmtTime(o.posted_at))}</span>${vote}<span class="v-id">#${o.id}</span></div>
-      <div class="v-text">${esc(o.quote)}</div>
-      <div class="v-tags"><span class="t-chip ${SENTI_CLASS[o.sentiment] || 't-plain'}">${esc(o.path)}</span></div>
+      <div class="v-top"><span class="v-game">${esc(o.game)}</span><span class="v-time">${esc(fmtTime(o.posted_at))}</span><span class="v-id">#${o.id}</span><span class="t-chip ${sClass}">${esc(sLabel)}</span><span class="t-chip t-plain">${esc(o.path)}</span></div>
+      <div class="v-text${sum.truncated ? ' trunc' : ''}"${textAttr}>${esc(sum.text)}</div>
     </div>
     <div class="v-side">
       <div class="v-stat"><small>游玩</small>${play}</div>
-      <div class="v-stat"><small>点赞</small>${likes}</div>
-      <div class="v-stat"><small>回帖</small>${replies}</div>
     </div>
   </div>`;
 }
 function opinionDetailHTML(o){
-  const badges = [];
-  if(o.refunded) badges.push('<span class="badge badge-danger">已退款</span>');
-  if(o.early_access) badges.push('<span class="badge badge-warn">抢先体验</span>');
-  if(o.steam_deck) badges.push('<span class="badge badge-soft">Steam Deck</span>');
-  if(o.received_for_free) badges.push('<span class="badge">免费获取</span>');
-  const tags = [];
-  if(o.topic) tags.push(`<span class="t-chip t-plain">L1 · ${esc(o.topic)}</span>`);
-  (o.sub_topics || []).forEach(s => tags.push(`<span class="t-chip t-plain">L2 · ${esc(s)}</span>`));
-  return `<div class="v-detail" data-detail="${o.id}">
-    <div class="vd-item"><div class="vd-label">所属评论 · 整体情感</div><div class="vd-chips"><span class="t-chip ${SENTI_CLASS[o.overall_sentiment] || 't-plain'}">${esc(SENTI_LABEL[o.overall_sentiment] || o.overall_sentiment || '-')}</span></div></div>
-    <div class="vd-item"><div class="vd-label">所属评论原声</div><div class="vd-quote">${esc(o.content)}</div></div>
-    <div class="vd-item"><div class="vd-label">主题标签</div><div class="vd-chips">${tags.join('') || '<span style="color:var(--dim)">-</span>'}</div></div>
-    <div class="vd-item"><div class="vd-grid"><div class="vd-cell"><small>累计游玩</small><b>${esc(fmtPlay(o.playtime_forever))}</b></div><div class="vd-cell"><small>Steam 标记</small><b>${badges.join('') || '-'}</b></div></div></div>
+  const vote = o.rating === 1 ? '<span class="v-vote up">推荐</span>' : '<span class="v-vote down">不推荐</span>';
+  const osLabel = SENTI_LABEL[o.overall_sentiment] || o.overall_sentiment || '-';
+  const osClass = SENTI_CLASS[o.overall_sentiment] || 't-plain';
+  const l1 = o.topic;
+  const l2s = (o.sub_topics || []).slice(0, 2);
+  const tagHtml = (l1 ? `<span class="t-chip t-plain">${esc(l1)}</span>` : '') + l2s.map(s => `<span class="t-chip t-plain">${esc(s)}</span>`).join('');
+  const fullContent = (o.content || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  return `<div class="v-detail v-detail-op" data-detail="${o.id}">
+    <div class="vd-row3">
+      <div class="vd-cell"><div class="vd-lbl">推荐</div><div class="vd-val">${vote}</div></div>
+      <div class="vd-cell"><div class="vd-lbl">整体情感</div><div class="vd-val"><span class="t-chip ${osClass}">${esc(osLabel)}</span></div></div>
+      <div class="vd-cell"><div class="vd-lbl">整体主题标签</div><div class="vd-val">${tagHtml || '<span style="color:var(--dim)">-</span>'}</div></div>
+    </div>
+    <div class="vd-item"><div class="vd-label">原声原文</div><div class="vd-quote">${fullContent}</div></div>
   </div>`;
 }
-function rowHTML(u){ return state.granularity === 'voice' ? voiceRowHTML(u) + voiceDetailHTML(u) : opinionRowHTML(u) + opinionDetailHTML(u); }
-function renderList(){
+function rowHTML(u){ return state.granularity === 'voice' ? voiceRowHTML(u) + voiceDetailHTML(u) : opinionRowHTML(u) + opinionDetailHTML(u); }function renderList(){
   const total = filtered.length;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if(state.page > pages) state.page = pages;
   const start = (state.page - 1) * PAGE_SIZE;
   const slice = filtered.slice(start, start + PAGE_SIZE);
-  const unitWord = state.granularity === 'voice' ? '原声' : '观点';
+  const isVoice = state.granularity === 'voice';
+  const unitWord = isVoice ? '原声' : '观点';
+  // 列表标题随颗粒度切换
+  const head = document.querySelector('.rdrawer-top .rdrawer-head span');
+  if(head) head.firstChild && (head.firstChild.textContent = isVoice ? '原声列表' : '观点列表');
   $('#vCount').textContent = `· 共 ${total.toLocaleString('zh-CN')} 条${unitWord}`;
   $('#vList').innerHTML = slice.length
     ? slice.map(rowHTML).join('')
@@ -499,6 +512,37 @@ $('#vPager').addEventListener('click', e => {
   renderList();
 });
 
+/* hover 全文：仅当原文被截断（.v-text.trunc）时浮现，上限 200 字 */
+const _hoverPop = document.createElement('div');
+_hoverPop.className = 'hover-pop';
+let _hoverRow = null;
+function showHoverPop(row, text){
+  if(!text) return;
+  _hoverRow = row;
+  _hoverPop.innerHTML = text;
+  row.appendChild(_hoverPop);
+  _hoverPop.classList.add('show');
+}
+function hideHoverPop(){
+  _hoverPop.classList.remove('show');
+  if(_hoverPop.parentNode) _hoverPop.parentNode.removeChild(_hoverPop);
+  _hoverRow = null;
+}
+$('#vList').addEventListener('mouseover', e => {
+  const txt = e.target.closest('.v-text.trunc');
+  if(!txt) return;
+  const row = txt.closest('.vrow');
+  if(!row || row === _hoverRow) return;
+  hideHoverPop();
+  showHoverPop(row, txt.dataset.fulltext);
+});
+$('#vList').addEventListener('mouseout', e => {
+  if(!_hoverRow) return;
+  const related = e.relatedTarget;
+  if(related && _hoverRow.contains(related)) return;
+  hideHoverPop();
+});
+
 /* 详情展开（行内 accordion） */
 $('#vList').addEventListener('click', e => {
   const row = e.target.closest('.vrow');
@@ -512,49 +556,14 @@ $('#vList').addEventListener('click', e => {
 
 /* ---------------- 右侧抽屉折叠 + 高度调节 ---------------- */
 function bindDrawers(){
-  $$('[data-toggle]').forEach(head => {
+  // 仅 AI 抽屉可折叠；原声列表不可折叠
+  $$('[data-toggle="ai"]').forEach(head => {
     head.addEventListener('click', () => {
       const drawer = head.closest('.rdrawer');
+      const isOpen = drawer.classList.toggle('open');
       const caret = head.querySelector('.rcaret');
-      if(drawer.dataset.drawer === 'list'){
-        drawer.classList.toggle('collapsed');
-        if(caret) caret.classList.toggle('up', drawer.classList.contains('collapsed'));
-      } else {
-        drawer.classList.toggle('open');
-        if(caret) caret.classList.toggle('up', drawer.classList.contains('open'));
-        const body = drawer.querySelector('.rdrawer-body');
-        if(drawer.classList.contains('open') && body) body.style.height = '';  // 回到默认 33vh
-      }
+      if(caret) caret.classList.toggle('up', isOpen);
     });
-  });
-  initResize();
-}
-function initResize(){
-  const resize = $('[data-resize]');
-  if(!resize) return;
-  const drawer = resize.closest('.rdrawer');
-  const body = drawer.querySelector('.rdrawer-body');
-  let dragging = false;
-  resize.addEventListener('mousedown', e => {
-    e.preventDefault();
-    dragging = true;
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'ns-resize';
-  });
-  document.addEventListener('mousemove', e => {
-    if(!dragging) return;
-    const bottom = window.innerHeight - 40;  // 页脚高度
-    let h = bottom - e.clientY - 6;
-    const minH = Math.round(window.innerHeight * 0.33);
-    const maxH = Math.round(window.innerHeight * 0.66);
-    h = Math.max(minH, Math.min(maxH, h));
-    body.style.height = h + 'px';
-  });
-  document.addEventListener('mouseup', () => {
-    if(!dragging) return;
-    dragging = false;
-    document.body.style.userSelect = '';
-    document.body.style.cursor = '';
   });
 }
 
@@ -592,5 +601,6 @@ $('#vExport').addEventListener('click', () => {
 /* ---------------- 启动 ---------------- */
 initFilters();
 bindDrawers();
+applyURLParams();
 computeFiltered();
 /* 首次渲染在 dashboard.js 末尾执行（chartState 初始化后，避免 TDZ） */

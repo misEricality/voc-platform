@@ -1,6 +1,6 @@
 /* ============================================================
-   数据看板 —— 图表渲染（拼接至 app.js 之后，共享全局）
-   颗粒度感知 + 悬停下钻 + 折线/堆叠条形/柱形
+   数据看板 v3 —— 图表渲染（共享全局）
+   颗粒度感知 + 悬停高亮元素并固定显示标签 + 推荐率卡片
    ============================================================ */
 
 const SERIES_COLORS = ['#66c0f4', '#a1cd44', '#e05c5c', '#d9b54e', '#4f94cd'];
@@ -37,45 +37,48 @@ function renderDashboard(){
   renderTopic();
 }
 
-/* ---------------- KPI（总量 / 推荐率） ---------------- */
+/* ---------------- KPI（总量 / 好评率 / 推荐率） ---------------- */
 function renderKpis(){
+  const gran = state.granularity;
+  // 总量：原声/观点
   const total = filtered.length;
-  const rec = filtered.filter(v => v.rating === 1).length;
   const gamesN = new Set(filtered.map(v => v.appid)).size;
   const tl = $('[data-kpi="total"] .kpi-label');
-  if(tl) tl.textContent = state.granularity === 'voice' ? '原声总量' : '观点总量';
-  const tv = $('[data-kpi="total"] .kpi-value');
-  const ts = $('[data-kpi="total"] .kpi-sub');
-  const rv = $('[data-kpi="rec"] .kpi-value');
-  const rs = $('[data-kpi="rec"] .kpi-sub');
-  tv.textContent = fmtNum(total);
-  ts.textContent = `覆盖 ${fmtNum(gamesN)} 款游戏 · ${grainName()}`;
-  rv.textContent = pct(rec, total);
-  rs.textContent = `${fmtNum(rec)} / ${fmtNum(total)}`;
+  if(tl) tl.textContent = gran === 'voice' ? '原声总量' : '观点总量';
+  $('[data-kpi="total"] .kpi-value').textContent = fmtNum(total);
+  $('[data-kpi="total"] .kpi-sub').textContent = `覆盖 ${fmtNum(gamesN)} 款游戏 · ${grainName()}`;
+
+  // 好评率：= 正向情感 / 总量（与颗粒度联动：原声用整体情感、观点用观点情感）；只显示百分数
+  const pos = filtered.filter(v => v.sentiment === 'positive').length;
+  const pk = $('[data-kpi="praise"]');
+  if(pk){
+    pk.querySelector('.kpi-label').textContent = gran === 'voice' ? '原声好评率' : '观点好评率';
+    pk.querySelector('.kpi-value').textContent = pct(pos, total);
+    pk.querySelector('.kpi-sub').textContent = `正向 ${fmtNum(pos)} / 总量 ${fmtNum(total)}`;
+  }
 }
 
-/* 下钻表：总量 top5 游戏 */
+/* 下钻表：副卡 */
 function drillTotal(el){
   const cnt = {};
   filtered.forEach(u => cnt[u.appid] = (cnt[u.appid] || 0) + 1);
   const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  let html = '<header>总量 TOP5 游戏</header>';
+  let html = '<header>TOP5 游戏（按总量降序）</header>';
   rows.forEach(([appid, n]) => { html += `<div class="drill-row"><span class="dg">${esc(gameName(appid))}</span><b>${fmtNum(n)}</b></div>`; });
   el.innerHTML = html;
 }
-/* 下钻表：推荐率 top5 游戏 + steam 评级 */
-function drillRec(el){
+function drillPraise(el){
   const cnt = {};
   filtered.forEach(u => {
-    if(!cnt[u.appid]) cnt[u.appid] = {n:0, rec:0};
+    if(!cnt[u.appid]) cnt[u.appid] = {n:0, pos:0};
     cnt[u.appid].n++;
-    if(u.rating === 1) cnt[u.appid].rec++;
+    if(u.sentiment === 'positive') cnt[u.appid].pos++;
   });
   const rows = Object.entries(cnt).sort((a, b) => b[1].n - a[1].n).slice(0, 5);
-  let html = '<header>推荐率 TOP5 游戏（按总量降序）</header>';
+  let html = '<header>TOP5 游戏（按总量降序）</header>';
   rows.forEach(([appid, c]) => {
-    const r = c.n ? c.rec / c.n * 100 : 0;
-    html += `<div class="drill-row"><span class="dg">${esc(gameName(appid))}</span><span class="rate">${r.toFixed(1)}% · ${steamRating(r)}</span></div>`;
+    const r = c.n ? c.pos / c.n * 100 : 0;
+    html += `<div class="drill-row"><span class="dg">${esc(gameName(appid))}</span><span class="rate">${r.toFixed(1)}%</span></div>`;
   });
   el.innerHTML = html;
 }
@@ -84,9 +87,9 @@ function bindDrill(){
   pop.className = 'drill-pop';
   pop.id = 'drillPop';
   document.body.appendChild(pop);
-  [['total', drillTotal], ['rec', drillRec]].forEach(([k, fn]) => {
+  [['total', drillTotal], ['praise', drillPraise]].forEach(([k, fn]) => {
     const kpi = $(`[data-kpi="${k}"]`);
-    kpi.addEventListener('mouseenter', e => {
+    kpi.addEventListener('mouseenter', () => {
       fn(pop);
       const r = kpi.getBoundingClientRect();
       pop.style.left = Math.min(r.left, window.innerWidth - 380) + 'px';
@@ -97,7 +100,7 @@ function bindDrill(){
   });
 }
 
-/* ---------------- 折线图通用 ---------------- */
+/* ---------------- 折线图（hover 高亮元素 + 固定标签） ---------------- */
 function weekStart(dateStr){
   const d = new Date(dateStr + 'T00:00:00');
   const day = (d.getDay() + 6) % 7;
@@ -109,69 +112,96 @@ function timeSeries(mode, byGame){
   const keyOf = u => mode === 'week' ? weekStart(fmtDate(u.posted_at)) : fmtDate(u.posted_at);
   filtered.forEach(u => {
     const k = keyOf(u);
-    if(!buckets.has(k)) buckets.set(k, {total:0, rec:0, games:{}});
+    if(!buckets.has(k)) buckets.set(k, {total:0, pos:0, rec:0, games:{}});
     const b = buckets.get(k);
     b.total++;
+    if(u.sentiment === 'positive') b.pos++;
     if(u.rating === 1) b.rec++;
-    if(!b.games[u.appid]) b.games[u.appid] = {total:0, rec:0};
+    if(!b.games[u.appid]) b.games[u.appid] = {total:0, pos:0, rec:0};
     b.games[u.appid].total++;
+    if(u.sentiment === 'positive') b.games[u.appid].pos++;
     if(u.rating === 1) b.games[u.appid].rec++;
   });
   const labels = [...buckets.keys()].sort();
   return {buckets, labels, keyOf};
 }
+/* nice ticks：自适应整十/整百/整千刻度（5 等分），保证纵轴整洁 */
+function niceTicks(maxV, n = 5){
+  if(maxV <= 0) return {step: 1, niceMax: 1};
+  const rough = maxV / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / mag;
+  let step;
+  if(norm < 1.5) step = 1 * mag;
+  else if(norm < 3) step = 2 * mag;
+  else if(norm < 7) step = 5 * mag;
+  else step = 10 * mag;
+  const niceMax = Math.ceil(maxV / step) * step;
+  return {step, niceMax};
+}
+function fmtTick(v, step){
+  if(step >= 1000) return (v/1000).toFixed(step%1000===0?0:1).replace(/\.0$/,'') + 'k';
+  if(step >= 1) return Math.round(v).toString();
+  return v.toFixed(2);
+}
 function renderLine(container, labels, datasets, opts){
-  // datasets: [{name, color, values}]
-  const W = 760, H = 200, pl = 40, pr = 12, pt = 12, pb = 24;
+  const W = 760, H = 200, pl = 44, pr = 12, pt = 12, pb = 24;
   const iw = W - pl - pr, ih = H - pt - pb;
-  const max = opts.max != null ? opts.max : Math.max(1, ...datasets.flatMap(d => d.values));
+  const rawMax = opts.max != null ? opts.max : Math.max(1, ...datasets.flatMap(d => d.values));
   const min = opts.min != null ? opts.min : 0;
+  // 纵轴 nice 化（好评率固定 0-100 不参与）
+  const nt = opts.max != null ? {step: (opts.max - opts.min) / 4, niceMax: opts.max} : niceTicks(rawMax, 5);
+  const max = nt.niceMax;
+  const ntstep = nt.step;
   const n = labels.length;
   if(!n){ container.innerHTML = dEmpty(); return; }
   const x = i => n === 1 ? pl + iw / 2 : pl + (i / (n - 1)) * iw;
   const y = v => pt + ih - ((v - min) / (max - min || 1)) * ih;
   let grid = '';
+  // 5 段刻度（含顶/底）
   for(let g = 0; g <= 4; g++){
     const v = min + (max - min) * g / 4;
     const gy = y(v);
     grid += `<line class="lc-grid" x1="${pl}" y1="${gy}" x2="${W - pr}" y2="${gy}"/>`;
-    grid += `<text class="lc-axis" x="${pl - 6}" y="${gy + 3}" text-anchor="end">${opts.fmt ? opts.fmt(v) : Math.round(v)}</text>`;
+    grid += `<text class="lc-axis" x="${pl - 6}" y="${gy + 3}" text-anchor="end">${opts.fmt ? opts.fmt(v) : fmtTick(v, ntstep)}</text>`;
   }
+  // 每个 dataset 一个 group，方便 hover 高亮整条
   let lines = '';
   datasets.forEach((d, di) => {
     const pts = d.values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
-    lines += `<path class="lc-line" stroke="${d.color}" d="M${pts}"/>`;
-    lines += d.values.map((v, i) => `<circle class="lc-dot" fill="${d.color}" cx="${x(i)}" cy="${y(v)}" r="3"/>`).join('');
+    lines += `<g class="lc-set" data-di="${di}">
+      <path class="lc-line" stroke="${d.color}" d="M${pts}"/>
+      ${d.values.map((v, i) => `<circle class="lc-dot" fill="${d.color}" cx="${x(i)}" cy="${y(v)}" r="3"/>`).join('')}
+    </g>`;
   });
+  // 标签层（hover 某 set 时显示该 set 的所有标签）
+  let labelsSvg = '<g class="lc-labels">';
+  datasets.forEach((d, di) => {
+    d.values.forEach((v, i) => {
+      const valTxt = opts.fmtVal ? opts.fmtVal(v) : Math.round(v);
+      labelsSvg += `<text class="lc-label" data-di="${di}" x="${x(i)}" y="${y(v) - 8}" text-anchor="middle" fill="${d.color}" style="display:none">${valTxt}</text>`;
+    });
+  });
+  labelsSvg += '</g>';
   let xlabels = '';
   const step = Math.max(1, Math.ceil(n / 8));
   labels.forEach((lb, i) => { if(i % step === 0) xlabels += `<text class="lc-axis" x="${x(i)}" y="${H - 8}" text-anchor="middle">${lb.slice(5)}</text>`; });
-  container.innerHTML = `<svg class="line-chart" viewBox="0 0 ${W} ${H}">${grid}${lines}${xlabels}</svg>`;
-  return {x, y, datasets, labels, W, H, max, min, pl, iw};
-}
-function bindLineHover(container){
-  const tip = document.createElement('div');
-  tip.className = 'lc-tooltip';
-  tip.style.position = 'fixed';
-  document.body.appendChild(tip);
-  container.addEventListener('mousemove', e => {
-    const svg = container.querySelector('svg');
-    if(!svg) return;
-    const data = container.__lc;
-    if(!data) return;
-    const rect = svg.getBoundingClientRect();
-    const cx = (e.clientX - rect.left) / rect.width * data.W;
-    const i = Math.round((cx - data.pl) / data.iw * (data.labels.length - 1));
-    const idx = Math.max(0, Math.min(data.labels.length - 1, i));
-    let html = `<b>${data.labels[idx]}</b>`;
-    data.datasets.forEach(d => { html += `<br>${d.name}: <b>${data.fmtVal ? data.fmtVal(d.values[idx]) : d.values[idx]}</b>`; });
-    tip.innerHTML = html;
-    tip.style.display = 'block';
-    tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 220) + 'px';
-    tip.style.top = (e.clientY - 24) + 'px';
-    tip.classList.add('show');
+  container.innerHTML = `<svg class="line-chart" viewBox="0 0 ${W} ${H}">${grid}${lines}${labelsSvg}${xlabels}</svg>`;
+
+  // hover 绑定
+  const svg = container.querySelector('svg');
+  container.querySelectorAll('.lc-set').forEach(g => {
+    g.addEventListener('mouseenter', () => {
+      const di = g.dataset.di;
+      // 暗化其它 set
+      svg.querySelectorAll('.lc-set').forEach(gg => gg.classList.toggle('dim', gg.dataset.di !== di));
+      svg.querySelectorAll('.lc-label').forEach(lb => lb.style.display = lb.dataset.di === di ? '' : 'none');
+    });
+    g.addEventListener('mouseleave', () => {
+      svg.querySelectorAll('.lc-set').forEach(gg => gg.classList.remove('dim'));
+      svg.querySelectorAll('.lc-label').forEach(lb => lb.style.display = 'none');
+    });
   });
-  container.addEventListener('mouseleave', () => tip.classList.remove('show'));
 }
 
 /* ---------------- 每日趋势 ---------------- */
@@ -188,34 +218,7 @@ function renderDaily(){
       datasets.push({name: gameName(appid), color: SERIES_COLORS[i % 5], values: labels.map(lb => buckets.get(lb).games[appid] ? buckets.get(lb).games[appid].total : 0)});
     });
   }
-  const data = renderLine(el, labels, datasets, {});
-  el.__lc = data;
-  el.__lc.fmtVal = v => v;
-  // 图例
-  if(c.byGame){
-    let lg = '<div class="legend">';
-    datasets.forEach(d => { lg += `<span class="l-item"><i style="background:${d.color}"></i>${esc(d.name)}</span>`; });
-    lg += '</div>';
-    el.insertAdjacentHTML('beforeend', lg);
-  }
-}
-/* ---------------- 好评率趋势 ---------------- */
-function renderPraise(){
-  const c = chartState.praise;
-  const el = $('#praiseBody');
-  const {buckets, labels} = timeSeries(c.mode, c.byGame);
-  if(!labels.length){ el.innerHTML = dEmpty(); return; }
-  const datasets = [];
-  if(!c.byGame){
-    datasets.push({name: '整体好评率', color: SERIES_COLORS[0], values: labels.map(lb => { const b = buckets.get(lb); return b.total ? b.rec / b.total * 100 : 0; })});
-  } else {
-    topGames(5).forEach((appid, i) => {
-      datasets.push({name: gameName(appid), color: SERIES_COLORS[i % 5], values: labels.map(lb => { const g = buckets.get(lb).games[appid]; return g && g.total ? g.rec / g.total * 100 : 0; })});
-    });
-  }
-  const data = renderLine(el, labels, datasets, {max:100, min:0, fmt:v => v + '%'});
-  el.__lc = data;
-  el.__lc.fmtVal = v => v.toFixed(1) + '%';
+  renderLine(el, labels, datasets, {fmtVal: v => fmtNum(v)});
   if(c.byGame){
     let lg = '<div class="legend">';
     datasets.forEach(d => { lg += `<span class="l-item"><i style="background:${d.color}"></i>${esc(d.name)}</span>`; });
@@ -224,7 +227,30 @@ function renderPraise(){
   }
 }
 
-/* ---------------- 情感分布（堆叠占比条） ---------------- */
+/* ---------------- 好评率趋势（用正向情感占比） ---------------- */
+function renderPraise(){
+  const c = chartState.praise;
+  const el = $('#praiseBody');
+  const {buckets, labels} = timeSeries(c.mode, c.byGame);
+  if(!labels.length){ el.innerHTML = dEmpty(); return; }
+  const datasets = [];
+  if(!c.byGame){
+    datasets.push({name: '整体好评率', color: SERIES_COLORS[0], values: labels.map(lb => { const b = buckets.get(lb); return b.total ? b.pos / b.total * 100 : 0; })});
+  } else {
+    topGames(5).forEach((appid, i) => {
+      datasets.push({name: gameName(appid), color: SERIES_COLORS[i % 5], values: labels.map(lb => { const g = buckets.get(lb).games[appid]; return g && g.total ? g.pos / g.total * 100 : 0; })});
+    });
+  }
+  renderLine(el, labels, datasets, {max:100, min:0, fmt:v => v + '%', fmtVal: v => v.toFixed(1) + '%'});
+  if(c.byGame){
+    let lg = '<div class="legend">';
+    datasets.forEach(d => { lg += `<span class="l-item"><i style="background:${d.color}"></i>${esc(d.name)}</span>`; });
+    lg += '</div>';
+    el.insertAdjacentHTML('beforeend', lg);
+  }
+}
+
+/* ---------------- 情感分布（堆叠占比条）hover 整行 ---------------- */
 function renderSentiment(){
   const c = chartState.sentiment;
   const el = $('#sentiBody');
@@ -242,24 +268,34 @@ function renderSentiment(){
     rows = topGames(5).map(appid => ({name: gameName(appid), ...calc(filtered.filter(u => u.appid === appid))}));
     rows.unshift({name: '整体', ...calc(filtered)});
   }
-  const s = x => x.total ? (x / x.total * 100) : 0;
-  let html = '<div class="stack-legend"><span><i style="background:var(--green)"></i>正向</span><span><i style="background:var(--yellow)"></i>中性</span><span><i style="background:var(--red)"></i>负向</span></div><div class="stack-list">';
-  rows.forEach(r => {
-    html += `<div class="stack-row">
-      <span class="stack-name">${esc(r.name)}</span>
+  const sPct = (n, t) => t ? (n / t * 100) : 0;
+  // 图例移至左下角，与其他图表对齐
+  let html = '<div class="stack-list">';
+  rows.forEach((r, ri) => {
+    html += `<div class="stack-row" data-ri="${ri}">
+      <span class="stack-name" title="${esc(r.name)}">${esc(r.name)}</span>
       <div class="stack-track" title="正向 ${r.pos} / 中性 ${r.neu} / 负向 ${r.neg}">
-        <div class="pos" style="width:${s(r.pos)}%"></div>
-        <div class="neu" style="width:${s(r.neu)}%"></div>
-        <div class="neg" style="width:${s(r.neg)}%"></div>
+        <div class="pos" style="width:${sPct(r.pos, r.total)}%"></div>
+        <div class="neu" style="width:${sPct(r.neu, r.total)}%"></div>
+        <div class="neg" style="width:${sPct(r.neg, r.total)}%"></div>
       </div>
       <span class="stack-total">${fmtNum(r.total)}</span>
+      <div class="stack-label" style="display:none">正向 ${fmtNum(r.pos)} · 中性 ${fmtNum(r.neu)} · 负向 ${fmtNum(r.neg)}</div>
     </div>`;
   });
-  html += '</div>';
+  html += '</div><div class="stack-legend"><span><i style="background:var(--green)"></i>正向</span><span><i style="background:var(--yellow)"></i>中性</span><span><i style="background:var(--red)"></i>负向</span></div>';
   el.innerHTML = html;
+  el.querySelectorAll('.stack-row').forEach(row => {
+    row.addEventListener('mouseenter', () => {
+      row.querySelector('.stack-label').style.display = '';
+    });
+    row.addEventListener('mouseleave', () => {
+      row.querySelector('.stack-label').style.display = 'none';
+    });
+  });
 }
 
-/* ---------------- 主题分布（柱形 + 下钻） ---------------- */
+/* ---------------- 主题分布（柱形 + 下钻）---------------- */
 function topicsOf(u, level, drill){
   if(state.granularity === 'voice'){
     if(level === 'L1') return u.topic ? [u.topic] : [];
@@ -282,6 +318,8 @@ function renderTopic(){
   const c = chartState.topic;
   const el = $('#topicBody');
   if(!filtered.length){ el.innerHTML = dEmpty(); return; }
+  // 观点报表 L3：库里观点最深就到 L3；命中后展示完整 path 柱
+  // 这里保持 L1/L2/L3 均可下钻，L3 即叶子
   const drill = c.drill;
   let bread = '';
   if(drill.length){
@@ -299,13 +337,23 @@ function renderTopic(){
   let cols = '';
   rows.forEach(([name, n]) => {
     const h = Math.round(n / max * 100);
-    cols += `<div class="bar-col">
-      <div class="bar-val">${fmtNum(n)}</div>
+    cols += `<div class="bar-col" data-barname="${esc(name)}">
+      <div class="bar-val" style="display:none">${fmtNum(n)}</div>
       <div class="bar-box"><div class="bar-seg" style="height:${h}%"></div></div>
       <div class="bar-label" data-topic-name="${esc(name)}">${esc(name)}</div>
     </div>`;
   });
-  el.innerHTML = bread + `<div class="bar-chart">${cols}</div>`;
+  el.innerHTML = bread + `<div class="bar-chart topic-pad">${cols}</div>`;
+  el.querySelectorAll('.bar-col').forEach(col => {
+    col.addEventListener('mouseenter', () => {
+      el.querySelectorAll('.bar-col').forEach(cc => cc.classList.toggle('dim', cc !== col));
+      col.querySelector('.bar-val').style.display = '';
+    });
+    col.addEventListener('mouseleave', () => {
+      el.querySelectorAll('.bar-col').forEach(cc => cc.classList.remove('dim'));
+      col.querySelector('.bar-val').style.display = 'none';
+    });
+  });
   bindTopicInteractions(el, c, drill);
 }
 function renderTopicByGame(el, bread){
@@ -328,14 +376,31 @@ function renderTopicByGame(el, bread){
     apps.forEach((appid, i) => {
       const n = topicByGame[t][appid] || 0;
       const h = Math.round(n / max * 100);
-      cols += `<div class="bar-box"><div class="bar-seg" style="height:${h}%;background:${SERIES_COLORS[i % 5]}" title="${esc(gameName(appid))}: ${n}"></div></div>`;
+      cols += `<div class="bar-box" data-n="${n}" data-appid="${appid}"><div class="bar-seg" style="height:${h}%;background:${SERIES_COLORS[i % 5]}"></div><div class="bar-val" style="display:none">${fmtNum(n)}</div></div>`;
     });
     cols += '</div><div class="bar-label">' + esc(t) + '</div></div>';
   });
   let lg = '<div class="legend">';
   apps.forEach((appid, i) => { lg += `<span class="l-item"><i style="background:${SERIES_COLORS[i % 5]}"></i>${esc(gameName(appid))}</span>`; });
   lg += '</div>';
-  el.innerHTML = bread + `<div class="bar-chart">${cols}</div>` + lg;
+  el.innerHTML = bread + `<div class="bar-chart topic-pad">${cols}</div>` + lg;
+  // 按游戏 hover：图表中同 appid 的所有柱子同时响应 + bar-val 统一在柱子上方（CSS 绝对定位）
+  el.querySelectorAll('.bar-box').forEach(b => {
+    b.addEventListener('mouseenter', () => {
+      const appid = b.dataset.appid;
+      el.querySelectorAll('.bar-box').forEach(bb => {
+        const sameApp = bb.dataset.appid === appid;
+        bb.classList.toggle('dim', !sameApp);
+        bb.querySelector('.bar-val').style.display = sameApp ? '' : 'none';
+      });
+    });
+    b.addEventListener('mouseleave', () => {
+      el.querySelectorAll('.bar-box').forEach(bb => {
+        bb.classList.remove('dim');
+        bb.querySelector('.bar-val').style.display = 'none';
+      });
+    });
+  });
 }
 function bindTopicInteractions(el, c, drill){
   el.querySelectorAll('[data-topic-name]').forEach(lb => {
@@ -408,14 +473,6 @@ function bindChartTools(){
   }));
 }
 
-/* 折线悬停绑定（一次性） */
-function initLineHover(){
-  ['dailyBody', 'praiseBody'].forEach(id => {
-    bindLineHover(document.getElementById(id));
-  });
-}
-
 bindDrill();
 bindChartTools();
-initLineHover();
 renderAll();

@@ -81,7 +81,7 @@ class BaseCollector(abc.ABC):
         self,
         target_id: str,
         *,
-        max_count: int = 100,
+        max_count: int | None = None,
         language: str | None = None,
         fetch_metadata: bool = False,
         posted_after: datetime | None = None,
@@ -91,6 +91,8 @@ class BaseCollector(abc.ABC):
         """便捷方法：一次性收集所有评论
 
         Args:
+            max_count: 采集上限；``None`` = 自动模式（依赖时间窗自然耗尽，
+                各游戏/各时间区间量自适应，见 SteamCollector.fetch_comments）。
             fetch_metadata: 透传给 fetch_comments，控制是否回采点赞数等动态字段。
             posted_after: 起始时间过滤（透传给 fetch_comments）。
             posted_before: 截止时间过滤（透传给 fetch_comments）。

@@ -55,7 +55,7 @@ class SteamCollector(BaseCollector):
         self,
         target_id: str,
         *,
-        max_count: int = 100,
+        max_count: int | None = None,
         language: str | None = "schinese",
         filter: str = "recent",  # 时间倒序（默认）；时间窗走应用层过滤（见下方 day_range 说明）
         review_type: str = "all",  # 兼容旧参数（已弃用，使用 filter）
@@ -68,7 +68,12 @@ class SteamCollector(BaseCollector):
 
         Args:
             target_id: Steam appid（游戏的数字ID）
-            max_count: 最大拉取数量
+            max_count: 单次采集上限。``None`` = 自动模式：不设硬上限，
+                靠时间窗（posted_after/posted_before）+ 自然翻页终止逻辑
+                （连续 3 页无新数据 + 验证页）在窗口边界自动停止，
+                从而自适应各游戏/各阶段的真实量。
+                ⚠️ 自动模式依赖时间窗：若 max_count=None 且未传任何时间窗，
+                会拉取游戏全量评测（可能非常巨大），故自动模式强制要求时间窗。
             language: 语言过滤（如 'schinese'、'english'、'all'）。
                 **项目顶层原则**：Steam 平台只采集中文评论，所以默认 'schinese'。
                 如需临时拉英文等其他语言，请显式传 language='english' 等。
@@ -90,6 +95,14 @@ class SteamCollector(BaseCollector):
         Yields:
             RawComment 对象
         """
+        # 自动模式（max_count=None）必须配时间窗，否则会拉全量
+        if max_count is None and posted_after is None and posted_before is None:
+            raise ValueError(
+                "max_count=None（自动模式）必须配合 posted_after/posted_before 时间窗，"
+                "否则会拉取游戏全量评论"
+            )
+        auto = max_count is None
+
         # 兼容旧调用：如果只传 review_type 不传 filter，行为等同于旧版
         if filter == "all" and review_type != "all":
             filter = review_type
@@ -124,13 +137,13 @@ class SteamCollector(BaseCollector):
                     return False
             return True
 
-        while fetched < max_count:
+        while auto or fetched < max_count:
             params = {
                 "json": 1,
                 "filter": filter,
                 "language": language or "all",
                 "cursor": cursor,
-                "num_per_page": min(100, max_count - fetched),
+                "num_per_page": min(100, max_count - fetched) if not auto else 100,
                 "purchase_type": "all",  # all / steam / non_steam_purchase
                 "day_range": day_range,
             }
@@ -158,7 +171,7 @@ class SteamCollector(BaseCollector):
                 yield self._to_raw(target_id, r, fetch_metadata=fetch_metadata)
                 fetched += 1
                 page_new += 1
-                if fetched >= max_count:
+                if not auto and fetched >= max_count:
                     break
 
             # 翻页停止策略：
@@ -193,7 +206,7 @@ class SteamCollector(BaseCollector):
         if (
             (posted_after is not None or posted_before is not None)
             and last_cursor
-            and fetched < max_count  # 不是 max_count 触顶时（触顶场景验证页也无意义）
+            and (auto or fetched < max_count)  # 非自动：max_count 触顶时验证页无意义
         ):
             verify_params = {
                 "json": 1,
@@ -229,7 +242,7 @@ class SteamCollector(BaseCollector):
                         seen_source_ids.add(src_id)
                         yield self._to_raw(target_id, r, fetch_metadata=fetch_metadata)
                         fetched += 1
-                        if fetched >= max_count:
+                        if not auto and fetched >= max_count:
                             break
                     # 兜底再翻 2 页（防止漏采扩散）
                     rescue_cursor = verify_data.get("cursor") or last_cursor
@@ -261,7 +274,7 @@ class SteamCollector(BaseCollector):
                             yield self._to_raw(target_id, r, fetch_metadata=fetch_metadata)
                             fetched += 1
                             page_added += 1
-                            if fetched >= max_count:
+                            if not auto and fetched >= max_count:
                                 break
                         if page_added == 0:
                             break  # 兜底页也无新数据，停

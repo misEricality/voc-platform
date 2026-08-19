@@ -16,6 +16,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from src.storage.db import init_db, CommentRepository
 from src.visualizer.charts import (
@@ -23,6 +24,9 @@ from src.visualizer.charts import (
     build_summary_dataframe,
     sentiment_distribution,
     topic_distribution,
+    sentiment_stacked,
+    topic_game_heatmap,
+    position_scatter,
 )
 
 
@@ -51,6 +55,95 @@ def _find_chinese_font() -> str | None:
     return None
 
 
+def render_compare(repo) -> None:
+    """P3 多目标横向对比视图（图表优先，独立于单目标看板）。"""
+    targets = repo.list_targets(platform="steam")
+    if not targets:
+        st.info("暂无 Steam 目标数据，请先运行采集与分析流水线。")
+        return
+
+    name_of = {t["target_id"]: t["name"] for t in targets}
+    all_ids = [t["target_id"] for t in targets]
+
+    st.subheader("多目标横向对比")
+    st.caption("口径：情感 = 评论级；主题 = 观点级（默认排除「综合与元表达」兜底桶）。")
+
+    c1, c2, c3 = st.columns([3, 1, 1])
+    with c1:
+        selected_ids = st.multiselect(
+            "对比游戏", all_ids, default=all_ids[:10],
+            format_func=lambda t: name_of.get(t, t),
+        )
+    with c2:
+        heatmap_mode = st.radio("热力图模式", ["占比", "偏差"], index=0, key="hm_mode")
+    with c3:
+        level = st.selectbox("主题粒度", ["L1", "L2", "L3"], index=0)
+
+    if not selected_ids:
+        st.info("请至少选择一款游戏。")
+        return
+    selected = [t for t in targets if t["target_id"] in selected_ids]
+
+    # 概览 KPI 表
+    kpi_rows = []
+    for t in selected:
+        total_sent = t["pos"] + t["neg"] + t["neu"]
+        kpi_rows.append({
+            "游戏": t["name"],
+            "样本": t["total"],
+            "推荐率%": t["recommend_rate"] if t["recommend_rate"] is not None else "—",
+            "情感均分": round(t["avg_score"], 2) if t["avg_score"] is not None else "—",
+            "正面%": round(t["pos"] / total_sent * 100, 1) if total_sent else 0,
+            "负面%": round(t["neg"] / total_sent * 100, 1) if total_sent else 0,
+        })
+    st.dataframe(pd.DataFrame(kpi_rows), use_container_width=True, hide_index=True)
+
+    # 口碑定位散点
+    st.subheader("口碑定位（X=推荐率 · Y=情感均分 · 气泡=样本量）")
+    st.plotly_chart(position_scatter(pd.DataFrame(selected)), use_container_width=True)
+
+    # 情感构成堆叠条
+    st.subheader("情感构成（评论级）")
+    ratio_df = repo.sentiment_ratio_by_targets(selected_ids)
+    if ratio_df.empty:
+        st.info("暂无情感数据")
+    else:
+        ratio_df["name"] = ratio_df["target_id"].map(name_of)
+        st.plotly_chart(sentiment_stacked(ratio_df), use_container_width=True)
+
+    # 主题 × 游戏 热力图
+    st.subheader("主题 × 游戏（观点级）")
+    matrix = repo.opinion_matrix(selected_ids, level=level)
+    if matrix.empty:
+        st.info("暂无观点数据")
+    else:
+        mode = "deviation" if heatmap_mode == "偏差" else "ratio"
+        st.plotly_chart(topic_game_heatmap(matrix, name_of, mode=mode), use_container_width=True)
+
+    # 负面痛点表
+    st.subheader("负面痛点 TOP5（L2）")
+    pain = repo.negative_pain_points(selected_ids, level="L2", top=5)
+    tabs = st.tabs([t["name"] for t in selected])
+    for tab, t in zip(tabs, selected):
+        rows = pain.get(t["target_id"], [])
+        with tab:
+            if rows:
+                st.table(pd.DataFrame(rows, columns=["L2 路径", "负面观点数"]))
+            else:
+                st.caption("无负面观点")
+
+    # 下钻到单目标看板
+    st.subheader("下钻到单目标看板")
+    d1, d2 = st.columns([3, 1])
+    with d1:
+        drill_name = st.selectbox("选择游戏", [t["name"] for t in selected], key="drill_name")
+    with d2:
+        if st.button("打开单目标看板"):
+            picked = next(t for t in selected if t["name"] == drill_name)
+            st.session_state["_drill_target"] = picked["target_id"]
+            st.rerun()
+
+
 st.set_page_config(
     page_title="灵听 · Lynx",
     page_icon=str(LOGO_PATH),
@@ -66,10 +159,27 @@ st.markdown("""
 > 数据源：Steam 公开评测 · 分析引擎：DeepSeek/Qwen/GLM  
 """)
 
+# === 消费下钻请求（必须在 radio 实例化前，否则触发 widget state 冲突） ===
+_drill_tid = st.session_state.pop("_drill_target", None)
+if _drill_tid:
+    st.session_state["view"] = "单目标看板"
+    st.session_state["platform"] = "steam"
+    st.session_state["selected_target"] = _drill_tid
+
+# === 视图切换 ===
+with st.sidebar:
+    view = st.radio("视图", ["单目标看板", "多目标对比"], index=0, key="view")
+
+if view == "多目标对比":
+    engine, SessionLocal = init_db()
+    session = SessionLocal()
+    render_compare(CommentRepository(session))
+    st.stop()
+
 # === 侧边栏 ===
 with st.sidebar:
     st.header("⚙️ 数据筛选")
-    platform = st.selectbox("数据来源平台", ["all", "steam", "bilibili"], index=1)
+    platform = st.selectbox("数据来源平台", ["all", "steam", "bilibili"], index=1, key="platform")
 
     engine, SessionLocal = init_db()
     session = SessionLocal()
@@ -81,11 +191,13 @@ with st.sidebar:
     st.metric("已分析数", analyzed)
 
     target_options = ["全部"]
-    _comments = repo.all_analyzed(platform=None if platform == "all" else platform, limit=1000)
-    target_ids = sorted({c.target_id for c in _comments if c.target_id})
-    target_options += target_ids
+    _targets = repo.list_targets(platform=None if platform == "all" else platform)
+    target_options += [t["target_id"] for t in _targets]
 
-    selected_target = st.selectbox("目标对象", target_options)
+    # 下钻 / 平台切换后，确保 selected_target 仍在选项内
+    if st.session_state.get("selected_target") not in target_options:
+        st.session_state["selected_target"] = "全部"
+    selected_target = st.selectbox("目标对象", target_options, key="selected_target")
 
 st.divider()
 

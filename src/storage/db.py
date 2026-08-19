@@ -257,6 +257,19 @@ def init_db(db_url: str | None = None) -> tuple:
     return engine, SessionLocal
 
 
+def _topic_segment(full_path: str, level: str) -> str:
+    """从 full_path 提取指定层级段。
+
+    L1/L2/L3；注意 L3 词可能自带斜杠（如"整活/梗"），故 L3 取第 3 段起拼接。
+    """
+    parts = (full_path or "").split("/")
+    if level == "L1":
+        return parts[0] if parts else (full_path or "")
+    if level == "L2":
+        return parts[1] if len(parts) > 1 else (parts[0] if parts else "")
+    return "/".join(parts[2:]) if len(parts) > 2 else (parts[-1] if parts else "")
+
+
 class CommentRepository:
     """评论仓储 - 提供 upsert / 查询等操作"""
 
@@ -473,6 +486,152 @@ class CommentRepository:
         stmt = stmt.order_by(Comment.analyzed_at.desc()).limit(limit)
         return list(self.session.execute(stmt).scalars())
 
+    # ==================== P3 多目标对比 ====================
+
+    def list_targets(self, platform: str | None = "steam") -> list[dict]:
+        """目标清单 + 聚合指标（SQL GROUP BY，不整表拉取）。
+
+        返回每项：target_id / name / appid / total / analyzed /
+        recommend_rate(Steam 推荐率%) / avg_score / pos / neg / neu
+        """
+        from sqlalchemy import case, func
+
+        cols = [
+            Comment.target_id,
+            func.count(Comment.id).label("total"),
+            func.count(Comment.analyzed_at).label("analyzed"),
+            func.sum(Comment.rating).label("rating_sum"),
+            func.count(Comment.rating).label("rating_cnt"),
+            func.avg(Comment.sentiment_score).label("avg_score"),
+            func.sum(case((Comment.sentiment == "positive", 1), else_=0)).label("pos"),
+            func.sum(case((Comment.sentiment == "negative", 1), else_=0)).label("neg"),
+            func.sum(case((Comment.sentiment == "neutral", 1), else_=0)).label("neu"),
+            func.max(Comment.extra_meta).label("extra_meta"),
+        ]
+        stmt = (
+            select(*cols)
+            .group_by(Comment.target_id)
+            .order_by(func.count(Comment.id).desc())
+        )
+        if platform:
+            stmt = stmt.where(Comment.platform == platform)
+
+        out: list[dict] = []
+        for row in self.session.execute(stmt):
+            tid, total, analyzed, rating_sum, rating_cnt, avg_score, pos, neg, neu, extra_meta = row
+            name = tid
+            if extra_meta:
+                try:
+                    name = (json.loads(extra_meta) or {}).get("name") or tid
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            recommend = None
+            if rating_cnt:
+                recommend = round((rating_sum or 0) / rating_cnt * 100, 1)
+            out.append({
+                "target_id": tid,
+                "name": name,
+                "appid": tid.split(":", 1)[1] if ":" in tid else tid,
+                "total": int(total or 0),
+                "analyzed": int(analyzed or 0),
+                "recommend_rate": recommend,
+                "avg_score": round(avg_score, 3) if avg_score is not None else None,
+                "pos": int(pos or 0), "neg": int(neg or 0), "neu": int(neu or 0),
+            })
+        return out
+
+    def sentiment_ratio_by_targets(self, targets: list[str]) -> "pd.DataFrame":
+        """评论级情感构成占比（positive/neutral/negative + n），按目标。"""
+        import pandas as pd
+        from sqlalchemy import case, func
+
+        if not targets:
+            return pd.DataFrame(columns=["target_id", "positive", "neutral", "negative", "n"])
+        stmt = (
+            select(
+                Comment.target_id,
+                func.sum(case((Comment.sentiment == "positive", 1), else_=0)).label("pos"),
+                func.sum(case((Comment.sentiment == "negative", 1), else_=0)).label("neg"),
+                func.sum(case((Comment.sentiment == "neutral", 1), else_=0)).label("neu"),
+            )
+            .where(Comment.target_id.in_(targets))
+            .group_by(Comment.target_id)
+        )
+        data = []
+        for tid, pos, neg, neu in self.session.execute(stmt):
+            pos, neg, neu = pos or 0, neg or 0, neu or 0
+            n = pos + neg + neu
+            data.append({
+                "target_id": tid,
+                "positive": round(pos / n * 100, 1) if n else 0,
+                "neutral": round(neu / n * 100, 1) if n else 0,
+                "negative": round(neg / n * 100, 1) if n else 0,
+                "n": n,
+            })
+        return pd.DataFrame(data)
+
+    def opinion_matrix(
+        self,
+        targets: list[str],
+        level: str = "L1",
+        sentiment: str | None = None,
+        exclude_meta: bool = True,
+    ) -> "pd.DataFrame":
+        """主题 × 目标 观点计数矩阵（观点级，热力图用）。
+
+        level: L1/L2/L3；sentiment: positive/negative/None=全部；
+        exclude_meta: 排除「综合与元表达」兜底桶（避免对比被整体评价淹没）。
+        """
+        import pandas as pd
+
+        if not targets:
+            return pd.DataFrame()
+        stmt = (
+            select(Comment.target_id, CommentOpinion.full_path, CommentOpinion.sentiment)
+            .join(Comment, Comment.id == CommentOpinion.comment_id)
+            .where(Comment.target_id.in_(targets))
+        )
+        records = []
+        for tid, fp, senti in self.session.execute(stmt):
+            if exclude_meta and (fp or "").startswith("综合与元表达"):
+                continue
+            if sentiment and senti != sentiment:
+                continue
+            records.append({"target_id": tid, "topic": _topic_segment(fp, level)})
+        if not records:
+            return pd.DataFrame()
+        df = pd.DataFrame(records)
+        return (
+            df.pivot_table(index="topic", columns="target_id", aggfunc="size", fill_value=0)
+        )
+
+    def negative_pain_points(
+        self, targets: list[str], level: str = "L2", top: int = 5
+    ) -> dict[str, list[tuple[str, int]]]:
+        """每目标负面观点 TOP 路径（痛点表用）。"""
+        from collections import defaultdict
+        from sqlalchemy import func
+
+        if not targets:
+            return {}
+        stmt = (
+            select(Comment.target_id, CommentOpinion.full_path, func.count(CommentOpinion.id))
+            .join(Comment, Comment.id == CommentOpinion.comment_id)
+            .where(
+                Comment.target_id.in_(targets),
+                CommentOpinion.sentiment == "negative",
+                ~CommentOpinion.full_path.like("综合与元表达%"),
+            )
+            .group_by(Comment.target_id, CommentOpinion.full_path)
+        )
+        agg: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        for tid, fp, cnt in self.session.execute(stmt):
+            agg[tid][_topic_segment(fp, level)] += cnt or 0
+        out: dict[str, list[tuple[str, int]]] = {}
+        for tid, segs in agg.items():
+            out[tid] = sorted(segs.items(), key=lambda x: -x[1])[:top]
+        return out
+
     # ==================== 向量（embedding）相关 ====================
 
     def save_embeddings(self, ids: list[int], vectors, model: str, dim: int) -> int:
@@ -519,9 +678,12 @@ class CommentRepository:
         self,
         platform: str | None = None,
         target_id: str | None = None,
-        limit: int = 100,
+        limit: int | None = 100,
     ) -> list[int]:
-        """找还没有向量的评论 id（增量向量化 / 断点续跑用）"""
+        """找还没有向量的评论 id（增量向量化 / 断点续跑用）
+
+        limit: 返回条数上限；``None`` = 不设上限（该目标全部缺失）。
+        """
         stmt = (
             select(Comment.id)
             .outerjoin(CommentEmbedding, CommentEmbedding.comment_id == Comment.id)
@@ -531,7 +693,8 @@ class CommentRepository:
             stmt = stmt.where(Comment.platform == platform)
         if target_id:
             stmt = stmt.where(Comment.target_id == target_id)
-        stmt = stmt.limit(limit)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return [r for (r,) in self.session.execute(stmt)]
 
     def embedding_models_in_use(self) -> list[str]:

@@ -11,6 +11,8 @@ from typing import Iterable
 
 import jieba
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 
 
 # 中文停用词（精简版，覆盖常见无意义词）
@@ -94,8 +96,11 @@ def topic_distribution(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "topic" not in df.columns:
         return pd.DataFrame(columns=["topic", "count"])
     topic_df = df.dropna(subset=["topic"])
-    return topic_df["topic"].value_counts().reset_index().rename(
-        columns={"index": "topic", "topic": "count"}
+    return (
+        topic_df["topic"]
+        .value_counts()
+        .rename_axis("topic")
+        .reset_index(name="count")
     )
 
 
@@ -105,3 +110,100 @@ def format_datetime(dt) -> str:
     if isinstance(dt, str):
         return dt
     return dt.strftime("%Y-%m-%d %H:%M")
+
+
+# ============================================================
+# P3 多目标对比 —— 图表
+# ============================================================
+
+SENTIMENT_COLORS = {"positive": "#52c41a", "negative": "#ff4d4f", "neutral": "#8c8c8c"}
+SENTIMENT_LABELS = {"positive": "正面", "neutral": "中性", "negative": "负面"}
+
+
+def sentiment_stacked(ratio_df: pd.DataFrame) -> go.Figure:
+    """100% 堆叠情感条（一行一游戏，正/中/负三段）。
+
+    ratio_df 需含列：name / positive / neutral / negative（百分比）。
+    """
+    fig = go.Figure()
+    for senti in ("positive", "neutral", "negative"):
+        fig.add_trace(go.Bar(
+            name=SENTIMENT_LABELS[senti],
+            y=ratio_df["name"],
+            x=ratio_df[senti],
+            orientation="h",
+            marker_color=SENTIMENT_COLORS[senti],
+            text=ratio_df[senti].map(lambda v: f"{v:.0f}%"),
+            textposition="inside",
+            hovertemplate="%{y} · %{x}%<extra></extra>",
+        ))
+    fig.update_layout(
+        barmode="stack",
+        height=max(240, 36 * len(ratio_df) + 70),
+        xaxis_title="占比 %",
+        yaxis_title=None,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=10, r=10, t=30, b=10),
+    )
+    return fig
+
+
+def topic_game_heatmap(
+    count_matrix: pd.DataFrame,
+    names: dict[str, str] | None = None,
+    mode: str = "ratio",
+) -> go.Figure:
+    """主题 × 游戏 热力图。
+
+    count_matrix: 行=topic，列=target_id，值=观点计数。
+    mode="ratio" → 列归一化占比（%）；"deviation" → 各游戏占比 − 全体均值（百分点）。
+    """
+    m = count_matrix.astype(float)
+    totals = m.sum(axis=0).replace(0, 1)
+    ratio = m.div(totals, axis=1) * 100
+    if mode == "deviation":
+        z = ratio.sub(ratio.mean(axis=1), axis=0)
+        colorscale = "RdBu_r"
+        label = "占比 − 均值 (pp)"
+        zmid = 0
+    else:
+        z = ratio
+        colorscale = "Blues"
+        label = "占比 %"
+        zmid = None
+
+    x_labels = [names.get(c, c) for c in z.columns] if names else list(z.columns)
+    fig = go.Figure(go.Heatmap(
+        z=z.values,
+        x=x_labels,
+        y=z.index.tolist(),
+        colorscale=colorscale,
+        zmid=zmid,
+        colorbar=dict(title=label),
+        hovertemplate="%{y} · %{x}<br>%{z:.1f}<extra></extra>",
+    ))
+    fig.update_layout(
+        height=max(320, 22 * len(z.index) + 120),
+        xaxis_title=None,
+        yaxis_title=None,
+        margin=dict(l=10, r=10, t=20, b=40),
+    )
+    return fig
+
+
+def position_scatter(targets_df: pd.DataFrame) -> go.Figure:
+    """口碑定位散点：X=本地推荐率，Y=情感均分，气泡=样本量。"""
+    fig = px.scatter(
+        targets_df,
+        x="recommend_rate",
+        y="avg_score",
+        size="total",
+        text="name",
+        hover_name="name",
+        size_max=60,
+        height=420,
+        labels={"recommend_rate": "本地推荐率 %", "avg_score": "LLM 情感均分", "total": "样本量"},
+    )
+    fig.update_traces(textposition="top center")
+    fig.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+    return fig

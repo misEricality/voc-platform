@@ -1,0 +1,70 @@
+/* 游戏对比看板 —— 样式（Steam 蓝黑，library_hero 卡片 v3） */
+:root{
+  --bg:#0e141b;--bg2:#101822;--panel:#1b2838;--panel2:#16202d;--panel3:#1f2e40;
+  --line:#2a3f5f;--line2:#223349;--line3:#31476a;
+  --ink:#e7ecf1;--ink2:#c7d5e0;--muted:#8f98a0;--dim:#5c7285;
+  --primary:#66c0f4;--primary-dark:#1a9fff;--primary-deep:#417a9b;
+  --green:#a1cd44;--red:#e05c5c;--yellow:#d9b54e;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"OPPO Sans",Inter,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);min-width:1080px}
+button{font:inherit;color:inherit}
+
+.topbar{height:64px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 28px;position:sticky;top:0;z-index:30}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{height:34px;width:auto;display:block}
+.brand h1{font-size:18px;margin:0;color:var(--ink);letter-spacing:1px;font-weight:600}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:12px}
+.icon-btn{width:38px;height:38px;border:1px solid var(--line);background:var(--panel2);border-radius:10px;color:var(--muted);cursor:pointer}
+.avatar{width:38px;height:38px;border-radius:50%;background:var(--primary-deep);display:grid;place-items:center;color:#fff;font-weight:700}
+
+.main{max-width:1440px;margin:auto;padding:20px 28px 40px}
+.headline{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.headline h2{font-size:22px;margin:0;font-weight:600;letter-spacing:-.5px}
+.head-actions{display:flex;align-items:center;gap:12px}
+.analyze-link{display:inline-flex;align-items:center;height:36px;padding:0 16px;border-radius:8px;background:var(--primary);color:#0e141b;font-weight:700;font-size:13px;text-decoration:none;transition:.15s}
+.analyze-link:hover{background:#8bd0f8}
+.sub{color:var(--muted);font-size:13px;margin:0 0 20px}
+
+.cloud-toggle{height:36px;padding:0 16px;border:1px solid var(--line3);background:var(--panel2);border-radius:8px;color:var(--ink2);cursor:pointer;font-weight:600;font-size:13px}
+.cloud-toggle:hover{border-color:var(--primary);color:var(--primary)}
+.cloud-toggle.on{border-color:var(--primary);color:var(--primary);background:rgba(102,192,244,.12)}
+
+/* 卡片网格 —— 3 列，单一背景层 */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.game-card{display:flex;flex-direction:column;border-radius:14px;overflow:hidden;background:#000;border:1px solid var(--line)}
+
+/* 封面：单一 div 容器，背景图 + 渐变遮罩 + 底部文字（hover 放大） */
+.card-cover{position:relative;width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;overflow:hidden;transform:scale(1);transition:transform .35s cubic-bezier(.2,.7,.2,1)}
+.game-card:hover .card-cover{transform:scale(1.04)}
+.card-cover::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.15) 45%,rgba(8,12,18,.95) 100%);pointer-events:none}
+
+/* 文字层（左侧对齐） */
+.card-info{position:absolute;left:0;right:0;bottom:0;padding:16px 18px 18px;z-index:1;text-align:left;display:flex;flex-direction:column;gap:6px}
+.card-name{font-size:19px;font-weight:700;color:#fff;letter-spacing:.3px;text-shadow:0 2px 10px rgba(0,0,0,.85);line-height:1.2;margin:0 0 2px}
+.card-line{font-size:13px;color:var(--ink2);line-height:1.4;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card-line .lbl{color:var(--muted);font-size:11.5px;letter-spacing:.4px;flex:0 0 auto}
+
+/* 「最近评测」超链接（蓝胶囊） */
+.recent-link{display:inline-flex;align-items:center;gap:8px;padding:3px 11px;border-radius:14px;background:rgba(102,192,244,.16);color:var(--primary);font-size:12.5px;font-weight:600;text-decoration:none;border:1px solid rgba(102,192,244,.3);transition:.15s}
+.recent-link:hover{background:rgba(102,192,244,.28);border-color:var(--primary)}
+.recent-link .rl-rating{font-weight:700}
+.recent-link .rl-num{color:#fff;font-weight:700;font-size:13px}
+.r-best{color:#66c0f4}.r-great{color:var(--green)}.r-good{color:#9bbf55}.r-mixed{color:var(--yellow)}.r-bad{color:var(--red)}
+
+/* 「所有评测」评级 + 数字 */
+.all-rating{font-weight:600;margin-right:2px}
+.all-num{color:#fff;font-weight:700;font-size:14px}
+
+/* 「发行日期」 */
+.rd{color:#fff;font-weight:500;font-size:13px;margin-left:2px}
+
+/* 词云 */
+.card-cloud{display:none;padding:18px 18px 22px;border-top:1px solid var(--line2);background:var(--panel2)}
+.grid.cloud-open .card-cloud{display:block}
+.cloud-label{font-size:11px;color:var(--dim);margin-bottom:10px;letter-spacing:.5px}
+.cloud-canvas{position:relative;width:100%;height:200px;background:repeating-linear-gradient(45deg,transparent 0,transparent 18px,rgba(102,192,244,.025) 18px,rgba(102,192,244,.025) 19px);border-radius:8px;overflow:hidden}
+.cloud-word{position:absolute;white-space:nowrap;font-weight:600;color:var(--primary);user-select:none;line-height:1;transition:transform .25s,color .25s;cursor:default}
+.cloud-word:hover{color:#fff;transform:scale(1.15)!important;z-index:2}
+
+.footer{position:fixed;bottom:0;left:0;right:0;height:40px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px;letter-spacing:.5px;border-top:1px solid var(--line2);background:var(--bg2);z-index:5}
