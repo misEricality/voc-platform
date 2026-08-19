@@ -76,11 +76,12 @@
 - **保留方案4 骨架**：LLM 只提取观点短语，程序负责匹配；按新树重建 l3_definitions.yaml（每 L3：定义 + 关键词 + 黑话，如 CS2 挂壁/绿玩/开黑/坟头草）。
 - **保留证据链**：opinions 落 quote + 字符偏移（quote_start/quote_end），新 Schema 不得丢弃。
 - **合并落地 67% 兜底治理**（与 DEVELOPMENT_PLAN"当前最关键的一步"同一事项）：
-  1. ~~bge 语义匹配：phrase ↔ L3 定义 embedding 相似度~~ **已证伪（2026-08-16 校准：`scripts/dev/calibrate_semantic_match.py`，bge-small-zh 对游戏黑话/专名 top-1 命中仅 19%、正确 L3 平均排名第 25，不足以做 L3 兜底）**；
+  1. ~~bge 语义匹配：phrase ↔ L3 定义 embedding 相似度~~ **已证伪（2026-08-16 校准，bge-small-zh 对游戏黑话/专名 top-1 命中仅 19%、正确 L3 平均排名第 25，不足以做 L3 兜底；校准脚本已归档删除）**；
   2. 收紧 ≤20 字无关键词兜底（**需谨慎：直接删除会导致正确样本保持率跌至 52.9%，已回退；需配合信号词/语义再收**）；
   3. 黄金集回归门禁 ✅ **已实现（2026-08-16：`tests/test_golden_match.py` + 410 条黄金集 `tests/fixtures/golden_match_set.json`）**。
 - **搁置项**：v1.0 稿 5.1"GDT 封闭词表分类器 Prompt"（方案 A 已证伪，见 0.2-1）。
 - **验收**：整体评价/其他兜底占比 topic 口径 ≤30%（当前 67%）；黄金集回归通过；现有 pytest 全绿；全量重打成本在年度预算内。
+- **收口状态（2026-08-18）**：✅ 词典扩充（战斗/动作/文化/售价/微交易）+ DISAMBIGUATION_SUBSTRINGS（卡总/卡大厅）+ 泛词消歧（科技→开科技、增强/优化按上下文）+ 旧标签清洗（`scripts/dev/clean_old_labels.py`）+ 全量重打 + topic 兜底下沉（`scripts/dev/recompute_topics.py`）已完成。观点级兜底 71.9%→68.1%、topic 兜底 76.2%→67.1%；黄金集回归通过、pytest 10 passed / 1 skipped。≤30% 未达成——后续 prompt 增强（具体维度优先）已尝试，200 条抽样观点级兜底 63.6%→63.0%（噪声内），证明剩余兜底为数据集固有（约 2/3 评论确无具体维度），词典/prompt 均难再压，需转向数据侧。
 
 ### 阶段 2 · L3.5 动态微话题：第一个新功能 🥈
 
@@ -387,10 +388,10 @@ System Instruction:
 ## 8. 待办总表（Checklist）
 
 - [ ] **阶段 0**：定时采集落库持久化方案（依赖 P6）+ 时区统一 UTC
-- [ ] **阶段 1**：按 v3.1.1 重建 config/topics/gaming.yaml 与 l3_definitions.yaml（含黑话词条）
-- [ ] **阶段 1**：phrase ↔ L3 定义 bge 语义匹配 + 收紧 ≤20 字兜底
-- [ ] **阶段 1**：黄金集（100-200 条/游戏）+ 回归门禁脚本 + analyzer_version/taxonomy_version 落库
-- [ ] **阶段 1**：全量重打 + 兜底占比对比报告（目标 ≤30%）
+- [x] **阶段 1**：按 v3.1.1 重建 config/topics/gaming.yaml 与 l3_definitions.yaml（含黑话词条）
+- [x] **阶段 1**：phrase ↔ L3 定义 bge 语义匹配（已证伪归档）+ 收紧 ≤20 字兜底（已回退）
+- [x] **阶段 1**：黄金集（410 条）+ 回归门禁脚本（analyzer_version/taxonomy_version 落库仍待做）
+- [x] **阶段 1**：全量重打 + 旧标签清洗 + topic 兜底下沉 + 兜底占比对比报告（观点级 71.9%→68.1%；≤30% 未达成，剩余为纯整体褒贬，需 LLM 提取增强）
 - [ ] **阶段 2**：L3.5 embedding 聚类 + LLM 命名 API（含低样本预警）
 - [ ] **阶段 2**：看板"点击 L3 → L3.5 气泡云"下钻交互
 - [ ] **阶段 3**：PEDM v2 Schema + 负向观点诊断服务

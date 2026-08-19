@@ -13,12 +13,13 @@ scripts/
 ├── README.md                       ⬅ 你在这里
 ├── smoke_test.py                   ✅ 项目骨架冒烟测试（长期保留，CI 用）
 ├── dev/                            🧪 开发期一次性脚本
-│   ├── 采集与验证                      batch_collect_recent / collect_6_games / verify_*
+│   ├── 采集与验证                      batch_collect_recent / backfill_0816 / collect_6_games / verify_*
 │   ├── 数据巡检与修复                   db_stats / inspect_aug3_data / cleanup_cs2 / debug_*
 │   ├── 标注管线（方案4）               reanalyze_all / reanalyze_outliers / gen_l3_definitions
 │   │                                   migrate_opinions_v2 / dump_opinions / export_xlsx
 │   │                                   write_completion_flag / curate_l3_definitions
-│   │                                   rebuild_golden_set / calibrate_semantic_match
+│   │                                   rebuild_golden_set / clean_old_labels / recompute_topics
+│   │                                   stage1_report / rematch_opinions / mine_fallback_candidates
 │   │                                   select_random500 / export_sample_xlsx
 │   │                                   export_validation_sample
 │   ├── 诊断对比                         diag_batch_vs_single / diag_prompt_a / verify_config
@@ -50,6 +51,7 @@ scripts/
 | 脚本 | 用途 |
 |------|------|
 | `batch_collect_recent.py` | 近期评论批量采集（时间窗） |
+| `backfill_0816.py` | 补齐评论到 2026-08-16（Steam 10 款 08-04→08-16 时间窗 + B站全量重采去重；`--dry-run` 预览 / `--platform` 选择） |
 | `collect_6_games.py` | 6 款 Steam 游戏批量采集（黑神话/巫师3/文明6/底特律/33号远征队/星际拓荒） |
 | `verify_appids.py` / `verify_appids_zh.py` | 验证 Steam appid 有效性（含中文名查询） |
 | `verify_collect.py` | 采集结果落库验证 |
@@ -75,12 +77,16 @@ scripts/
 | `reanalyze_outliers.py` | 只重打"未匹配/无观点"的离群评论 |
 | `gen_l3_definitions.py` | 生成 L3 定义词典（早期版本；GDT v3.1.1 后由 `curate_l3_definitions.py` 重建） |
 | `curate_l3_definitions.py` | 精编 GDT v3.1.1 的 111 个 L3 关键词词典（按新词表重建 `l3_definitions.yaml`） |
+| `mine_fallback_candidates.py` | 挖掘兜底词典缺口候选：扫"总体体验评价"桶，自动过滤合理整体评价/噪音，按出现次数列出疑似具体话题短语供人工加词；`--out` 导出 Markdown 待办（新数据落库后跑） |
 | `migrate_opinions_v2.py` | opinions 表结构迁移（v1 → v2） |
 | `dump_opinions.py` | 导出观点明细检查匹配质量 |
 | `export_xlsx.py` | 导出标注结果为 xlsx（comments + opinions 双 Sheet；v3.1.1 起不再导出 `sub_topics` / `content` 冗余列，`target_name` 缺失按 appid 兜底） |
 | `write_completion_flag.py` | 收敛完成后写 `data/analysis_done.flag` + 输出报告 |
-| `rebuild_golden_set.py` | 按 GDT v3.1.1 重建黄金集并生成 pytest fixture（`tests/fixtures/golden_match_set.json`） |
-| `calibrate_semantic_match.py` | bge 语义匹配校准（诊断用，只读；已证伪语义兜底路线） |
+| `clean_old_labels.py` | 旧标签清洗（v3.0 L1×7 → v3.1.1 L1×10）：把 `comments.topic` 与 `comment_opinions.full_path` 的旧标签名迁移到新词表；幂等，可重打前后各跑一次 |
+| `recompute_topics.py` | topic 兜底下沉：把 `comments.topic` 从「综合与元表达」锚点下沉到具体 L1（只处理兜底 topic 且已有具体观点的评论，不重跑 LLM，幂等） |
+| `rematch_opinions.py` | 存量重匹配：用当前词典对 `comment_opinions.quote` 重跑 `match_l3`，只把「兜底→具体」写回 `full_path`（不重跑 LLM，幂等；`--dry-run` 预览） |
+| `stage1_report.py` | P9 阶段1 收口报告：topic/opinion 两级兜底占比 + 战斗/动作/文化等词典命中统计 |
+| `rebuild_golden_set.py` | 按 GDT v3.1.1 重建黄金集并生成 pytest fixture（`tests/fixtures/golden_match_set.json`）；人工校正项读 `tests/fixtures/golden_overrides.json` |
 | `select_random500.py` | 复现 `reanalyze_all.py` 的随机抽样，固定 500 条重打样本 ID |
 | `export_sample_xlsx.py` | 按固定评论 ID 列表导出重打结果为 xlsx |
 | `export_validation_sample.py` | 从打标结果 xlsx 提取 500 条抽样验证样本（供黄金集重建） |
@@ -124,7 +130,7 @@ scripts/
 |----------|--------|
 | 一次性验证某功能 | `dev/` |
 | 每天/每周跑一次的运维任务 | `ops/` |
-| ad-hoc 数据探索（看一次就丢） | `analysis/` |
+| ad-hoc 数据探索（看一次就丢） | `notebooks/` |
 | 长期保留的回归测试 | `tests/`（不在 scripts/） |
 
 ---

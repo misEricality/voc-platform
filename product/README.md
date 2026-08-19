@@ -9,10 +9,11 @@
 ```
 product/
 ├── README.md                       ⬅ 你在这里：产品文档地图
-├── overview.md                     产品概览（一句话定位 + 核心场景）
-├── prototype/                      🎨 高保真原型
-│   ├── voc-platform-prototype.html     v3 单文件自包含版（数据看板 + 原声列表 + 内嵌字体/logo）
-│   └── src/                            v3 多文件源码（page.html / topbar.html / dashboard.* / voices.*）
+├── overview.md                     界面原型交付概览（视觉决策 + 后续建议）
+├── prototype/                      🎨 高保真原型（静态作品集封面，双击可开，可挂 Pages）
+│   ├── voc-platform-prototype.html     主看板（数据看板 + 原声列表）
+│   ├── game-compare.html               游戏对比看板（Steam 封面卡片 + 词云）
+│   └── src/                             多文件源码（含 game-compare.* 等）
 ├── prd/                            📋 产品需求文档（PRD）
 │   (暂空，待 PRD 模板沉淀后启用)
 └── decisions/                      📝 产品决策记录（ADR）
@@ -21,11 +22,16 @@ product/
 
 ---
 
+> ⚠️ **两个"看板"，两个入口，别混**：
+> - `prototype/*.html` = **静态原型**（作品集封面，双击即可打开，可挂 GitHub Pages，零服务器）；
+> - `app.py` 里的 **Streamlit 仪表盘** = 真正的**分析工具**（`streamlit run app.py` → 侧边栏「视图」里含「多目标对比」）。
+> 二者同品牌、同数据；原型页的「打开分析看板 →」按钮会跳到 Streamlit。给访客看原型，给自己深挖用 Streamlit。
+
 ## 📌 按"我想了解什么"快速定位
 
 | 我想知道... | 看这里 |
 |-------------|--------|
-| **这个产品是干嘛的、解决什么问题** | [overview.md](./overview.md) |
+| **这个产品是干嘛的、解决什么问题** | [../README.md](../README.md) 项目简介 |
 | **仪表盘长什么样、怎么交互** | [prototype/voc-platform-prototype.html](./prototype/voc-platform-prototype.html) |
 | **为什么选这个设计/方案** | `decisions/` （待沉淀） |
 | **完整 PRD 长什么样** | `prd/` （待沉淀） |

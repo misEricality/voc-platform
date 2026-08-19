@@ -1,24 +1,24 @@
 # 搭建 ML 环境（torch + sentence-transformers）
 
-> 用途：在本地准备一个能运行 bge 语义向量化 / 语义匹配校准的环境。
+> 用途：在本地准备一个能运行 bge 语义向量化（embedding / 聚类）的环境。
 >
-> 关联：`src/analyzers/embedder.py` · `scripts/dev/calibrate_semantic_match.py` · `scripts/ops/backfill_embeddings.py`
+> 关联：`src/analyzers/embedder.py` · `scripts/ops/backfill_embeddings.py` · `scripts/dev/l35_cluster.py`
 
 ## 0. 环境已就绪：给其他 Agent / 会话的执行须知（2026-08-16）
 
-> 本环境已搭建完成并端到端验证通过（`calibrate_semantic_match.py` 完整校准已跑通）。
+> 本环境已搭建完成并端到端验证通过（`src.analyzers.embedder` 已能加载 bge-small-zh-v1.5 完成向量化）。
 > 其他 Agent / 会话在本机跑 torch 脚本时，**不要再执行下文第 1~5 步**，直接按本节使用。
 
 ### 0.1 唯一正确的运行方式
 
 ```powershell
 # 方式 A（推荐）：直接调绝对路径，不激活、不依赖 PATH
-D:\projects\voc_platform\.venv-ml\Scripts\python.exe scripts\dev\calibrate_semantic_match.py --check-only
+D:\projects\voc_platform\.venv-ml\Scripts\python.exe -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); print('OK', e.model_name, e.dim)"
 
 # 方式 B：激活后使用
 cd D:\projects\voc_platform
 .\.venv-ml\Scripts\Activate.ps1
-python scripts\dev\calibrate_semantic_match.py
+python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); print('OK', e.model_name, e.dim)"
 ```
 
 - **禁止**用裸 `python`、`py -3.12`、`py` 跑本环境脚本——它们指向 3.14/其他解释器，torch 不可用或行为不一致。
@@ -52,7 +52,7 @@ python scripts\dev\calibrate_semantic_match.py
 ### 0.4 运行须知
 
 - 首次运行会打印 `unauthenticated requests to the HF Hub` 警告——因未设 `HF_TOKEN`，**可忽略**（模型在本地缓存，不会联网下载）。
-- 校准脚本**只读**：不改数据库、不改标注结果，仅写 `data\validation\_semantic_calibration.txt`。
+- 上面的 `-c` 验证**只读**：仅加载模型并打印模型名/维度，不改数据库、不写任何文件。
 - 若需跑其他 ML 脚本（如 `scripts/ops/backfill_embeddings.py`），先看其是否调用 `src.analyzers.embedder`——该模块已由本环境支撑，但**回填操作会写数据库，执行前先向工程师确认**。
 
 ---
@@ -140,25 +140,19 @@ python -m pip install -r requirements.txt --no-deps
 python -c "import torch, sentence_transformers, transformers; print('torch', torch.__version__); print('sentence-transformers', sentence_transformers.__version__)"
 ```
 
-## 7. 运行语义匹配校准
+## 7. 验证 bge 语义向量化
 
 ```powershell
 .\.venv-ml\Scripts\Activate.ps1
 
-# 第一步：只校验数据接线（不加载模型，秒出）
-python scripts\dev\calibrate_semantic_match.py --check-only
-
-# 第二步：完整语义校准（加载 bge 并 encode）
-python scripts\dev\calibrate_semantic_match.py
+# 加载本地 bge 模型并打印模型名/维度（只读，验证 ML 环境与向量化链路可用）
+python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); print('OK', e.model_name, e.dim)"
 ```
 
-完整运行后：
-
-- 终端打印 42 条人工校正子集的 top-1 / top-3 召回、排名、相似度分布与阈值扫描。
-- 生成 `data/validation/_semantic_calibration.txt`（90 条标注错误的语义 top-3 建议）。
+预期输出类似 `OK BAAI/bge-small-zh-v1.5 512`，表示 ML 环境与向量化链路可用。
 
 ## 注意事项
 
 1. **模型已缓存**：`BAAI/bge-small-zh-v1.5` 通常已在 `C:\Users\<用户>\.cache\huggingface\hub` 里，不会重复下载；若缓存缺失，首次运行会自动联网下载约 95MB。
 2. **不要使用 `.venv-review`**：它是 Python 3.14 环境，装 torch 会失败。
-3. **CPU 即可**：111 个 L3 定义 + 500 条短语，CPU 上几分钟内跑完，无需 CUDA。
+3. **CPU 即可**：bge-small-zh-v1.5 单条评论向量化在 CPU 上毫秒级完成，无需 CUDA。
