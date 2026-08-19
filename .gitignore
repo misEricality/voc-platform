@@ -32,10 +32,7 @@ ENV/
 Thumbs.db
 
 # ---- Data & databases（运行时产物，不入库）----
-data/raw/
-data/processed/
-data/cleaned/
-data/sample/
+# 注：data/raw|processed|cleaned|sample 文件管线占位目录已废弃（项目用 SQLite 单库，无文件管线），已删除
 *.db
 *.db-journal
 *.sqlite
