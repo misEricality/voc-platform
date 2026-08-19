@@ -45,6 +45,8 @@ data/sample/
 *.flag
 # 导出产物（注：cs2_50_full.csv/json、cs2_50_sample_5.json 3 个示例文件已跟踪，属文档引用例外）
 data/exports/
+# 标注验证中间产物（运行时生成，不入库）
+data/validation/
 
 # ---- Logs ----
 logs/
@@ -53,6 +55,8 @@ logs/
 # ---- Cache ----
 .cache/
 .pytest_cache/
+.pytest_tmp/
+.tmp-test/
 .mypy_cache/
 .ruff_cache/
 
