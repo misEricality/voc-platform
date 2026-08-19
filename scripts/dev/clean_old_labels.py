@@ -1,43 +1,48 @@
-"""按 GDT v3.1.1 重建黄金集并生成 pytest fixture。
+"""P9 阶段1 · 旧标签清洗：把 GDT v3.0（旧 L1×7）存量标签迁移到 GDT v3.1.1（L1×10）。
 
-数据来源：
-- data/validation/_sample_500_from_xlsx.json（运行时生成：python scripts/dev/export_validation_sample.py）
-- tests/fixtures/golden_overrides.json（机械映射无法覆盖的人工校正项，唯一已入库源头）
+幂等：只改「旧标签名」映射到「新标签名」，绝不动已是新体系的标签。
+可安全地在全量重打前 / 后各跑一次（重打会覆盖多数评论，本脚本兜底重打未覆盖的行）。
 
-输出：
-- tests/fixtures/golden_match_set.json（回归测试用，已入库）
-- data/validation/golden_gdt_500.json（带审计字段的运行时产物，不入库）
+用法：
+    python scripts/dev/clean_old_labels.py [--dry-run]
 """
 
 from __future__ import annotations
 
-import json
+import argparse
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from dotenv import load_dotenv
+load_dotenv()
+
+from sqlalchemy import select
+from src.storage.db import init_db, Comment, CommentOpinion
 from src.analyzers.normalize import build_l3_mapping, load_hierarchy, map_l3_to_path
 
-SAMPLE = Path("data/validation/_sample_500_from_xlsx.json")  # 运行时：export_validation_sample.py 生成
-OVERRIDES = Path("tests/fixtures/golden_overrides.json")     # 人工校正项（唯一已入库源头）
-FIXTURE = Path("tests/fixtures/golden_match_set.json")       # 回归测试用（已入库）
-AUDIT = Path("data/validation/golden_gdt_500.json")          # 运行时审计产物（不入库）
+# 旧 L1 → 新 L1（comments.topic 用）
+OLD_L1_MAP = {
+    "其他": "综合与元表达",
+    "玩法与内容": "机制与内容",
+    "叙事与表现": "叙事与世界观",
+    "操作与交互": "操控与交互",
+    "商业与发行": "商业与运营",
+    "社区与生态": "社区与社交",
+    # 技术与性能 新旧同名，无需迁移
+}
 
-TAXONOMY_VERSION = "gdt-3.1.1"
-
-# 语义不完整/纯玩梗/无法稳定程序匹配的样本，不进入回归门禁。
-EXCLUDE_OPINION_IDS = {4048, 3964, 4666}
-
-MECHANICAL_MAP = {
+# 旧 L3 → 新 L3（comment_opinions.full_path 的末段用；继承 rebuild_golden_set.py 的 MECHANICAL_MAP 并补齐）
+OLD_L3_MAP = {
     "整体评价": "总体体验评价",
-    "整活/梗": "网络梗与段子",
     "核心玩法": "总体体验评价",
     "战斗系统": "战斗系统",
+    "技能系统": "角色养成·技能树",
     "动作系统": "动作系统",
     "游戏系统": "规则逻辑",
     "机制规则": "规则逻辑",
-    "解谜": "解谜机制",
     "数值平衡": "数值设计",
     "职业平衡": "职业·角色平衡",
     "角色强度": "职业·角色平衡",
@@ -50,9 +55,12 @@ MECHANICAL_MAP = {
     "通关后内容": "终局·通关后内容(Endgame)",
     "内容规模": "内容体量与规模",
     "多周目": "多周目与重复可玩性",
+    "随机要素": "多周目与重复可玩性",
+    "刷宝": "刷宝机制",
     "重玩价值": "多周目与重复可玩性",
     "关卡设计": "关卡布局设计",
     "地图探索": "地图探索机制",
+    "解谜": "解谜机制",
     "开放世界": "开放世界设计",
     "区域布局": "箱庭空间设计",
     "难度曲线": "难度曲线",
@@ -123,6 +131,7 @@ MECHANICAL_MAP = {
     "云存档": "云存档同步",
     "成就": "成就系统",
     "跨平台": "跨平台联机·进度",
+    "家庭共享": "跨平台联机·进度",
     "定价": "售价策略",
     "折扣": "折扣促销力度",
     "史低": "历史最低价",
@@ -156,60 +165,96 @@ MECHANICAL_MAP = {
     "语音": "语音沟通体验",
 }
 
+# 整活/梗：旧路径「其他/整活/梗」（L2/L3 同名带斜杠），直接整路径替换
+OLD_FULL_PATH_OVERRIDES = {
+    "其他/整活/梗": "综合与元表达/社区梗与反讽/网络梗与段子",
+    "其他/整活/梗/整活/梗": "综合与元表达/社区梗与反讽/网络梗与段子",
+}
+
+
+def migrate_full_path(fp: str, l3_mapping: dict) -> str | None:
+    """旧 full_path → 新 full_path；无法迁移返回 None（保持原样）。"""
+    if fp in OLD_FULL_PATH_OVERRIDES:
+        return OLD_FULL_PATH_OVERRIDES[fp]
+    segs = fp.split("/")
+    if len(segs) < 3:
+        return None
+    l3_old = segs[-1]
+    l3_new = OLD_L3_MAP.get(l3_old)
+    if not l3_new:
+        return None
+    new_path = map_l3_to_path(l3_new, l3_mapping)
+    return new_path
+
 
 def main() -> None:
-    sample = json.loads(SAMPLE.read_text(encoding="utf-8"))
-    overrides = json.loads(OVERRIDES.read_text(encoding="utf-8"))
+    parser = argparse.ArgumentParser(description="旧标签清洗（v3.0 → v3.1.1）")
+    parser.add_argument("--dry-run", action="store_true", help="只统计，不落盘")
+    args = parser.parse_args()
+
+    engine, SessionLocal = init_db()
+    session = SessionLocal()
+
     hierarchy = load_hierarchy()
-    mapping = build_l3_mapping(hierarchy)
+    l3_mapping = build_l3_mapping(hierarchy)
 
-    audit_rows = []
-    fixture_items = []
-    for row in sample:
-        oid = row["opinion_id"]
-        old_l3 = row["old_full_path"].rsplit("/", 1)[-1]
-        excluded = oid in EXCLUDE_OPINION_IDS
-        override = overrides.get(str(oid))
-        if override and "/" in override:
-            new_path = override
-        else:
-            new_l3 = override or MECHANICAL_MAP.get(old_l3)
-            new_path = map_l3_to_path(new_l3, mapping) if new_l3 else None
+    # 1. comments.topic
+    topic_before = Counter()
+    topic_after = Counter()
+    comment_changed = 0
+    comments = list(session.execute(select(Comment)).scalars())
+    for c in comments:
+        topic_before[c.topic] += 1
+        if c.topic in OLD_L1_MAP:
+            c.topic = OLD_L1_MAP[c.topic]
+            comment_changed += 1
+        topic_after[c.topic] += 1
 
-        audit_rows.append(
-            {
-                "opinion_id": oid,
-                "phrase": row["phrase"],
-                "old_full_path": row["old_full_path"],
-                "new_full_path": new_path,
-                "excluded": excluded,
-                "label_validation": row["label_validation"],
-            }
-        )
+    # 2. comment_opinions.full_path
+    path_before = Counter()
+    path_after = Counter()
+    opinion_changed = 0
+    opinion_unmapped = Counter()
+    opinions = list(session.execute(select(CommentOpinion)).scalars())
+    for op in opinions:
+        path_before[op.full_path] += 1
+        new_path = migrate_full_path(op.full_path, l3_mapping)
+        if new_path and new_path != op.full_path:
+            op.full_path = new_path
+            opinion_changed += 1
+        elif new_path is None:
+            opinion_unmapped[op.full_path] += 1
+        path_after[op.full_path] += 1
 
-        if not excluded and new_path:
-            fixture_items.append(
-                {
-                    "phrase": row["phrase"],
-                    "full_path": new_path,
-                }
-            )
+    print("=" * 70)
+    print(f"comments.topic 迁移 {comment_changed} 条")
+    print(f"comment_opinions.full_path 迁移 {opinion_changed} 条")
 
-    fixture = {
-        "taxonomy_version": TAXONOMY_VERSION,
-        "items": fixture_items,
-    }
-    FIXTURE.write_text(
-        json.dumps(fixture, ensure_ascii=False, indent=1),
-        encoding="utf-8",
-    )
-    AUDIT.write_text(
-        json.dumps(audit_rows, ensure_ascii=False, indent=1),
-        encoding="utf-8",
-    )
-    print(f"golden fixture items: {len(fixture_items)}")
-    print(f"audit rows: {len(audit_rows)}")
-    print(f"excluded: {sum(1 for r in audit_rows if r['excluded'])}")
+    print("\n--- topic 迁移后 L1 分布（top）---")
+    total_c = sum(topic_after.values()) or 1
+    for t, c in topic_after.most_common(12):
+        print(f"  {t!r:<16} {c:>5}  {c*100/total_c:5.1f}%")
+
+    print("\n--- full_path 迁移后 L1 分布（top）---")
+    l1_after = Counter()
+    for fp, c in path_after.items():
+        l1_after[fp.split("/")[0]] += c
+    total_o = sum(l1_after.values()) or 1
+    for l1, c in l1_after.most_common(14):
+        print(f"  {l1:<16} {c:>5}  {c*100/total_o:5.1f}%")
+
+    if opinion_unmapped:
+        print("\n--- 未迁移的旧 full_path（应已在新体系或无需迁移）---")
+        for fp, c in opinion_unmapped.most_common(30):
+            print(f"  {c:>5}  {fp}")
+
+    if args.dry_run:
+        session.rollback()
+        print("\n[dry-run] 未落盘，已回滚")
+    else:
+        session.commit()
+        print("\n[已提交] 旧标签清洗完成")
+    session.close()
 
 
 if __name__ == "__main__":

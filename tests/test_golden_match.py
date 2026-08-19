@@ -1,8 +1,8 @@
 """黄金集回归门禁：方案4 程序匹配层不回归
 
-黄金集来源：data/validation/ 500 条人工抽样验证中「标注验证=1（正确）」的 410 条，
-字段为 (phrase -> full_path)。任何词典 / 匹配规则改动后必须跑此用例，
-确保已正确标注的样本不被改坏。
+黄金集来源：500 条人工抽样验证中「标注验证=1（正确）」的 410 条，
+字段为 (phrase -> full_path)，人工校正项见 fixtures/golden_overrides.json。
+任何词典 / 匹配规则改动后必须跑此用例，确保已正确标注的样本不被改坏。
 """
 
 from __future__ import annotations
