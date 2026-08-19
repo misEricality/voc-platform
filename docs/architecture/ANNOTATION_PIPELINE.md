@@ -119,7 +119,7 @@
 # 抽样 200 条（seed=42 可复现）
 python scripts/dev/reanalyze_all.py --limit 200 --random
 
-# 全量 2067 条
+# 全量（9000+ 条）
 python scripts/dev/reanalyze_all.py
 
 # 导出 xlsx 检查

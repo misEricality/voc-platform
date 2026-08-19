@@ -5,7 +5,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-v0.3-blue)
+![Status](https://img.shields.io/badge/Status-v0.4-blue)
 
 ## ✨ 项目简介
 
@@ -19,7 +19,7 @@
 
 > 📌 **项目定位**：学习大模型API集成、NLP应用、数据可视化全链路；非商业产品。
 
-## 🎯 当前进度（v0.3 完成，v0.4/v0.5 进行中）
+## 🎯 当前进度（v0.4 完成，v0.5 进行中）
 
 | 模块 | 状态 | 备注 |
 |------|------|------|
@@ -30,12 +30,12 @@
 | **L1-L3 三级标签标注** | ✅ | 方案4：观点短语 → 程序匹配（GDT v3.1.1，L1 10 / L2 28 / L3 111） |
 | **语义向量化** | ✅ | 本地 bge-small-zh（P2.5，零 API 成本，语义检索/聚类基建） |
 | 本地BERT情感分析 | ✅ | 零成本备选 |
-| 高保真原型 v3 | ✅ | 数据看板 + 原声列表（单文件自包含：内嵌子集字体 + logo） |
-| Streamlit Dashboard | ✅ | 6个核心图表 |
+| 高保真原型 v3 | ✅ | 数据看板 + 原声列表 + 游戏对比卡片页（单文件自包含：内嵌子集字体 + logo） |
+| Streamlit Dashboard | ✅ | 单目标看板（6 图）+ 多目标对比视图（散点/堆叠/热力图/痛点/下钻） |
 | 微博采集 | 🚧 | 下一阶段 |
 | 自动化流水线 | 🚧 | workflow 已在远端；定时任务数据持久化方案待设计（当前每日全新库，不累积） |
 
-> 📊 **当前数据**（2026-08-17）：**3073 条**评论（Steam 2067 + B站 1006，已分析 3041），观点级标注 5205 条，语义向量 1021 条（单模型 `bge-small-zh-v1.5`，覆盖约 1/3 待回填）。新标签体系（GDT v3.1.1）已落地配置并完成 500 条验证样本重打，全量重打与旧标签清洗待收口。
+> 📊 **当前数据**（2026-08-19）：**9308 条**评论（Steam 8302 十款游戏 + B站 1006，已分析 9242），观点级标注 15298 条，语义向量 9309 条（单模型 `bge-small-zh-v1.5`，已全量回填）。GDT v3.1.1 词典已扩充、兜底占比 topic 67.6% / opinion 67.4%，P3 多目标对比已上线。
 
 ## 🏷️ L1-L3 三级标签标注管线（方案4）
 
@@ -91,6 +91,7 @@ streamlit run app.py
 - ☁️ 评论关键词词云
 - 📈 情感分数直方图
 - 💬 典型评论样本展示
+- 📊 多目标对比视图（口碑散点 / 主题×游戏热力图 / 负面痛点 / 下钻）
 
 ## 🏗️ 项目结构
 
@@ -105,7 +106,7 @@ voc-platform/
 │   ├── analyzers/                      分析器（LLM 打标 + 程序匹配 L3 + 向量化）
 │   │   ├── normalize.py                L3 匹配层（match_l3 / 词典索引 / 路径映射）
 │   │   └── embedder.py                 本地语义向量（bge-small-zh，语义检索/聚类）
-│   ├── storage/                        存储层（comments + comment_opinions + comment_embeddings 三表）
+│   ├── storage/                        存储层（comments + comment_opinions + comment_embeddings + danmaku 四表）
 │   ├── visualizer/                     可视化图表
 │   └── pipeline.py                     主流程编排（采集→入库→向量化→打标）
 │
@@ -114,7 +115,7 @@ voc-platform/
 │   └── topics/                         三级标签体系 + L3 定义词典
 │
 ├── data/                            # 【运行时数据】（gitignore，不入库）
-│   ├── voc.db                            SQLite 单库（3073 条评论，3041 已分析）
+│   ├── voc.db                            SQLite 单库（9308 条评论，9242 已分析）
 │   └── exports/                          导出产物（xlsx / csv / json）
 │
 ├── docs/                            # 【研发文档】（技术视角）
@@ -190,7 +191,7 @@ voc-platform/
 - [x] **v0.1** - Steam 采集 + LLM 分析 + Streamlit Dashboard
 - [x] **v0.2** - 采集生命周期管理（7 天回采）+ 6 款游戏批量采集 + L1-L3 标注管线（方案4）
 - [x] **v0.3** - 语义向量化基础层（P2.5）+ 主题分类精细（L1-L3 三级标签）
-- [ ] **v0.4** - 词云 + 仪表盘洞察力增强 + 多目标横向对比
+- [x] **v0.4** - 词云 + 仪表盘洞察力增强 + 多目标横向对比（P3 已上线）
 - [ ] **v0.5** - 自动化流水线（CI 远端就绪）+ 微博接入（B站已先行落地）
 - [ ] **v1.0** - 完整文档 + 技术博客 + 求职作品集发布
 
