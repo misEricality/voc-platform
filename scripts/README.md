@@ -130,7 +130,7 @@ scripts/
 |----------|--------|
 | 一次性验证某功能 | `dev/` |
 | 每天/每周跑一次的运维任务 | `ops/` |
-| ad-hoc 数据探索（看一次就丢） | `notebooks/` |
+| ad-hoc 数据探索（看一次就丢） | `scripts/dev/`（`notebooks/` 已移除） |
 | 长期保留的回归测试 | `tests/`（不在 scripts/） |
 
 ---

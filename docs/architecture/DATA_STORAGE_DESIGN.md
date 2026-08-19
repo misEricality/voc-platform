@@ -15,6 +15,8 @@
 
 避免走进"一张表塞下所有数据"的反模式。
 
+> ⚠️ **本设计是"目标/迁移架构"**：当前实际实现用 `comments` 表系（`comments` / `comment_opinions` / `comment_embeddings` / `danmaku` 四表，见 [DATA_FIELDS.md](./DATA_FIELDS.md) 与 `src/storage/db.py`）。下方 `targets` / `raw_comments` / `cleaned_comments` / `tagged_comments` / `pipeline_runs` 等表是**演进目标**（见第八节迁移路径），尚未落地，勿当现状。
+
 ---
 
 ## 📐 一、5 层数据架构总览

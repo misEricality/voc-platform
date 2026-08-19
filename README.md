@@ -137,9 +137,7 @@ voc-platform/
 │   ├── dev/                             开发期一次性脚本（采集/标注/巡检/E2E）
 │   └── ops/                             refresh_likes 回采 / backfill_embeddings 向量回填
 │
-├── tests/                           # 【测试】pytest 11 例（含黄金集回归门禁；bge 用例在无 ML 环境时跳过）
-│
-└── notebooks/                       # 【数据探索】（预留）
+└── tests/                           # 【测试】pytest 11 例（含黄金集回归门禁；bge 用例在无 ML 环境时跳过）
 ```
 
 > 📌 **目录设计原则**：研发与产品文档分离 / 代码与配置分离 / 脚本分阶段 / 数据分层映射目录。  

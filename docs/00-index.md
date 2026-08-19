@@ -13,7 +13,7 @@ docs/
 ├── architecture/           🏗️ 架构设计（给工程师看的"系统是怎么搭的"）
 │   ├── ANNOTATION_PIPELINE.md  方案4 标注流程（GDT v3.1.1：观点短语→程序匹配）
 │   ├── DATA_FIELDS.md          字段四级分类（A/B/C/D 前缀约定，D=本地模型派生向量）
-│   ├── DATA_STORAGE_DESIGN.md  5 层数据架构 + 5 张表设计（含 comment_embeddings）
+│   ├── DATA_STORAGE_DESIGN.md  数据分层架构 + 表设计（设计稿，含目标迁移路径）
 │   └── BILIBILI_COLLECTION.md  B 站采集规格（接口/数据映射/采样策略，开发交接文档）
 ├── plan/                   🗺️ 计划与里程碑
 │   ├── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
@@ -74,5 +74,5 @@ docs/
 
 - **产品/业务视角**：参见 [`product/README.md`](../product/README.md)
 - **运维脚本**：参见 [`scripts/README.md`](../scripts/README.md)
-- **数据探索（Jupyter）**：参见 [`notebooks/README.md`](../notebooks/README.md)
+- **数据探索**：当前无 notebook（`notebooks/` 已移除），ad-hoc 脚本见 `scripts/dev/`
 - **项目门面**：参见 [`README.md`](../README.md)

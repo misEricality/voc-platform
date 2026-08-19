@@ -311,8 +311,7 @@ voc-platform/
 │   └── pipeline.py        # 主流程编排
 ├── scripts/               # 工具脚本
 ├── tests/                 # 单元测试
-├── data/                  # 数据样本（脱敏后）
-└── notebooks/             # Jupyter分析
+└── data/                  # 数据样本（脱敏后）
 ```
 
 ### 5.3 关键技术决策

@@ -6,6 +6,7 @@
 
 - Python 3.10+
 - pip
+- 💡 本项目跑脚本/仪表盘**统一用虚拟环境 `.venv-ml`**（用 `.venv-ml\Scripts\python.exe`，或先 `.\\.venv-ml\\Scripts\\Activate.ps1` 激活），详见 [SETUP_ML_ENV.md](./SETUP_ML_ENV.md)。下方命令以 `.venv-ml` 为前提。
 
 ## 步骤 1：克隆仓库
 
