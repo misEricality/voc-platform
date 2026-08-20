@@ -32,7 +32,8 @@ scripts/
 ├── analysis/                       🔬 分析脚本（ad-hoc 探索）
 └── ops/                            ⚙️ 运维脚本
     ├── refresh_likes.py                ✅ 7 天后回采脚本（已实现）
-    └── backfill_embeddings.py          ✅ 评论向量回填 / 换模型全量重算（已实现）
+    ├── backfill_embeddings.py          ✅ 评论向量回填 / 换模型全量重算（已实现）
+    └── daily_incremental_collect.py    ✅ P6 每日增量采集编排入口（GitHub Actions 调用）
 ```
 
 ---
@@ -46,6 +47,7 @@ scripts/
 | **smoke_test.py** | 每次新增模块后跑一次 | 项目骨架回归测试 |
 | **ops/refresh_likes.py** | 发布满 7 天的评论回采点赞/回复/开发者回复 | `python -m scripts.refresh_likes --platform steam --target <appid>` |
 | **ops/backfill_embeddings.py** | 评论语义向量回填 / 换模型全量重算 | `python scripts/ops/backfill_embeddings.py --limit 100`（增量）；`--force`（清空重算，单事务原子切换） |
+| **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调） | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地调试） |
 
 ### dev/ · 采集与验证
 
@@ -140,4 +142,12 @@ scripts/
 
 - `scripts/` 下所有脚本必须能从项目根目录直接运行：`python scripts/xxx.py`
 - 一次性脚本超过 3 个月无人使用，建议归档到 `dev/archive/` 或删除
+
+---
+
+## 📋 版本记录
+
+| 更新时间 | 内容 | 原因 |
+|---|---|---|
+| 2026-08-19 | 新建 `ops/daily_incremental_collect.py`：GitHub Actions 每日调用的增量采集编排入口；同步登记 ops 章节 | P6 自动化流水线落地 |
 - 不要把 prompt 模板或业务配置写死在脚本里，统一从 `config/` 加载

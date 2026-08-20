@@ -18,6 +18,7 @@ docs/
 ├── plan/                   🗺️ 计划与里程碑
 │   ├── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
 │   ├── P3_COMPARE_DESIGN.md    P3 多目标对比设计（数据/口径/图表选型/技术实现）
+│   ├── P6_AUTOMATION_PIPELINE.md  P6 自动化流水线设计（GH Release 累积 DB + 多目标驱动）
 │   └── next-gen-tagging/       下一代标签系统（GDT+PEDM 双轨）分阶段采纳计划 + 原稿备份 + 验证报告
 ├── guides/                 📖 操作指南（"我该怎么用"）
 │   ├── QUICK_START.md          5 分钟上手指南
@@ -34,6 +35,7 @@ docs/
 |-------------|--------|
 | **项目在做什么、做到哪了、下一步做什么** | [plan/DEVELOPMENT_PLAN.md](./plan/DEVELOPMENT_PLAN.md) |
 | **多目标对比视图怎么设计、怎么实现** | [plan/P3_COMPARE_DESIGN.md](./plan/P3_COMPARE_DESIGN.md) |
+| **每天自动采集怎么跑、数据怎么累积下来** | [plan/P6_AUTOMATION_PIPELINE.md](./plan/P6_AUTOMATION_PIPELINE.md) |
 | **标签/洞察体系未来怎么演进** | [plan/next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./plan/next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md) |
 | **5 分钟跑起来这个项目** | [guides/QUICK_START.md](./guides/QUICK_START.md) |
 | **本地 ML 环境怎么搭** | [guides/SETUP_ML_ENV.md](./guides/SETUP_ML_ENV.md) |

@@ -236,13 +236,20 @@
 
 ---
 
-### 🥉 P6 · 自动化（定时采集已配置，持久化待落地）
+### ✅ P6 · 自动化流水线（已完成 2026-08-19）
 
-**现状**：`.github/workflows/daily-collect.yml` 已存在并推送（每天 UTC 00:00 定时 + `workflow_dispatch` 手动触发），可采集 Steam CS2 50 条并上传 DB artifact。
+**现状**：`.github/workflows/daily-collect.yml` 已重写为薄编排（cron + setup + Python 入口），调用 `scripts/ops/daily_incremental_collect.py`，由 `config/monitoring/targets.yaml` 驱动 6 款 Steam 单机游戏（每款 30 条/天，共 180 条/天）增量采集，结果累积到 GitHub Release `voc-daily-YYYY-MM-DD` 的 `voc.db` asset（artifact 上传保留作为 30 天 fallback）。
 
-**剩余交付物**：
-- 定时任务落库持久化（增量入单库 + 去重），与 P9 阶段 0 合并落地——当前每次运行仍生成全新库，不累积，尚无法形成时间序列
-- PAT `workflow` scope 问题：修改并推送 workflow 变更时需带 `workflow` scope（或网页端编辑）
+**已交付**：
+- 跨 run DB 持久化：每天从 GitHub Release 拉前一日 DB → 增量采集 → 上传今日 DB；空库起步回退 `voc-daily-bootstrap` 基线
+- 增量语义：`posted_after = max(posted_at) - 1 天` 滑窗 + 复用既有 `bulk_upsert` 去重 + `analyzed_at IS NOT NULL` 跳过 + `find_missing_embedding_ids` 增量向量化
+- 失败容错：单 target 失败 try/except 不阻塞后续；release 上传失败仅记 warning
+- 6 个回归测试全绿（空库起步 / 时间窗 / 不擦旧数据 / 单失败容错 / gh CLI 容错 / 时间窗边界）
+- 架构文档：[AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md)
+
+**剩余**：
+- 首次跑前需手工建 `voc-daily-bootstrap` release（保留 9308 条历史）；常规 daily run 不需要再干预
+- PAT `workflow` scope：修改 workflow 文件并推送时需带 `workflow` scope（或网页端编辑），仅影响 workflow 文件改动，不影响 daily run
 
 ---
 
@@ -361,13 +368,13 @@
 | M7 · v0.3 | 主题分类精细（L1-L3 三级标签）+ 词云 + 语义向量化（P2.5），仪表盘有"洞察力" | ✅ |
 | M8 · v0.4 | 多目标横向对比（10 款 Steam 同看） | ✅（2026-08-19：Streamlit 对比视图 + 原型卡片页 + 下钻） |
 | M9 · v0.5 | 多平台覆盖（Steam + B 站） | ✅ |
-| M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | 🟡 进行中（定时 workflow 已配置，持久化待落地） |
-| M11 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | 待 M10 |
+| M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | ✅（2026-08-19：P6 自动化流水线已落地，6 款 Steam 每日增量入 GitHub Release） |
+| M11 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | 待 M10 时间序列趋势图（P8）接入 |
 
 **M8 → M10 路径**：
 1. M8：✅ P3 多目标对比已完成（2026-08-19）
 2. M9：✅ B 站采集器已落地（跨平台对比视图为可选增强，归 P5）
-3. M10：⏳ 当前主攻——落地 P6/P9 阶段 0 定时采集持久化，再接入 P8 时间序列趋势
+3. M10：✅ P6 自动化流水线已完成（2026-08-19：6 款 Steam 每日增量入 GitHub Release）；下一步接入 P8 时间序列趋势图（已解锁前置条件）
 
 ---
 
@@ -383,4 +390,4 @@
 
 > 💡 **记住**：本项目核心价值 = 边学边做 + 能看到玩家真实声音。**不要为了完整功能而忘了这个核心价值**。
 >
-> 🎯 **当前最关键的一步**：阶段 1（兜底治理）与 P3（多目标对比）已于 2026-08-19 双双收口（观点级兜底 67.4%、topic 兜底 67.6%；对比视图 + 原型 + 下钻已交付）。**下一步主线 = P6 / P9 阶段 0 定时采集持久化**（解锁时间序列趋势与监控形态）；兜底剩余为数据集固有，词典/prompt 难再压，若要继续需转向数据侧（采更多含具体维度的长评）。
+> 🎯 **当前最关键的一步**：P6 自动化流水线已于 2026-08-19 完成（6 款 Steam 每日增量入 GitHub Release），下一步主线 = **P8 时间序列趋势图**（前置已解锁）+ P9 阶段 2 L3.5 微话题聚类 + P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）。
