@@ -11,10 +11,11 @@ docs/
 ├── 00-index.md             ⬅ 你在这里：文档地图
 ├── STEAM_API_FIELDS.md     🎮 Steam 官方 API 字段权威清单（实拉实测）
 ├── architecture/           🏗️ 架构设计（给工程师看的"系统是怎么搭的"）
-│   ├── ANNOTATION_PIPELINE.md  方案4 标注流程（GDT v3.1.1：观点短语→程序匹配）
-│   ├── DATA_FIELDS.md          字段四级分类（A/B/C/D 前缀约定，D=本地模型派生向量）
-│   ├── DATA_STORAGE_DESIGN.md  数据分层架构 + 表设计（设计稿，含目标迁移路径）
-│   └── BILIBILI_COLLECTION.md  B 站采集规格（接口/数据映射/采样策略，开发交接文档）
+│   ├── ANNOTATION_PIPELINE.md      方案4 标注流程（GDT v3.1.1：观点短语→程序匹配）
+│   ├── AUTOMATION_PIPELINE.md      P6 自动化流水线落地架构（GH Release 累积 DB + 多目标驱动 + 故障排查）
+│   ├── DATA_FIELDS.md              字段四级分类（A/B/C/D 前缀约定，D=本地模型派生向量）
+│   ├── DATA_STORAGE_DESIGN.md      数据分层架构 + 表设计（设计稿，含目标迁移路径）
+│   └── BILIBILI_COLLECTION.md      B 站采集规格（接口/数据映射/采样策略，开发交接文档）
 ├── plan/                   🗺️ 计划与里程碑
 │   ├── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
 │   ├── P3_COMPARE_DESIGN.md    P3 多目标对比设计（数据/口径/图表选型/技术实现）
@@ -36,6 +37,7 @@ docs/
 | **项目在做什么、做到哪了、下一步做什么** | [plan/DEVELOPMENT_PLAN.md](./plan/DEVELOPMENT_PLAN.md) |
 | **多目标对比视图怎么设计、怎么实现** | [plan/P3_COMPARE_DESIGN.md](./plan/P3_COMPARE_DESIGN.md) |
 | **每天自动采集怎么跑、数据怎么累积下来** | [plan/P6_AUTOMATION_PIPELINE.md](./plan/P6_AUTOMATION_PIPELINE.md) |
+| **P6 自动化流水线的代码架构 / 故障排查** | [architecture/AUTOMATION_PIPELINE.md](./architecture/AUTOMATION_PIPELINE.md) |
 | **标签/洞察体系未来怎么演进** | [plan/next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./plan/next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md) |
 | **5 分钟跑起来这个项目** | [guides/QUICK_START.md](./guides/QUICK_START.md) |
 | **本地 ML 环境怎么搭** | [guides/SETUP_ML_ENV.md](./guides/SETUP_ML_ENV.md) |
