@@ -49,12 +49,14 @@
 
 ## 🚀 5分钟快速开始
 
+> 💡 本项目统一用虚拟环境 **`.venv-ml`** 运行（下方 `python` / `streamlit` 均指 `.venv-ml` 里的解释器，或先激活）。依赖清单与 ML 环境搭建见 [docs/guides/SETUP_ML_ENV.md](./docs/guides/SETUP_ML_ENV.md)。
+
 ### 1. 克隆并安装依赖
 
 ```bash
 git clone https://github.com/misEricality/voc-platform.git
 cd voc-platform
-pip install -r requirements.txt
+pip install -r requirements.txt   # 建议在 .venv-ml 里装；用系统 python 需自行装齐依赖
 ```
 
 ### 2. 配置环境变量
@@ -138,7 +140,7 @@ voc-platform/
 └── tests/                           # 【测试】pytest 11 例（含黄金集回归门禁；bge 用例在无 ML 环境时跳过）
 ```
 
-> 📌 **目录设计原则**：研发与产品文档分离 / 代码与配置分离 / 脚本分阶段 / 数据分层映射目录。  
+> 📌 **目录设计原则**：研发与产品文档分离 / 代码与配置分离 / 脚本分阶段 / 数据运行时不入库（gitignore）。  
 > 📖 详细索引：[docs/00-index.md](./docs/00-index.md) · [product/README.md](./product/README.md)
 
 ## 💰 成本估算
