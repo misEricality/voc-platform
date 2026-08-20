@@ -135,6 +135,7 @@ voc-platform/
 ├── scripts/                         # 【运维/开发脚本】
 │   ├── smoke_test.py                    冒烟测试
 │   ├── dev/                             开发期一次性脚本（采集/标注/巡检/E2E）
+│   ├── analysis/                        分析脚本（ad-hoc 探索）
 │   └── ops/                             refresh_likes 回采 / backfill_embeddings 向量回填
 │
 └── tests/                           # 【测试】pytest 11 例（含黄金集回归门禁；bge 用例在无 ML 环境时跳过）

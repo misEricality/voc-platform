@@ -29,6 +29,7 @@ scripts/
 │   ├── L3.5 微话题下钻                  l35_cluster
 │   ├── 数据修复                         backfill_steam_target_names
 │   └── E2E 验证                         e2e_lifecycle
+├── analysis/                       🔬 分析脚本（ad-hoc 探索）
 └── ops/                            ⚙️ 运维脚本
     ├── refresh_likes.py                ✅ 7 天后回采脚本（已实现）
     └── backfill_embeddings.py          ✅ 评论向量回填 / 换模型全量重算（已实现）
@@ -130,7 +131,7 @@ scripts/
 |----------|--------|
 | 一次性验证某功能 | `dev/` |
 | 每天/每周跑一次的运维任务 | `ops/` |
-| ad-hoc 数据探索（看一次就丢） | `scripts/dev/`（`notebooks/` 已移除） |
+| ad-hoc 数据探索（看一次就丢） | `scripts/analysis/`（`notebooks/` 已移除） |
 | 长期保留的回归测试 | `tests/`（不在 scripts/） |
 
 ---
