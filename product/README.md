@@ -9,15 +9,11 @@
 ```
 product/
 ├── README.md                       ⬅ 你在这里：产品文档地图
-├── overview.md                     界面原型交付概览（视觉决策 + 后续建议）
-├── prototype/                      🎨 高保真原型（静态作品集封面，双击可开，可挂 Pages）
-│   ├── voc-platform-prototype.html     主看板（数据看板 + 原声列表）
-│   ├── game-compare.html               游戏对比看板（Steam 封面卡片 + 词云）
-│   └── src/                             多文件源码（含 game-compare.* 等）
-├── prd/                            📋 产品需求文档（PRD）
-│   (暂空，待 PRD 模板沉淀后启用)
-└── decisions/                      📝 产品决策记录（ADR）
-    (暂空，记录"为什么这么做"的决策历史)
+├── prototype_overview.md           界面原型交付概览（视觉决策 + 后续建议）
+└── prototype/                      🎨 高保真原型（静态作品集封面，双击可开，可挂 Pages）
+    ├── voc-platform-prototype.html     主看板（数据看板 + 原声列表）
+    ├── game-compare.html               游戏对比看板（Steam 封面卡片 + 词云）
+    └── src/                             多文件源码（含 game-compare.* 等）
 ```
 
 ---
@@ -33,8 +29,7 @@ product/
 |-------------|--------|
 | **这个产品是干嘛的、解决什么问题** | [../README.md](../README.md) 项目简介 |
 | **仪表盘长什么样、怎么交互** | [prototype/voc-platform-prototype.html](./prototype/voc-platform-prototype.html) |
-| **为什么选这个设计/方案** | `decisions/` （待沉淀） |
-| **完整 PRD 长什么样** | `prd/` （待沉淀） |
+| **原型交付了什么、视觉怎么定** | [prototype_overview.md](./prototype_overview.md) |
 
 ---
 

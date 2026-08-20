@@ -79,7 +79,7 @@
 
 - 沿用现有原型 / 看板的 **Steam 蓝黑主题**：背景 `#0e141b`、面板 `#1b2838`、主色 `#66c0f4`、强调绿 `#a1cd44` / 红 `#e05c5c` / 黄 `#d9b54e`（见 `product/prototype/src/base.css` 与 `game-compare.css` 的 `:root` 变量）。
 - 原型 `game-compare.html` 已按此主题实现（3 列卡片 grid + library_hero 封面 + 词云）；Streamlit 对比页也应对齐这组色值（Plotly `color_discrete_map` / 布局背景 / 字体）。
-- 注意：`product/overview.md` 里的旧配色（#78A4CB 等浅色）已过时，以 `base.css` 的深色主题为准。
+- 注意：`product/prototype_overview.md` 里的旧配色（#78A4CB 等浅色）已过时，以 `base.css` 的深色主题为准。
 
 ---
 

@@ -127,10 +127,8 @@ voc-platform/
 │   └── research/                        调研资料
 │
 ├── product/                         # 【产品文档】（业务视角）
-│   ├── overview.md                      产品概览
-│   ├── prototype/                       高保真原型（v3 单文件自包含）
-│   ├── prd/                             需求文档（预留）
-│   └── decisions/                       决策记录（预留）
+│   ├── prototype_overview.md            界面原型交付概览
+│   └── prototype/                       高保真原型（v3 单文件自包含）
 │
 ├── scripts/                         # 【运维/开发脚本】
 │   ├── smoke_test.py                    冒烟测试

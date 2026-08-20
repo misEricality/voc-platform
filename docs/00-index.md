@@ -65,7 +65,7 @@ docs/
 |------|------|
 | **A/B/C 字段前缀** | 与架构文档同步：原始 / 派生 / LLM 标注 |
 | **里程碑编号 M1-M10** | 与 DEVELOPMENT_PLAN 一致，不重复定义 |
-| **重大决策记录** | 写入 `product/decisions/` （不在 docs/ 范围） |
+| **重大决策记录** | 沉淀在 `docs/plan/` 相关计划文档（如 DEVELOPMENT_PLAN 的"决策/复盘"小节、ANNOTATION_SYSTEM_UPGRADE_PLAN 的评审结论） |
 | **调研资料归档** | 归 `research/` 子目录，命名用"<主题>调研报告.md" |
 
 ---
