@@ -1,0 +1,57 @@
+# 自动化采集监控目标清单
+#
+# 用途：P6 自动化流水线每日增量采集的目标驱动列表。
+# 由 scripts/ops/daily_incremental_collect.py 加载，
+# 对每个 enabled=true 的目标调用 run_pipeline（带 posted_after 滑窗）。
+#
+# 行为约定：
+# - enabled=false：跳过该目标（无需删除配置，便于临时停采）
+# - count：单次采集上限（None = 由采集器自动模式，按时间窗耗尽）
+# - language：仅 Steam 生效；Bilibili 由采集器内部决定
+# - 新增目标只需在本文件追加，无需改 Python/workflow
+#
+# 最后更新：2026-08-19
+
+version: 1
+
+# B 站不在本计划范围（详见 docs/architecture/BILIBILI_COLLECTION.md：
+# B 站为「发布满 7 天后的稳态快照」，采 1 次即代表该视频口碑，无需每日采集）。
+# 如未来需要 B 站每日趋势，单独评估后再加。
+
+targets:
+  - platform: steam
+    id: "2358720"
+    name: 黑神话：悟空
+    language: schinese
+    count: 30
+    enabled: true
+  - platform: steam
+    id: "292030"
+    name: 巫师 3：狂猎
+    language: schinese
+    count: 30
+    enabled: true
+  - platform: steam
+    id: "289070"
+    name: 文明 6
+    language: schinese
+    count: 30
+    enabled: true
+  - platform: steam
+    id: "1222140"
+    name: 底特律：化身为人
+    language: schinese
+    count: 30
+    enabled: true
+  - platform: steam
+    id: "1903340"
+    name: 光与影：33 号远征队
+    language: schinese
+    count: 30
+    enabled: true
+  - platform: steam
+    id: "753640"
+    name: 星际拓荒
+    language: schinese
+    count: 30
+    enabled: true
