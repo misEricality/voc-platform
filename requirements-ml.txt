@@ -1,0 +1,13 @@
+# ==========================================
+# VoC Platform · 本地 ML 可选依赖
+# ==========================================
+# 仅本地启用：
+# - 本地情感分析（LocalSentimentAnalyzer，需 transformers + torch）
+# - 本地语义向量化（bge-small-zh，需 sentence-transformers）
+# 缺省时 pipeline 自动跳过对应环节；CI 不安装本组。
+
+-r requirements-core.txt
+
+transformers>=4.36.0
+torch>=2.1.0
+sentence-transformers>=2.7

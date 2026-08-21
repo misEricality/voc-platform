@@ -85,6 +85,11 @@ class Comment(Base):
     # 机制同 likes：评论发布满 7 天后由回采脚本拉取真实回复，避免 0 误导。
     developer_response_refreshed_at = Column(DateTime)
     analyzed_at = Column(DateTime)
+    # 分析溯源（2026-08-21 P10 · 分析结果无版本）：格式 "{provider}:{model}@{prompt_hash8}"
+    # provider: llm/local；model: deepseek-v4-flash/qwen3.7-plus/... 或本地模型标识；
+    # prompt_hash8: 三个 prompt 文件内容拼接的 SHA256 前 8 位（任一文件改动 → hash 变 → version 变）。
+    # 换模型/换 prompt 后存量数据可按此字段分组重打或比对。
+    analyzer_version = Column(String(64), nullable=True, index=True)
     extra_meta = Column(Text)  # 目标元数据（如游戏名称）
 
     __table_args__ = (
@@ -119,6 +124,7 @@ class Comment(Base):
             "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
             "likes_refreshed_at": self.likes_refreshed_at.isoformat() if self.likes_refreshed_at else None,
             "developer_response_refreshed_at": self.developer_response_refreshed_at.isoformat() if self.developer_response_refreshed_at else None,
+            "analyzer_version": self.analyzer_version,
         }
 
 
@@ -236,9 +242,15 @@ class Danmaku(Base):
 def init_db(db_url: str | None = None) -> tuple:
     """初始化数据库
 
+    包含轻量 schema 演进（2026-08-21）：表已存在但缺列时，自动 ADD COLUMN；
+    仅支持 nullable 列（含默认 NULL 的 server_default）。NOT NULL 带非空默认值
+    的演进仍需专用迁移脚本。
+
     Returns:
         (engine, SessionLocal)
     """
+    from sqlalchemy import text
+
     db_url = db_url or os.getenv("DATABASE_URL", "sqlite:///data/voc.db")
 
     # SQLite 需要单独处理路径
@@ -253,6 +265,32 @@ def init_db(db_url: str | None = None) -> tuple:
         connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},
     )
     Base.metadata.create_all(engine)
+
+    # 轻量 schema 演进：检测已存在但缺列的表 → 自动 ADD COLUMN
+    # 启动成本：每张表 1 次 PRAGMA，可忽略；只在缺列时 ALTER
+    if db_url.startswith("sqlite"):
+        with engine.begin() as conn:
+            for table_name, table in Base.metadata.tables.items():
+                cols_info = conn.execute(
+                    text(f"PRAGMA table_info({table_name})")
+                ).fetchall()
+                if not cols_info:
+                    continue  # 表不存在（已由 create_all 创建）
+                existing = {row[1] for row in cols_info}  # row[1] = column name
+                for col in table.columns:
+                    if col.name in existing:
+                        continue
+                    # 仅自动演进 nullable 列；NOT NULL + 非空默认值的情况
+                    # 复杂度高，留给专用迁移脚本
+                    if not col.nullable:
+                        raise RuntimeError(
+                            f"init_db 自动演进不支持 NOT NULL 列 {table_name}.{col.name}；"
+                            "请写专用迁移脚本"
+                        )
+                    col_type = col.type.compile(engine.dialect)
+                    sql = f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}"
+                    conn.execute(text(sql))
+
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     return engine, SessionLocal
 
@@ -370,6 +408,7 @@ class CommentRepository:
         opinions: list[dict] | None = None,
         valid_l2_labels: set[str] | None = None,
         valid_l1_labels: set[str] | None = None,
+        analyzer_version: str | None = None,
     ) -> None:
         """更新情感与主题分析结果
 
@@ -377,6 +416,8 @@ class CommentRepository:
             opinions: 观点列表，每项 {label, level, quote, quote_start?, quote_end?}
             valid_l2_labels: 合法 L2 标签集合；用于过滤越界 sub_topics（不留盘）
             valid_l1_labels: 合法 L1 标签集合；用于过滤越界 topic
+            analyzer_version: 分析溯源标识（"{provider}:{model}@{prompt_hash8}"）；
+                来自 analyzer.analyzer_version 属性；不传/为 None 则不写入（兼容旧调用）。
         """
         stmt = select(Comment).where(Comment.id == comment_id)
         obj = self.session.execute(stmt).scalar_one_or_none()
@@ -398,6 +439,10 @@ class CommentRepository:
         obj.topic = clean_topic
         obj.sub_topics = json.dumps(clean_subs, ensure_ascii=False) if clean_subs else None
         obj.analyzed_at = _utcnow()
+        # analyzer_version：缺省时不擦旧值（让旧 caller 也能安全复用），
+        # 传非 None 才覆盖。
+        if analyzer_version is not None:
+            obj.analyzer_version = analyzer_version
 
         # 2. 同步 opinion 表（先删旧再插新）
         if opinions is not None:

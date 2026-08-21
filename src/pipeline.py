@@ -193,6 +193,9 @@ def run_pipeline(
         if analyzer:
             # 查询刚入库的评论（按目标）
             comments = repo.list_by_target(platform, db_lookup_target, limit=max_count)
+            # analyzer_version：取自 analyzer（LLM/本地都有 analyzer_version 属性）
+            # 缺省时为 None（旧 caller 也能跑；新数据 analyzer_version 留空，可后续回填）
+            analyzer_version = getattr(analyzer, "analyzer_version", None)
             for c in comments:
                 if c.analyzed_at is not None:
                     continue
@@ -205,6 +208,7 @@ def run_pipeline(
                     sentiment_confidence=result.sentiment_confidence,
                     topic=result.topic,
                     opinions=[op.to_dict() for op in result.opinions],
+                    analyzer_version=analyzer_version,
                 )
                 analyzed_count += 1
             repo.commit()

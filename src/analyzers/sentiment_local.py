@@ -19,6 +19,11 @@ class LocalSentimentAnalyzer(BaseAnalyzer):
 
     DEFAULT_MODEL = "uer/roberta-base-finetuned-dianping-chinese"
 
+    @property
+    def analyzer_version(self) -> str:
+        """分析溯源标识：'{name}:{model_name}@local'（无 prompt 概念，故后缀为 ``local``）"""
+        return f"{self.name}:{self.model_name}@local"
+
     def __init__(self, model_name: str | None = None, **kwargs):
         super().__init__(**kwargs)
         from transformers import AutoTokenizer, AutoModelForSequenceClassification

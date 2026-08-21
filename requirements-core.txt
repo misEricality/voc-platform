@@ -1,0 +1,26 @@
+# ==========================================
+# VoC Platform · 核心依赖（CI / 测试用）
+# ==========================================
+# CI（GitHub Actions）安装这组即可跑 pytest；不含 torch/transformers/
+# sentence-transformers（重，且测试集已对这些依赖用 pytest.importorskip / 显式 skip 跳过）
+# 与 streamlit/plotly/wordcloud/matplotlib（仪表盘本地启运用）。
+# 本地一键安装请用根 requirements.txt。
+
+# --- HTTP / 配置 ---
+requests>=2.31.0
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+pyyaml>=6.0
+
+# --- 存储 ---
+sqlalchemy>=2.0.25
+pandas>=2.1.0
+
+# --- LLM 客户端（OpenAI 兼容协议：DeepSeek/Qwen/GLM）---
+openai>=1.6.0
+
+# --- 分词 ---
+jieba>=0.42.1
+
+# --- 测试 ---
+pytest>=7.4.0

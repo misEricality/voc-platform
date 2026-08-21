@@ -1,0 +1,12 @@
+# ==========================================
+# VoC Platform · 仪表盘本地依赖
+# ==========================================
+# 本地 `streamlit run app.py` 时需要；CI 不安装（CI 只跑 pytest）。
+
+-r requirements-core.txt
+
+streamlit>=1.29.0
+plotly>=5.18.0
+wordcloud>=1.9.2
+matplotlib>=3.8.0
+pyarrow>=14.0.0

@@ -7,6 +7,31 @@ on:
   workflow_dispatch:  # 支持手动触发
 
 jobs:
+  # ---- 回归测试 ----
+  # 装 requirements-core.txt（不含 torch/transformers/sentence-transformers）→ 跑 pytest。
+  # test 与 collect 并列：任一失败 workflow 标红但不互相阻塞；push 时也能早期发现回归。
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装核心依赖
+        run: |
+          pip install -r requirements-core.txt
+
+      - name: 跑 pytest
+        run: |
+          python -m pytest tests/ -v
+
+  # ---- 每日采集 ----
   collect:
     runs-on: ubuntu-latest
     timeout-minutes: 30

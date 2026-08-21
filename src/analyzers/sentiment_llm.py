@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -39,11 +40,37 @@ TOPICS_DIR = PROJECT_ROOT / "config" / "topics"
 
 DEFAULT_BATCH_SIZE = 10
 
+# 用于 analyzer_version 溯源的 prompt 集合（任一文件内容改动 → 集合 hash 变 → version 变）。
+PROMPT_FILES_FOR_VERSION: tuple[str, ...] = (
+    "sentiment.txt",
+    "sentiment_user.txt",
+    "sentiment_user_strict.txt",
+)
+
 
 def _load_prompt(filename: str) -> str:
     """从 config/prompts/ 加载纯文本 prompt"""
     path = PROMPTS_DIR / filename
     return path.read_text(encoding="utf-8").strip()
+
+
+def compute_prompt_set_hash() -> str:
+    """计算「当前 prompt 集合」的内容哈希（前 8 位 hex）。
+
+    用途：analyzer_version 的 @ 后缀。任一 prompt 文件内容改动 → hash 变 →
+    下一次打标的 analyzer_version 自动变化 → 存量数据可按此字段识别"用旧 prompt 打标"的样本。
+
+    文件来源：`PROMPT_FILES_FOR_VERSION`（不含话题词表；词表变更由 analyzer 内部重读处理）。
+    """
+    h = hashlib.sha256()
+    for name in PROMPT_FILES_FOR_VERSION:
+        path = PROMPTS_DIR / name
+        if path.exists():
+            h.update(name.encode("utf-8"))
+            h.update(b"\0")
+            h.update(path.read_bytes())
+            h.update(b"\0")
+    return h.hexdigest()[:8]
 
 
 def _load_topic_config(category: str = "gaming") -> dict:
@@ -81,6 +108,15 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
     """基于大模型的批量情感分析器（v3）"""
 
     name = "llm"
+
+    @property
+    def analyzer_version(self) -> str:
+        """分析溯源标识：'{name}:{model}@{prompt_hash8}'
+
+        落库到 ``comments.analyzer_version``；换 provider / 换模型 / 改 prompt 任何一个
+        都会自动产生新 version，旧数据可通过此字段分组识别。
+        """
+        return f"{self.name}:{self.model}@{self.prompt_hash}"
 
     PROVIDER_CONFIG = {
         "deepseek": {
@@ -137,6 +173,9 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
         self.topic_fallback: str = topic_cfg.get("fallback", "其他")
         self.topic_hierarchy: dict = topic_cfg.get("hierarchy", {})
         self.system_prompt: str = _load_prompt("sentiment.txt")
+
+        # analyzer_version 溯源：缓存 prompt 集合 hash（实例化一次）
+        self.prompt_hash: str = compute_prompt_set_hash()
 
         # L3 映射表（方案4：程序匹配 + 路径映射）
         from .normalize import build_l3_mapping
