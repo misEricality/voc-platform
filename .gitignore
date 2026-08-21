@@ -52,6 +52,7 @@ logs/
 # ---- Cache ----
 .cache/
 .pytest_cache/
+# pytest 临时目录集中点（pytest.ini 的 basetemp + cache_dir 目标；含 pytest-of-*/pytest-N/pytest-cache-files-*）
 .pytest_tmp/
 .tmp-test/
 .mypy_cache/
