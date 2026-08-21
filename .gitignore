@@ -56,6 +56,9 @@ logs/
 .tmp-test/
 .mypy_cache/
 .ruff_cache/
+# pytest 临时缓存/工作目录（pytest 自管的运行时垃圾；曾出现 Owner 为空 + ACL 不可读导致 git status 报警的烂摊子，源头忽略）
+pytest-cache-files-*/
+pytest-of-*/
 
 # ---- Notebooks ----
 .ipynb_checkpoints/
