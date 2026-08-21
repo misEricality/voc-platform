@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-08-20
+> **最后更新**：2026-08-21
 
 ---
 

@@ -5,7 +5,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-v0.4-blue)
+![Status](https://img.shields.io/badge/Status-v0.7-blue)
 
 ## ✨ 项目简介
 
@@ -118,28 +118,31 @@ voc-platform/
 │   └── topics/                         三级标签体系 + L3 定义词典
 │
 ├── data/                            # 【运行时数据】（gitignore，不入库）
-│   ├── voc.db                            SQLite 单库（9308 条评论，9242 已分析）
+│   ├── voc.db                            SQLite 单库（11332 条评论，9242 已分析；P6 自动增量中）
 │   └── exports/                          导出产物（xlsx / csv / json）
 │
 ├── docs/                            # 【研发文档】（技术视角）
 │   ├── 00-index.md                      ⬅ 文档地图
-│   ├── architecture/                    架构设计（含 ANNOTATION_PIPELINE 标注流程）
+│   ├── architecture/                    架构设计（含 ANNOTATION_PIPELINE 标注流程 / AUTOMATION_PIPELINE 自动化流水线 / BILIBILI_COLLECTION B 站采集规格）
 │   ├── STEAM_API_FIELDS.md              Steam API 字段权威清单
-│   ├── plan/                            计划与里程碑
+│   ├── plan/                            计划与里程碑（含 P6 自动化 / P10 analyzer_version 等）
 │   ├── guides/                          操作指南
 │   └── research/                        调研资料
 │
 ├── product/                         # 【产品文档】（业务视角）
+│   ├── README.md                        产品文档地图
 │   ├── prototype_overview.md            界面原型交付概览
-│   └── prototype/                       高保真原型（v3 单文件自包含）
+│   ├── export_bilibili_data.py          B 站单视频原型数据导出（read DB → JSON）
+│   ├── build_bilibili_video.py          B 站单视频原型 HTML 组装
+│   └── prototype/                       高保真原型（voc-platform / game-compare / bilibili-video 三件单文件）
 │
 ├── scripts/                         # 【运维/开发脚本】
 │   ├── smoke_test.py                    冒烟测试
 │   ├── dev/                             开发期一次性脚本（采集/标注/巡检/E2E）
-│   ├── analysis/                        分析脚本（ad-hoc 探索）
-│   └── ops/                             refresh_likes 回采 / backfill_embeddings 向量回填
+│   ├── analysis/                        分析脚本（ad-hoc 探索，占位）
+│   └── ops/                             refresh_likes 回采 / backfill_embeddings 向量回填 / daily_incremental_collect P6 自动化入口
 │
-└── tests/                           # 【测试】pytest 11 例（含黄金集回归门禁；bge 用例在无 ML 环境时跳过）
+└── tests/                           # 【测试】pytest 25 例（黄金集回归 + CI 自动化 + analyzer_version 等；bge 用例在无 ML 环境时跳过）
 ```
 
 > 📌 **目录设计原则**：研发与产品文档分离 / 代码与配置分离 / 脚本分阶段 / 数据运行时不入库（gitignore）。  
