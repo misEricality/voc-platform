@@ -84,6 +84,7 @@ config/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-08-21 | P10 · analyzer_version 溯源落地（`comments.analyzer_version` 字段 + `compute_prompt_set_hash` + `analyzer.analyzer_version` 属性）；prompt 文件改动自动联动 hash → 存量可按 version 分组重打或比对 | 🟡 分析结果无版本溯源（DEVELOPMENT_PLAN §六）|
 | 2026-08-19 | 词典扩充 30 词（战斗/动作/文化/反作弊/EA/微交易等），`topics/l3_definitions.yaml` 增补关键词；同步更新 `README` 版本记录 | 阶段 1 兜底治理：救回「总体体验评价」兜底里漏网的具体话题短语，观点级兜底 → 67.4% |
 | 2026-08-19 | 新建 `monitoring/targets.yaml`：6 款 Steam 单机游戏首批监控清单（每款 30 条/天） | P6 自动化流水线目标驱动：B 站为「发布满 7 天稳态快照」不属于每日采集，本批次不含 |
 | 2026-08-17 | GDT v3.1.1 标签体系落地：`topics/gaming.yaml` 重建为 L1 10 / L2 28 / L3 111；`topics/l3_definitions.yaml` 重建为 111 个 L3 定义 + 关键词 | 主题分类精细化，替换旧的 L1 7 / L2 28 / L3 128 |

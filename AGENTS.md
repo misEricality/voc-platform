@@ -149,3 +149,4 @@ voc_platform/
 | 2026-08-19 | 补第 6 节健康检查清单 + `.workbuddy` 本机定位说明 + 中文命名补充 | 使规范可落地、可审计 |
 | 2026-08-19 | P6 自动化流水线落地后核对：新建 4 文件（targets.yaml / daily_incremental_collect.py / 测试 / 架构文档）均按 §1 归属与 §2 命名；4 处改动均登记索引；§6 健康检查 7 条全过 | 验证明文规则可执行 |
 | 2026-08-20 | 文档收口补全：补登 `architecture/AUTOMATION_PIPELINE.md` 到 00-index 文档地图 + 我想知道表；同步 DEVELOPMENT_PLAN.md 日期与下一步主线；新增 `.workbuddy/memory/2026-08-20.md` | 收口 P6 文档完整性，避免「视未完成」状态 |
+| 2026-08-21 | P10 analyzer_version 溯源 + CI pytest：新增 4 requirements 文件（core/ml/dashboard/合并）+ 1 测试文件 + 6 改动（Comment 模型 / sentiment_llm / sentiment_local / pipeline / init_db 自动 ALTER / workflow 加 test job）均按 §1 归属；§6 健康检查 7 条全过；`data/voc.db` 自动 ALTER 11332 条评论 | 解锁工程护栏：换模型/prompt 可按 version 分组重打 + CI 防回归 |

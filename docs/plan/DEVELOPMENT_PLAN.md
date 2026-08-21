@@ -31,6 +31,15 @@
 ## ✅ 二、已完成里程碑（按时间倒序）
 
 
+### M11 · v0.7 分析溯源 + CI pytest（2026-08-21）
+
+**已完成**：
+- **analyzer_version 字段溯源**：`comments.analyzer_version`（`{provider}:{model}@{prompt_hash8}`）；LLM/本地 analyzer 都暴露 `analyzer_version` 属性；`compute_prompt_set_hash()` 读 prompt 文件 SHA256 拼 hash，任一 prompt 改动自动联动；`update_analysis` 入参 + 缺省不擦旧值（向后兼容）
+- **轻量 schema 演进**：`init_db()` 启动时自动 ALTER 缺列的已存在表（仅 nullable 列；NOT NULL + 非空默认值仍用专用脚本）；老 11332 条评论 analyzer_version 已加列（值 = NULL = 未溯源）
+- **CI pytest job**：`.github/workflows/daily-collect.yml` 加 `test` job（与 `collect` 并列），装 `requirements-core.txt` 不装 torch/transformers/sentence-transformers；push/cron 都跑
+- **requirements 拆分**：`requirements-core.txt` / `requirements-ml.txt` / `requirements-dashboard.txt` / `requirements.txt`（本地一键全量）
+- **测试**：`tests/test_analyzer_version.py` 10 例（字段 / 写入 / 不擦旧值 / prompt hash 稳定 / prompt 变动联动 / LLM format / local format / pipeline 传参 / 缺属性兼容 / init_db 自动 ALTER）全绿
+
 ### M8 · v0.4（2026-08-18 ~ 2026-08-19）
 
 **已完成**：
@@ -280,12 +289,30 @@
 **暂缓**：Spike 监控大盘 / 跨版本聚合（数据量 ≥5 万条且稳定日增后重评）。
 
 ---
+
+### ✅ P10 · 分析结果溯源 + CI pytest 工程护栏（2026-08-21）
+
+**业务目标**：换模型 / 换 prompt 后，存量数据可按版本分组识别 + 重打或比对；CI 跑全套 pytest 防回归。
+
+**✅ 已交付**：
+- `comments.analyzer_version` 字段（`String(64), nullable=True, indexed`）；`init_db()` 内置轻量 schema 演进（nullable 列自动 ALTER，老库启动时自动加列）
+- `analyzer.analyzer_version` 属性：LLM = `llm:{model}@{prompt_hash8}`；本地 = `local:{model_name}@local`
+- `compute_prompt_set_hash()`：`config/prompts/*.txt` 内容 SHA256 前 8 位；任一文件改动 → hash 变 → version 变
+- `pipeline.run_pipeline` 调用 `update_analysis` 时传 `analyzer_version`（无属性时传 None，向后兼容）
+- `update_analysis` 接受 `analyzer_version` 入参；缺省时不擦旧值（旧 caller 安全）
+- **CI pytest job**：`.github/workflows/daily-collect.yml` 加 `test` job（与 `collect` 并列），装 `requirements-core.txt`（不含 torch/transformers/sentence-transformers），`pytest tests/` 在 push/cron 都跑
+- **requirements 拆分**：`requirements-core.txt`（CI/测试）/ `requirements-ml.txt`（本地 ML 可选）/ `requirements-dashboard.txt`（仪表盘）/ `requirements.txt`（本地一键全量）—— 链式 `-r` 复用
+- `tests/test_analyzer_version.py` 10 例（字段存在 / 写入 / 不擦旧值 / prompt hash 稳定 / prompt 变动联动 / LLM format / local format / pipeline 传参 / 缺属性兼容 / init_db 自动 ALTER）全绿
+
+**后续**：1）可写一个 `scripts/ops/backfill_analyzer_version.py` 给老 11332 条 NULL 数据补默认值（"legacy-pre-versioning"），方便识别；2）仪表盘可选展示"用当前 prompt 打标 vs 用旧 prompt 打标"的分布。
+
+---
 ## ⚖️ 五、决策建议（业务视角）
 
 ### ⭐ 当前主线（P6 收口后的下一步）
 
 1. **P8 时间序列趋势图**：✅ P6 已于 2026-08-20 落地（6 款 Steam 每日增量入 GitHub Release），时间序列数据前置已解锁；下一步在仪表盘加折线图（每日评论量 / 情感均分 / 主题占比）
-2. **CI 补 pytest + analyzer_version 溯源**：两个 🟡 工程护栏，成本低、防回归价值高
+2. ✅ ~~CI 补 pytest + analyzer_version 溯源~~：已于 2026-08-21 落地（详见 P10）
 3. **CS2（appid 730）补采复查**：08-16 补采时 CS2 0 新增（仍 459 条 / 最新 08-04），需单独查一次采集链路；P6 落地后此问题可单独排查
 4. **P9 阶段 2 L3.5 微话题聚类**：`l35_cluster.py` 骨架已就绪；P6 解锁时序后，对新评论可周期性下钻
 
@@ -317,9 +344,9 @@
 | 🟡 CS2（appid 730）补采 0 新增（2026-08-16 补采后仍 459 条 / 最新 08-04） | 9/10 款 Steam 都采到了 08-16，唯独 CS2 零新增；单独重跑 `backfill_0816.py` 或 pipeline 排查游标/时间窗问题 | 数据完整性 |
 | ~~🔴 refresh_likes.py 翻页 bug（2026-08-15 评审发现）~~ | ✅ **已修复（2026-08-17）**：循环内 collect() 改为单次游标续翻遍历 `fetch_comments` 生成器 | Steam likes 回采现已真正生效 |
 | ~~🟠 时区混用（2026-08-15 评审发现）~~ | ✅ **已统一（2026-08-17）**：posted_at 统一落库为 naive UTC（fromtimestamp 加 tz=UTC 后去 tzinfo） | "≥7天"判断与 CI 主机口径一致 |
-| 🟠 打标双主链路分叉（2026-08-15 评审发现） | pipeline 逐条调 LLM（约 10x 成本），批量+三轮收敛只在 reanalyze_all.py → 收口进主链路 | 成本与可维护性 |
-| 🟡 CI 无 pytest | GitHub Actions 增加 test job；拆分 requirements 避免 CI 安装 torch | 工程护栏 |
-| 🟡 分析结果无版本溯源 | comments 增加 analyzer_version（模型+prompt 版本） | 换模型/prompt 后存量数据无法对账 |
+| ~~🟠 打标双主链路分叉（2026-08-15 评审发现）~~ | ✅ **已收口（2026-08-06 方案4）**：批量+三轮收敛进 `reanalyze_all.py`；单条仅用于新评论入 pipeline | 成本与可维护性 |
+| ~~🟡 CI 无 pytest~~ | ✅ **已解决（2026-08-21）**：`.github/workflows/daily-collect.yml` 加 `test` job（装 `requirements-core.txt` 不装 torch），与 `collect` job 并列；`pytest tests/` 在 push/cron 都会跑 | 工程护栏 |
+| ~~🟡 分析结果无版本溯源~~ | ✅ **已解决（2026-08-21）**：`comments.analyzer_version` 字段（`{provider}:{model}@{prompt_hash8}`），LLM 与本地 analyzer 都有 `analyzer_version` 属性；prompt 文件改动自动联动 hash；老数据列已加好（值 = NULL = 未溯源） | 换模型/prompt 后存量数据可按 version 分组重打或比对 |
 | 🟡 下一代标签系统（GDT+PEDM 双轨） | 分阶段采纳，见 [next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md)；阶段 1 词表已落地，语义匹配已证伪，黄金集门禁已上线 | 阶段 0 依赖 P6 持久化；阶段 1 待全量重打收口 |
 | 标注算法已切换方案4 | 见 [ANNOTATION_PIPELINE.md](../architecture/ANNOTATION_PIPELINE.md) | 文档已更新 |
 
@@ -370,12 +397,14 @@
 | M8 · v0.4 | 多目标横向对比（10 款 Steam 同看） | ✅（2026-08-19：Streamlit 对比视图 + 原型卡片页 + 下钻） |
 | M9 · v0.5 | 多平台覆盖（Steam + B 站） | ✅ |
 | M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | ✅（2026-08-20：P6 自动化流水线已落地，6 款 Steam 每日增量入 GitHub Release） |
-| M11 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | 待 M10 时间序列趋势图（P8）接入 |
+| M11 · v0.7 | 分析结果溯源 + CI pytest 护栏 | ✅（2026-08-21：P10 analyzer_version 字段 + init_db 自动演进 + CI test job） |
+| M12 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | 待 M11 时间序列趋势图（P8）接入 |
 
-**M8 → M10 路径**：
+**M8 → M11 路径**：
 1. M8：✅ P3 多目标对比已完成（2026-08-19）
 2. M9：✅ B 站采集器已落地（跨平台对比视图为可选增强，归 P5）
 3. M10：✅ P6 自动化流水线已完成（2026-08-20：6 款 Steam 每日增量入 GitHub Release）；下一步接入 P8 时间序列趋势图（已解锁前置条件）
+4. M11：✅ P10 分析溯源 + CI pytest 已完成（2026-08-21）
 
 ---
 
