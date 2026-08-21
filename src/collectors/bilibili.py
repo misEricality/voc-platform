@@ -4,7 +4,7 @@
 
 核心设计：
 - 采集定位：发布满 7 天后的「口碑稳态快照」，非持续监控
-- 评论决策分支：评论数 ≤ T(2000) 全量翻页；> T 抽样 K=1000（点赞 top-600 + 最新 400）
+- 评论决策分支：评论数 ≤ T=1000 全量翻页；>T=1000 抽样 K=1000（点赞 top-600 + 最新 400）
 - 弹幕永远抽样：progress 时间轴均匀取 ≤3000 条（双时间戳 progress+posted_at）
 - 评论者画像：reply 接口 member 自带 level/vip/sex/official，零成本入 extra_json
 - 前置条件：buvid3+buvid4 + 完整浏览器头；评论采集需登录 cookie（SESSDATA，热门视频匿名只给 3 条）
@@ -50,9 +50,12 @@ class BilibiliCollector(BaseCollector):
 
     platform = "bilibili"
 
-    # 策略参数（文档 4.2，T 待实测校准）
-    T = 2000          # 评论数阈值：>T 触发抽样
-    K = 1000          # 抽样绝对数量（每视频恒定，保证跨视频可比）
+    # 策略参数（评论采集决策分支：≤T 全量 / >T 抽样 K）
+    # T = K = 1000：以 1000 为分桶点——评论 ≤1000 时一视同仁全量翻页（不再被 max_count=1000 砍一刀），
+    # 评论 >1000 时固定抽 K=1000（top-600 by likes + latest-400 by time）。
+    # 之前的 T=2000 与 K=1000 错位，导致 ≤2000 的视频也会被 max_count=1000 截尾，反而出现 ≤2000 比 >2000 数据少的情况。
+    T = 1000          # 评论数阈值：>T 触发抽样；≤T 全量翻页
+    K = 1000          # 抽样绝对数量（top-600 + latest-400），也是分桶点（与 T 对齐）
     TOP_N = 600       # 抽样：sort=2 点赞序取 top-N
     RECENT_N = 400    # 抽样：sort=0 时间序取最新 N
     PAGE_SIZE = 20    # reply 每页条数（ps 上限 20/49，用 20 稳）
@@ -148,15 +151,18 @@ class BilibiliCollector(BaseCollector):
         self,
         target_id: str,
         *,
-        max_count: int = 100,
+        max_count: int | None = None,
         language: str | None = None,
         **kwargs,
     ) -> Iterator[RawComment]:
-        """拉取视频评论（决策分支：≤T 全量 / >T 抽样）
+        """拉取视频评论（决策分支：≤T=1000 全量 / >T=1000 抽样 K=1000）
 
         Args:
             target_id: bvid 或 aid
-            max_count: 上限保护（默认 K=1000；≤T 全量时也受此限制）
+            max_count: 可选上限保护——仅对抽样分支生效（强制 ≤max_count）；
+                全量分支天然 ≤T ≤K，不再受 max_count 截尾。
+                默认 None = 走默认策略（≤K=1000）。
+            language: 未使用（B站评论没有语言过滤）
 
         Yields:
             RawComment（extra 含 aid/bvid/profile 画像）
@@ -168,13 +174,15 @@ class BilibiliCollector(BaseCollector):
 
         reply_count = (info.get("stat") or {}).get("reply") or 0
         if reply_count <= self.T:
-            # 全量分支：点赞序翻页到底（或 max_count 上限）
-            yield from self._fetch_reply_pages(aid, sort=2, limit=max_count)
+            # 全量分支：≤T=1000 的视频一视同仁翻页到底（无 max_count 截尾）
+            yield from self._fetch_reply_pages(aid, sort=2, limit=self.T)
         else:
-            # 抽样分支：点赞 top-600 + 最新 400（文档 4.2）
+            # 抽样分支：>T 的视频固定抽 K=1000 = top-600 + latest-400
+            # max_count 作为可选上限（如分析任务想要更少样本时）
+            cap = max_count if (max_count is not None and max_count < self.K) else self.K
             seen: set[int] = set()
-            top_n = min(self.TOP_N, max_count)
-            recent_n = min(self.RECENT_N, max(0, max_count - top_n))
+            top_n = min(self.TOP_N, cap)
+            recent_n = min(self.RECENT_N, max(0, cap - top_n))
             yield from self._fetch_reply_pages(
                 aid, sort=2, limit=top_n, seen=seen
             )
