@@ -19,10 +19,11 @@
     python scripts/dev/backfill_0816.py --platform all  # Steam + B站
     python scripts/dev/backfill_0816.py --platform bilibili
     python scripts/dev/backfill_0816.py --max-count 1000  # 显式单游戏采集上限（安全阀）
+    python scripts/dev/backfill_0816.py --annotate     # 采集完之后顺便跑 LLM 标注（DeepSeek，按目标串行）
     python scripts/dev/backfill_0816.py --detect        # 只探测各游戏窗口真实量，不发请求落库
     python scripts/dev/backfill_0816.py --dry-run       # 只打印清单，不发请求
 
-后续步骤（本脚本不执行，跑完确认后再做）：
+后续步骤（本脚本不执行，跑完确认后再做；或传 --annotate 一并搞定）：
     1) 分析新评论：python -m src.pipeline --platform steam --target <appid> --count 500 --language schinese
        （逐游戏，不带 --skip-analysis；DeepSeek ≈ ¥3-6/千条）
     2) 向量回填：python scripts/ops/backfill_embeddings.py（1021 → 全量）
@@ -95,7 +96,7 @@ def _detect_steam() -> list[dict]:
     return summary
 
 
-def _collect_steam(dry_run: bool, max_count: int | None) -> list[dict]:
+def _collect_steam(dry_run: bool, max_count: int | None, annotate: bool) -> list[dict]:
     summary: list[dict] = []
     for appid, name in STEAM_GAMES:
         log.info(f"--- Steam {name} (appid={appid}) 08-04 → 08-16 ---")
@@ -107,7 +108,7 @@ def _collect_steam(dry_run: bool, max_count: int | None) -> list[dict]:
             target_id=appid,
             max_count=max_count,  # None = 自动量（默认）
             language="schinese",
-            skip_analysis=True,
+            skip_analysis=not annotate,  # --annotate 时跑 LLM（每游戏串行，耗时长）
             posted_after=STEAM_AFTER,
             posted_before=BEFORE,
         )
@@ -116,11 +117,12 @@ def _collect_steam(dry_run: bool, max_count: int | None) -> list[dict]:
             "target": appid,
             "name": name,
             "fetched": report.get("fetched", 0),
+            "analyzed": report.get("analyzed", 0) if annotate else None,
         })
     return summary
 
 
-def _collect_bilibili(dry_run: bool) -> list[dict]:
+def _collect_bilibili(dry_run: bool, annotate: bool) -> list[dict]:
     summary: list[dict] = []
     for bvid, name in BILI_VIDEOS:
         log.info(f"--- B站 {name} (bvid={bvid}) 全量重采+去重 ---")
@@ -132,13 +134,14 @@ def _collect_bilibili(dry_run: bool) -> list[dict]:
             platform="bilibili",
             target_id=bvid,
             max_count=1000,
-            skip_analysis=True,
+            skip_analysis=not annotate,  # --annotate 时跑 LLM
         )
         summary.append({
             "platform": "bilibili",
             "target": bvid,
             "name": name,
             "fetched": report.get("fetched", 0),
+            "analyzed": report.get("analyzed", 0) if annotate else None,
         })
     return summary
 
@@ -167,6 +170,13 @@ def main() -> None:
         action="store_true",
         help="只探测各游戏时间窗内真实量（计数，不落库/不向量化）",
     )
+    parser.add_argument(
+        "--annotate",
+        action="store_true",
+        help="采集完之后顺便跑 LLM 标注（DeepSeek，按目标串行）。"
+             "⚠️ 成本较高：Steam 6 款单机全跑约 ¥15-30/小时，"
+             "B站单个视频约 ¥3-6/千条。建议 --platform steam 或 bilibili 单独跑。",
+    )
     args = parser.parse_args()
 
     # 探测模式：只报量，不发请求落库
@@ -186,27 +196,45 @@ def main() -> None:
 
     summary: list[dict] = []
     if args.platform in ("steam", "all"):
-        summary += _collect_steam(args.dry_run, args.max_count)
+        summary += _collect_steam(args.dry_run, args.max_count, args.annotate)
     if args.platform in ("bilibili", "all"):
-        summary += _collect_bilibili(args.dry_run)
+        summary += _collect_bilibili(args.dry_run, args.annotate)
 
     log.info("")
     log.info("=" * 70)
-    log.info(f"汇总（dry_run={args.dry_run}）")
+    log.info(f"汇总（dry_run={args.dry_run}, annotate={args.annotate}）")
     log.info("=" * 70)
-    log.info(f"{'平台':<9} {'target':<12} {'名称':<24} {'采集':>6}")
-    total = 0
+    if args.annotate:
+        log.info(f"{'平台':<9} {'target':<12} {'名称':<24} {'采集':>6} {'标注':>6}")
+    else:
+        log.info(f"{'平台':<9} {'target':<12} {'名称':<24} {'采集':>6}")
+    total_f = 0
+    total_a = 0
     for s in summary:
         fetched = s["fetched"] if s["fetched"] is not None else 0
-        total += fetched
+        total_f += fetched
         shown = str(s["fetched"]) if s["fetched"] is not None else "-"
-        log.info(f"{s['platform']:<9} {s['target']:<12} {s['name']:<24} {shown:>6}")
-    log.info(f"{'总计':<9} {'':<12} {'':<24} {total:>6}")
+        if args.annotate:
+            analyzed = s.get("analyzed") or 0
+            total_a += analyzed
+            log.info(f"{s['platform']:<9} {s['target']:<12} {s['name']:<24} {shown:>6} {analyzed:>6}")
+        else:
+            log.info(f"{s['platform']:<9} {s['target']:<12} {s['name']:<24} {shown:>6}")
+    if args.annotate:
+        log.info(f"{'总计':<9} {'':<12} {'':<24} {total_f:>6} {total_a:>6}")
+    else:
+        log.info(f"{'总计':<9} {'':<12} {'':<24} {total_f:>6}")
     log.info("")
-    log.info("下一步（跑完确认数据量后再做，见脚本顶部 docstring）：")
-    log.info("  1) 分析新评论（逐游戏不带 --skip-analysis）")
-    log.info("  2) python scripts/ops/backfill_embeddings.py  # 向量回填")
-    log.info("  3) P0 全量重打 GDT v3.1.1 + 旧标签清洗")
+    if args.annotate:
+        log.info("✅ 采集 + 标注 已一气呵成。下一步：")
+        log.info("  1) python scripts/ops/backfill_embeddings.py  # 向量回填（如有遗漏）")
+        log.info("  2) P0 全量重打 GDT v3.1.1 + 旧标签清洗")
+    else:
+        log.info("下一步（跑完确认数据量后再做）：")
+        log.info("  1) 标注新评论：python scripts/dev/reanalyze_all.py --platform <steam/bilibili>")
+        log.info("     或重跑本脚本加 --annotate 一并搞定")
+        log.info("  2) python scripts/ops/backfill_embeddings.py  # 向量回填（如有遗漏）")
+        log.info("  3) P0 全量重打 GDT v3.1.1 + 旧标签清洗")
 
 
 if __name__ == "__main__":
