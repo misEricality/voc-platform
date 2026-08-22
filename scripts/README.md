@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-08-17
+> **最后更新**：2026-08-22（新增 `dev/setup_p6_bootstrap.ps1`）
 
 ---
 
@@ -28,6 +28,7 @@ scripts/
 │   ├── 原型构建                         build_prototype / export_prototype_data / subset_font
 │   ├── L3.5 微话题下钻                  l35_cluster
 │   ├── 数据修复                         backfill_steam_target_names
+│   ├── P6 收口一次性（2026-08-22）       setup_p6_bootstrap（建 voc-daily-bootstrap release + git push）
 │   └── E2E 验证                         e2e_lifecycle
 ├── analysis/                       🔬 分析脚本（ad-hoc 探索）
 └── ops/                            ⚙️ 运维脚本
