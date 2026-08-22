@@ -1,10 +1,11 @@
 """P6 自动化采集编排测试
 
-锁住的回归（详见 docs/plan/P6_AUTOMATION_PIPELINE.md §4.2）：
+锁住的回归（详见 docs/architecture/AUTOMATION_PIPELINE.md §4 验收 + §8.1 决策 D4）：
 1. 空库起步 → 采集后 DB 写入正确
 2. 有库起步 → 只新增（不覆盖已有 likes_refreshed_at）
 3. 时间窗计算正确（max(posted_at) - 1 天）
 4. 单 target 失败不阻塞其他 target
+（plan/P6_AUTOMATION_PIPELINE.md 已于 2026-08-22 合并删除）
 
 每个用例用 data/test_*.db（已被 .gitignore 排除 *.db），绝不碰 data/voc.db；
 参照 scripts/dev/e2e_lifecycle.py 的「独立测试 DB」模式。

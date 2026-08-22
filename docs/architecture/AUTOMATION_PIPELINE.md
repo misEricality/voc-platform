@@ -3,13 +3,13 @@
 > **用途**：让任何工程师/产品/评审同事能 30 秒内理解"每天 00:00 UTC 自动化采集是怎么跑的、数据怎么累积"。
 >
 > **关联文档**：
-> - 路线图：[plan/P6_AUTOMATION_PIPELINE.md](../plan/P6_AUTOMATION_PIPELINE.md)（设计决策 + 验收标准）
 > - 路线图总纲：[plan/DEVELOPMENT_PLAN.md](../plan/DEVELOPMENT_PLAN.md)
 > - 主采集器：[pipeline.py](../../src/pipeline.py) + [steam.py](../../src/collectors/steam.py)
 > - 存储层：[DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
+> - P6 决策与风险历史：本文档 §8（2026-08-22 从 `plan/P6_AUTOMATION_PIPELINE.md` 合并，原文件已删）
 >
-> **最后更新**：2026-08-19
-> **状态**：✅ 已落地（2026-08-19）
+> **最后更新**：2026-08-22
+> **状态**：✅ 已落地（2026-08-19）；2026-08-22 洁癖收口：合并 `plan/P6_AUTOMATION_PIPELINE.md` 决策与风险历史 → §8（详见版本记录）
 
 ---
 
@@ -106,7 +106,7 @@ GitHub Actions 每天 UTC 00:00 调 `scripts/ops/daily_incremental_collect.py`�
 | `scripts/ops/daily_incremental_collect.py` | 主入口：拉/推 release + 跑各 target + 写摘要 |
 | `config/monitoring/targets.yaml` | 监控目标清单（6 款 Steam 单机游戏） |
 | `tests/test_daily_incremental_collect.py` | 6 个回归用例（空库起步/时间窗/不擦旧数据/单失败容错/gh 容错） |
-| `docs/plan/P6_AUTOMATION_PIPELINE.md` | 设计 + 实施步骤（计划阶段产物） |
+| `docs/architecture/AUTOMATION_PIPELINE.md §8` | P6 决策与风险历史（原 `plan/P6_AUTOMATION_PIPELINE.md` 已合并删除） |
 
 ---
 
@@ -153,6 +153,77 @@ python scripts/ops/daily_incremental_collect.py --no-download --no-upload \
 | 单 target 失败影响其他 | 旧版代码未包 `try/except` | 升级到 P6 落地版（`scripts/ops/daily_incremental_collect.py` 已包裹） |
 | release 上传 403 | PAT/fine-grained token 无 `contents: write` | workflow 默认 `GITHUB_TOKEN` 已含；若改成 PAT 需显式开 |
 | `data/voc.db` 在仓库中 | `.gitignore` 漏配 | 检查 `.gitignore` 含 `*.db`（已配） |
+| release 存在但 `assets` 为空 | `gh release create --generate-notes` 对已存在 release（含手工 draft）有副作用导致 upload 落空 | 见 §8 「A1 已知问题」一节；建议「先 view 再 create」改造 |
+
+---
+
+## 8. 决策与风险历史
+
+> 本节是 P6 计划阶段的设计决策、风险评估与已知问题的归档。2026-08-22 洁癖收口时从 `docs/plan/P6_AUTOMATION_PIPELINE.md`（已删除）合并而来。
+>
+> **当前决策的现役答案仍以本文档 §2 为准；本节用于回答「当时为什么这么选」和「潜在风险清单」。**
+
+### 8.1 五条核心决策回顾
+
+| # | 决策 | 当初候选 | 当时选择 | 现役位置 |
+|---|---|---|---|---|
+| D1 | 跨 run DB 持久化方式 | GH Release asset / GH artifact / git push / 自托管对象存储 | GH Release asset（长期保留 + 公开可下载 + 命令行可拉） | §2.1 |
+| D2 | 多目标驱动 | 硬编码 vs YAML | `config/monitoring/targets.yaml`（业务配置与代码解耦） | §2.2 |
+| D3 | workflow 编排 | 全部进 YAML vs Python 入口 + 薄 YAML | Python 入口（可测试 + 可本地复现） | §2.3 |
+| D4 | 增量语义 | 全量 vs 时间窗 vs DB 去重 | `posted_after = max(posted_at) - 1 天` 滑窗 + 复用 `bulk_upsert` 去重 + 复用分析/向量化跳过 | §2.4 |
+| D5 | 失败处理 | 任一失败中断 vs 全部跳过 vs 单点隔离 | 单 target try/except 隔离 + release 失败仅 warning（不丢数据） | §2.5 |
+
+D1 候选详细对比（plan §2.1 原表，已与 §2.1 合并确认）：
+
+| 候选 | 评价 | 选 |
+|---|---|---|
+| GH Release asset（`voc-daily.db`） | 长期保留（不自动过期）、公开可下载、有版本号、可通过 `gh release download` 命令行拉 | ✅ |
+| GH Actions artifact | 30 天自动过期、不可编程获取 | ❌ |
+| 推到 git 仓库 | `.gitignore` 禁 DB；DB 上 git 会污染仓库 | ❌ |
+| 自托管对象存储 | 个人项目过度工程化 | ❌ |
+
+### 8.2 风险与缓解（plan §5 原表，已评审 2026-08-19）
+
+| 风险 | 等级（2026-08-19） | 缓解 |
+|---|---|---|
+| GH Release asset 体积上限（2 GB 单文件） | 🟢 | 当前 DB < 50 MB，3 年累积 < 500 MB，留 4x 安全冗余；超限再切 GH Packages 或对象存储 |
+| `GITHUB_TOKEN` 默认权限是否含 `contents: write` | 🟡 | workflow 默认 token 已含此权限；如改为 fine-grained PAT 需显式开 |
+| PAT `workflow` scope 阻塞 workflow 文件推送 | 🟡 | 与 daily run 无关；仅影响 workflow 文件变更；详见 DEVELOPMENT_PLAN §六 |
+| CI 主机无 ML 环境（sentence-transformers/torch） | 🟢 | embedder 自动降级（`embedder is None` 跳过）；本地手动 `--upload` 可补 |
+| 单 target 失败（如 Steam 风控）影响当天其他 target | 🟢 | try/except 包裹，单个失败仅记 warning 不中断 |
+| `voc-daily` release 不存在（首次跑） | 🟢 | 脚本首跑识别 → 直接当作空库起步 |
+| DB 增长快导致 workflow 30 分钟超时 | 🟢 | 当前流水线 < 5 分钟（CS2 50 条）；10 目标/天仍 < 20 分钟；超时再分批 |
+| 现有本地 `data/voc.db` 与首次 workflow 跑出来的 DB 数据集差异 | 🟢 | **首次跑前**本地备份现有库为 `voc.db.bootstrap.bak` 并手动创建「基线 release」`voc-daily-bootstrap`，workflow 从第二跑开始自动接续 |
+| CS2 (730) 补采 0 新增 | 🟡 | P6 落地后此问题可单独排查（见 DEVELOPMENT_PLAN §六 CS2 行） |
+
+### 8.3 A1 已知问题（2026-08-22 洁癖收口新增）
+
+> ⚠️ **P6 落地后实际运行发现**：GH Release 每日创建成功但 `assets: []`（voc.db 未上传）——「累积 DB」核心目标实际未生效。
+
+**根因**（静态分析见 `.workbuddy/memory/2026-08-22.md` A1 节）：
+
+1. `scripts/ops/daily_incremental_collect.py:165-195` 的 `gh_release_upload` 是「先 create 再 upload」
+2. 当 release **已存在**（哪怕是用户手工 draft）时，`gh release create --generate-notes` 报错但被静默忽略；同时 **副作用**：旧 release 被自动 publish
+3. 紧接着的 `gh release upload` 在 release 处于「刚被 publish 的瞬态」时失败
+4. 脚本仅打 warning，workflow 仍标 success → 远端 artifact 正常上传但 release asset 为空
+
+**修复方向**（评审中）：
+
+- 最小变更：`gh_release_upload` 改成「先 `gh release view` 检查存在性，存在则跳过 create」
+- 最小验证：本地有 gh CLI 时跑 `gh release create voc-daily-YYYY-MM-DD --draft` + `gh release upload ... --clobber` 复现
+- 已加入 §7 故障排查速查表
+
+**blocker 现状**：手工 `voc-daily-bootstrap` release 仍未创建（plan §6.2 步骤 0 第 2 条「**首次跑前**手动创建」从开工起就一直挂着），导致 daily run 每日从空库起步，无法累积。
+
+### 8.4 决策待确认 Q1-Q5（plan §9，2026-08-19 已全部确认）
+
+| # | 决策 | 当时建议 | 实际选择 |
+|---|---|---|---|
+| Q1 | DB 累积方式是否同意采用 GH Release asset | ✅ 推荐 | ✅ 已采纳 |
+| Q2 | 监控目标是否先用现有 10 款 Steam + 1 条 B 站起步 | ✅ 推荐 | ✅ 实际：6 款 Steam（去掉 CS2/730 与补采难度较高的）+ 0 B 站（B 站为稳态快照不每日采） |
+| Q3 | workflow 是否保留 artifact 上传作为 fallback | ✅ 推荐 | ✅ 已采纳 |
+| Q4 | 首次跑前是否同意手动建 `voc-daily-bootstrap` release | ✅ 推荐 | ❌ **至今未执行**（见 §8.3 blocker） |
+| Q5 | 回采 likes（7 天）是否合并入 daily workflow | ❌ 建议独立 | ✅ 已独立（`scripts/ops/refresh_likes.py` + 未来独立 workflow） |
 
 ---
 
@@ -161,3 +232,4 @@ python scripts/ops/daily_incremental_collect.py --no-download --no-upload \
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
 | 2026-08-19 | 初版：P6 自动化流水线落地架构文档 | P6 自动化收口，解锁 P9 阶段 0 + P8 时间序列 |
+| 2026-08-22 | §8 决策与风险历史新增；合并 `plan/P6_AUTOMATION_PIPELINE.md`；§7 故障排查加「release 存在但 assets 空」；更新「最后更新」日期 | 洁癖收口：消除两份 P6 文档重复；记录 A1 已知问题（每日 release asset 为空，累积 DB 未生效） |
