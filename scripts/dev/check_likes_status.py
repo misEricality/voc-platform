@@ -1,4 +1,8 @@
-"""一次性脚本：查看当前 DB 中 CS2 评论的 likes 状态 + posted_at 分布"""
+"""一次性脚本：查看当前 DB 中 CS2 评论的 likes 状态 + posted_at 分布
+
+> ⚠️ 2026-08-23 注：CS2 数据已从主库归档到 `data/archive/online_games_2026-08-23.db`。
+> 本脚本保留作为历史记录；运行时会指向主库发现 0 条，如要查归档 DB 请改 DB path。
+"""
 import sys
 import os
 from pathlib import Path

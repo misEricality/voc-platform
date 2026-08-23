@@ -1,4 +1,8 @@
-"""一次性脚本：检查 8/3 当天采集的 CS2 中文评论"""
+"""一次性脚本：检查 8/3 当天采集的 CS2 中文评论
+
+> ⚠️ 2026-08-23 注：CS2 数据已从主库归档到 `data/archive/online_games_2026-08-23.db`。
+> 本脚本保留作为历史记录，运行时会指向主库发现 0 条。
+"""
 import sqlite3
 
 con = sqlite3.connect("D:/projects/voc_platform/data/voc.db")

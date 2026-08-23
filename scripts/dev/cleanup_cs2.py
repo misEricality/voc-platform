@@ -1,6 +1,10 @@
 """一次性脚本：清理 CS2 数据
 - 删除 7/31 及之前的数据
 - 删除非中文（language != 'schinese'）的数据
+
+> ⚠️ 2026-08-23 注：CS2 数据已从主库归档到 `data/archive/online_games_2026-08-23.db`。
+> 本脚本保留作为历史记录（CS2 459 条 2026-08-01~08-04），不会再被主 DB pipeline 调用。
+> 若需查看 CS2 归档数据：直接 sqlite3 打开归档 DB。
 """
 import sys
 from pathlib import Path
