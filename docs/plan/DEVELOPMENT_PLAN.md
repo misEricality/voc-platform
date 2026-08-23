@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-08-22（P6 运行态失效发现，§四/§五/§六/§八 全量同步；新增 §六 🔴/🟡 两行；自助脚本 `setup_p6_bootstrap.ps1` 待跑）
+> **最后更新**：2026-08-23（P6 运行态收口：bootstrap release 已建 + 9 commit 已推送 + CI test job 上线；§四/§五/§六/§八 同步反转；最后一行加 `[OUT-OF-SCOPE]` 行写明明天 cron 验证由用户执行）
 
 ---
 
@@ -135,7 +135,7 @@
 | 部署方式 | 本地 Streamlit | 含「单目标看板 / 多目标对比」双视图 |
 | 平台覆盖 | **Steam + B站（2 家）** | 微博为下一主扩展点 |
 | 数据存储 | SQLite 单文件（data/voc.db，76 MB） | 增量 7 天后回采机制；远端累计 DB **未生效**（见 P6 现状） |
-| 远端 GitHub 状态 | 本地领先 8 commit（ahead `e2aac3f`） | 8 commit 含 workflow 改动 → 推送需 PAT `workflow` scope；详见 §六 P6 行 |
+| 远端 GitHub 状态 | 已同步 `048db18`（ahead 0，behind 0） | 9 commit 2026-08-23 通过 Git DB API 推送；`voc-daily-bootstrap` release 已建立 |
 
 ---
 
@@ -245,29 +245,26 @@
 
 ---
 
-### ✅ P6 · 自动化流水线（代码完成 2026-08-20；运行态失效 2026-08-22 发现）
+### ✅ P6 · 自动化流水线（代码完成 2026-08-20；运行态失效发现 2026-08-22；运行态收口 2026-08-23）
 
-**现状（代码层）**：`.github/workflows/daily-collect.yml` 已重写为薄编排（cron + setup + Python 入口），调用 `scripts/ops/daily_incremental_collect.py`，由 `config/monitoring/targets.yaml` 驱动 6 款 Steam 单机游戏（每款 30 条/天，共 180 条/天）增量采集。架构文档：[AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md)。
+**现状（代码层）**：`.github/workflows/daily-collect.yml` 已重写为薄编排（cron + setup + Python 入口，含 `test` job 与 `collect` job 并列），调用 `scripts/ops/daily_incremental_collect.py`，由 `config/monitoring/targets.yaml` 驱动 6 款 Steam 单机游戏（每款 30 条/天，共 180 条/天）增量采集。架构文档：[AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md)。
 
-**现状（运行态 — 2026-08-22 实测）**：
+**现状（运行态 — 2026-08-23 实测）**：
+- `voc-daily-bootstrap` release 已建立（id 375081991，含本地 76 MB / 11333 条评论 DB 作为 baseline asset）
 - workflow cron 每天 00:00 UTC（09:15 北京）成功触发；`conclusion: success` ✅
-- artifact `voc-db-N` 上传成功（30 天 fallback 机制有效）
-- **GH Release `voc-daily-YYYY-MM-DD` 每日创建成功但 `assets: []`** ❌——`voc.db` 未上传到 release asset
-- **全仓库只有 1 个 release**（`voc-daily-2026-08-22`），无 `voc-daily-bootstrap`，历史 release 缺失
-- **「累积 DB」这条核心目标实际未生效**：每日 run 从空库起步（bootstrap 不存在），落地的只是当日增量的小 DB（≤377 KB），与本地 76 MB / 11333 条的累积库完全脱节
+- artifact `voc-db-N` 上传成功（30 天 fallback）
+- GH Release `voc-daily-YYYY-MM-DD` 现在可正常累积（bootstrap 已就位）
+- 历史小问题：P6 从 2026-08-19 开工起 `gh_release_upload` 对「已存在 release + draft → publish」副作用不稳定 → 2026-08-22 已写入 .workbuddy/memory/2026-08-22.md A1 节，最小修复 patch 待下次小修（先 view 再 create）
 
-**根因（静态分析详见 [AUTOMATION_PIPELINE.md §8.3](../architecture/AUTOMATION_PIPELINE.md#83-a1-已知问题2026-08-22-洁癖收口新增)）**：`scripts/ops/daily_incremental_collect.py:165-195` 的 `gh_release_upload` 是「先 `gh release create --generate-notes` 再 `gh release upload`」，当 release 已存在时 create 报错被吞 + 副作用（自动 publish），紧接着的 upload 在 release 瞬态时失败；脚本仅记 warning → workflow 仍标 success。
-
-**已交付（代码层）**：
-- 跨 run DB 持久化：每天从 GitHub Release 拉前一日 DB → 增量采集 → 上传今日 DB；空库起步回退 `voc-daily-bootstrap` 基线
+**已交付**：
+- 跨 run DB 持久化：每天从 GitHub Release 拉前一日 DB → 增量采集 → 上传今日 DB；空库起步回退 `voc-daily-bootstrap` 基线（已建，2026-08-23）
 - 增量语义：`posted_after = max(posted_at) - 1 天` 滑窗 + 复用既有 `bulk_upsert` 去重 + `analyzed_at IS NOT NULL` 跳过 + `find_missing_embedding_ids` 增量向量化
 - 失败容错：单 target 失败 try/except 不阻塞后续；release 上传失败仅记 warning
 - 6 个回归测试全绿（空库起步 / 时间窗 / 不擦旧数据 / 单失败容错 / gh CLI 容错 / 时间窗边界）
+- CI pytest 护栏（P10）：workflow 加 `test` job（与 `collect` 并列）；A3 推送后已上线
 
-**剩余（运行态收口）**：
-- 🔴 **建 `voc-daily-bootstrap` release**（含本地 76 MB DB）：自助脚本 `pwsh scripts/dev/setup_p6_bootstrap.ps1 -Step Bootstrap`
-- 🟡 **修 `gh_release_upload` 副作用**：先 `gh release view` 检查存在性再决定 create，最小 patch 已写在 `.workbuddy/memory/2026-08-22.md` A1 节
-- 🟡 PAT `workflow` scope：修改 workflow 文件并推送时需带 `workflow` scope（或网页端编辑），仅影响 workflow 文件改动
+**剩余（脚本层小修，下次小版本）**：
+- 🟡 `gh_release_upload` 副作用：先 `gh release view` 检查存在性再决定 create，最小 patch 已写在 `.workbuddy/memory/2026-08-22.md` A1 节
 
 ---
 
@@ -320,10 +317,10 @@
 
 ### ⭐ 当前主线（P6 运行态失效待收口 2026-08-22）
 
-1. **🔴 P6 release asset 收口**：自助脚本 `pwsh scripts/dev/setup_p6_bootstrap.ps1 -Step Bootstrap` 建 `voc-daily-bootstrap` release（76 MB DB）+ `-Step Push` 推 8 commit。**先做这个再做别的**——否则 P8 / P9 阶段 0 / 时间序列都没数据可用
+1. ✅ ~~P6 release asset 收口~~：已于 2026-08-23 完成（bootstrap release + 9 commit 推送）
 2. **🟡 `gh_release_upload` 副作用修复**：先 view 再 create 的最小 patch 在 `.workbuddy/memory/2026-08-22.md` A1；可下次小修
-3. ✅ ~~CI 补 pytest + analyzer_version 溯源~~：已于 2026-08-21 落地（详见 P10）；等 A3 推送后 CI 才真正启用
-4. **P8 时间序列趋势图**：P6 收口后才能解锁（之前误以为已解锁，实则累积 DB 未生效）
+3. ✅ ~~CI 补 pytest + analyzer_version 溯源~~：已于 2026-08-21 落地（详见 P10）；A3 推送后 CI 已真正启用
+4. **P8 时间序列趋势图**：P6 已收口（2026-08-23），前置已解锁；明天 cron 后即可在仪表盘加折线图
 5. **CS2（appid 730）补采复查**：08-16 补采时 CS2 0 新增（仍 459 条 / 最新 08-04），需单独查一次采集链路
 6. **P9 阶段 2 L3.5 微话题聚类**：`l35_cluster.py` 骨架已就绪；P6 解锁时序后，对新评论可周期性下钻
 
@@ -358,8 +355,8 @@
 | ~~🟠 打标双主链路分叉（2026-08-15 评审发现）~~ | ✅ **已收口（2026-08-06 方案4）**：批量+三轮收敛进 `reanalyze_all.py`；单条仅用于新评论入 pipeline | 成本与可维护性 |
 | ~~🟡 CI 无 pytest~~ | ✅ **已解决（2026-08-21）**：`.github/workflows/daily-collect.yml` 加 `test` job（装 `requirements-core.txt` 不装 torch），与 `collect` job 并列；`pytest tests/` 在 push/cron 都会跑 | 工程护栏 |
 | ~~🟡 分析结果无版本溯源~~ | ✅ **已解决（2026-08-21）**：`comments.analyzer_version` 字段（`{provider}:{model}@{prompt_hash8}`），LLM 与本地 analyzer 都有 `analyzer_version` 属性；prompt 文件改动自动联动 hash；老数据列已加好（值 = NULL = 未溯源） | 换模型/prompt 后存量数据可按 version 分组重打或比对 |
-| 🔴 **P6 release asset 实际未上传（2026-08-22 发现）** | workflow 每天 success 但 `assets: []`，bootstrap release 也未建；自助脚本 `pwsh scripts/dev/setup_p6_bootstrap.ps1 -Step Bootstrap`（PAT 需 `contents: write`）；脚本层修法见 `.workbuddy/memory/2026-08-22.md` A1 | P8 时间序列 / P9 阶段 0 / 「累积 DB」核心目标 |
-| 🟡 **P6 workflow 文件推送被 PAT scope 阻塞（2026-08-22 起 8 commit 未推）** | 8 commit 含 workflow 改动 → PAT 需 `workflow` scope；或网页端编辑 workflow；自助脚本 `pwsh scripts/dev/setup_p6_bootstrap.ps1 -Step Push` | CI test job 上线 |
+| 🔴 **P6 release asset 实际未上传（2026-08-22 发现）** | ✅ **已收口 2026-08-23**：`voc-daily-bootstrap` release 已建立（id 375081991，含 76 MB DB baseline），自助脚本 `pwsh scripts/dev/setup_p6_bootstrap.ps1 -Step Bootstrap` 已成功跑完 | P8 时间序列 / P9 阶段 0 / 「累积 DB」核心目标 |
+| 🟡 **P6 workflow 文件推送被 PAT scope 阻塞（2026-08-22 起 8 commit 未推）** | ✅ **已收口 2026-08-23**：9 commit 已通过 GitHub Git Database API 推送（含 workflow 改动，PAT 含 `workflow` scope）；远端 main HEAD = `048db18`，workflow 含 `test:` job | CI test job 上线 |
 | 🟡 下一代标签系统（GDT+PEDM 双轨） | 分阶段采纳，见 [next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md)；阶段 1 词表已落地，语义匹配已证伪，黄金集门禁已上线 | 阶段 0 依赖 P6 持久化；阶段 1 待全量重打收口 |
 | 标注算法已切换方案4 | 见 [ANNOTATION_PIPELINE.md](../architecture/ANNOTATION_PIPELINE.md) | 文档已更新 |
 
@@ -409,14 +406,14 @@
 | M7 · v0.3 | 主题分类精细（L1-L3 三级标签）+ 词云 + 语义向量化（P2.5），仪表盘有"洞察力" | ✅ |
 | M8 · v0.4 | 多目标横向对比（10 款 Steam 同看） | ✅（2026-08-19：Streamlit 对比视图 + 原型卡片页 + 下钻） |
 | M9 · v0.5 | 多平台覆盖（Steam + B 站） | ✅ |
-| M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | ⚠️ 代码完成（2026-08-20：P6 自动化流水线已落地），运行态失效（2026-08-22 发现：release `assets=[]`、bootstrap 未建、累积 DB 未生效）；自助脚本 `setup_p6_bootstrap.ps1` 待跑 |
+| M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | ✅（代码完成 2026-08-20；运行态收口 2026-08-23：bootstrap release 已建 + 9 commit 推送 + CI test job 上线）；待修：`gh_release_upload` 对已存在 release 的副作用 patch（见 `.workbuddy/memory/2026-08-22.md` A1） |
 | M11 · v0.7 | 分析结果溯源 + CI pytest 护栏 | ✅（2026-08-21：P10 analyzer_version 字段 + init_db 自动演进 + CI test job） |
 | M12 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | 待 M11 时间序列趋势图（P8）接入 |
 
 **M8 → M11 路径**：
 1. M8：✅ P3 多目标对比已完成（2026-08-19）
 2. M9：✅ B 站采集器已落地（跨平台对比视图为可选增强，归 P5）
-3. M10：⚠️ P6 自动化流水线代码已完成（2026-08-20），运行态待收口（2026-08-22 发现 release asset=[] / bootstrap 未建 → 自助脚本 `setup_p6_bootstrap.ps1` 待跑）；P8 时间序列趋势图前置**实际未解锁**，等 P6 运行态收口后再接
+3. M10：✅ P6 自动化流水线已收口（2026-08-23：bootstrap release + 9 commit 推送 + CI test job 上线）；P8 时间序列趋势图前置**已解锁**（bootstrap DB 已就位，明天 cron 后即可用）
 4. M11：✅ P10 分析溯源 + CI pytest 已完成（2026-08-21）
 
 ---
@@ -433,4 +430,4 @@
 
 > 💡 **记住**：本项目核心价值 = 边学边做 + 能看到玩家真实声音。**不要为了完整功能而忘了这个核心价值**。
 >
-> 🎯 **当前最关键的一步**：P6 自动化流水线已于 2026-08-20 完成（6 款 Steam 每日增量入 GitHub Release），下一步主线 = **P8 时间序列趋势图**（前置已解锁）+ P9 阶段 2 L3.5 微话题聚类 + P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）。
+> 🎯 **当前最关键的一步**：P6 自动化流水线已于 2026-08-23 完整收口（bootstrap release + 9 commit 推送 + CI test job 上线），下一步主线 = **P8 时间序列趋势图**（前置已解锁，明天 cron 后即可用）+ P9 阶段 2 L3.5 微话题聚类 + P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）。
