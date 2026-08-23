@@ -28,7 +28,7 @@ version: 1
 # - 若想恢复采集，从归档 DB 导入 + 重新加入下方 targets 即可
 excluded_targets:
   - target_id: steam:578080
-    name: PUBG: BATTLEGROUNDS
+    name: "PUBG: BATTLEGROUNDS"     # 名字含半角冒号必须加引号，否则 YAML 解析失败
     reason: 已归档到 online_games_2026-08-23.db（PUBG 2571 条 / 2026-07-31~08-16）
     archived_db: data/archive/online_games_2026-08-23.db
   - target_id: steam:1172470
