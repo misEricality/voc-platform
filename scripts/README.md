@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-08-23（新增 `ops/archive_online_games.py`）
+> **最后更新**：2026-08-23（新增 `ops/archive_online_games.py` + 注册 `src.queue` 项目级 CLI）
 
 ---
 
@@ -51,6 +51,20 @@ scripts/
 | **ops/backfill_embeddings.py** | 评论语义向量回填 / 换模型全量重算 | `python scripts/ops/backfill_embeddings.py --limit 100`（增量）；`--force`（清空重算，单事务原子切换） |
 | **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调） | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地调试） |
 | **ops/archive_online_games.py** | 一次性：把 4 款 Steam 网游（PUBG/Apex/Dota2/CS2）数据从主库抽到 `data/archive/online_games_YYYY-MM-DD.db`，并从主库删除（2026-08-23 已执行） | `python scripts/ops/archive_online_games.py --dry-run`（预览）；不带参数实际执行；归档后主库 VACUUM |
+
+### 项目级 CLI（src/queue · B 站采集队列）
+
+| 子命令 | 用途 |
+|---|---|
+| `python -m src.queue add BV [BV ...]` | 录入 BV 号到待采清单（自动识别 pubdate） |
+| `python -m src.queue list [--status X]` | 列出条目（默认全部） |
+| `python -m src.queue due [--limit N]` | 列今天到期的任务 |
+| `python -m src.queue run-due [--limit N] [--dry-run]` | 立即触发今天的采集（本地调试 / workflow cron 都用） |
+| `python -m src.queue skip BV --reason X` | 跳过某个 BV（标记 failed） |
+| `python -m src.queue remove BV` | 删除条目（仅 pending/scheduled/failed） |
+| `python -m src.queue show BV` | 显示详情（JSON） |
+
+详见 [architecture/BILIBILI_AUTOMATION.md](../docs/architecture/BILIBILI_AUTOMATION.md)。
 
 ### dev/ · 采集与验证
 

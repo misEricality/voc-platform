@@ -1,0 +1,87 @@
+name: B站每日采集队列
+
+# 设计：工程师手输 BV 号到 bilibili_queue 表（status=scheduled），
+# 每天 UTC 00:30（北京 08:30）扫描 due_date <= today 的视频，调 pipeline 采集。
+#
+# 与 daily-collect.yml 的关系：
+# - daily-collect.yml：Steam daily（UTC 00:00 北京 08:00），每天扫 6 款 Steam 单机
+# - bilibili-daily.yml：B站 daily（UTC 00:30 北京 08:30），扫今天到期的 B 站视频
+# - 错开 30 分钟避免同时调用 GitHub API 限流
+#
+# 详细设计：docs/architecture/BILIBILI_AUTOMATION.md（待补）
+
+on:
+  schedule:
+    # 每天 UTC 00:30（北京时间 08:30）—— 比 Steam daily 晚 30 分钟
+    - cron: '30 0 * * *'
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  bili-due:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+
+      - name: 下载前一天 DB（保持与 Steam daily 一致）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download voc-daily-bootstrap -O data/voc.db || echo "bootstrap 不存在，以本地空库起步"
+
+      - name: 触发今天到期的 B 站采集
+        env:
+          STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          BILIBILI_SESSDATA: ${{ secrets.BILIBILI_SESSDATA }}
+          ANALYZER_PROVIDER: deepseek
+          VOC_SKIP_EMBEDDING: "1"  # CI 无 ML 环境
+        run: |
+          python -m src.queue run-due --limit 50
+
+      - name: 写步骤摘要
+        if: always()
+        run: |
+          python -m src.queue list --status pending > $GITHUB_STEP_SUMMARY 2>&1 || true
+          python -m src.queue due >> $GITHUB_STEP_SUMMARY 2>&1 || true
+
+      - name: 上传 DB 为 workflow artifact（30 天窗口）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voc-db-bili-${{ github.run_number }}
+          path: data/voc.db
+          retention-days: 30
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装核心依赖
+        run: |
+          pip install -r requirements-core.txt
+
+      - name: 跑 pytest（覆盖 B 站队列）
+        run: |
+          python -m pytest tests/ -v

@@ -239,6 +239,68 @@ class Danmaku(Base):
         }
 
 
+class BilibiliQueue(Base):
+    """B 站采集队列（2026-08-23 · B 站自动化「待采清单」）
+
+    设计：
+    - 工程师手输 BV 号到「待采清单」（status=pending，pubdate 未识别）
+    - 系统识别投稿时间后填入 pubdate 与 due_date（pubdate + 7 天）
+    - 每天 cron 扫 status='scheduled' AND due_date <= today 的视频，调 pipeline
+    - 采成功标 fetched；失败重试 N 次仍败入 dead-letter
+
+    状态机：
+        pending    → 待识别 pubdate（刚加入）
+        scheduled  → pubdate 已识别，due_date 已计算（等待 cron）
+        fetching   → 今日 cron 已取，正在采
+        fetched    → 成功
+        failed     → 失败重试耗尽（dead-letter）
+
+    注意：status='due' 不存（=scheduled AND due_date <= today，查询时计算）
+    """
+
+    __tablename__ = "bilibili_queue"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    bv_id = Column(String(20), nullable=False, unique=True, index=True)
+    title = Column(String(512))  # 视频标题（识别后填入）
+    pubdate = Column(DateTime)  # 投稿时间（识别后填入）
+    due_date = Column(DateTime, index=True)  # = pubdate + 7d，cron 用此判断
+    status = Column(String(16), nullable=False, default="pending")
+    # status in: pending / scheduled / fetching / fetched / failed
+    added_at = Column(DateTime, default=_utcnow, nullable=False)
+    added_by = Column(String(32), default="manual")  # 留扩展：CLI / keyword:xxx / up:xxx
+    fetched_at = Column(DateTime)  # 采集完成时间
+    comment_count = Column(Integer)  # 采到的评论数（fetched 后填）
+    danmaku_count = Column(Integer)  # 采到的弹幕数
+    fail_count = Column(Integer, default=0, nullable=False)
+    fail_reason = Column(Text)  # 最后一次失败原因
+    revisit = Column(Boolean, default=False, nullable=False)  # high-value 重采标记
+    note = Column(Text)  # 工程师备注
+
+    __table_args__ = (
+        Index("ix_biliq_status_due", "status", "due_date"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "bv_id": self.bv_id,
+            "title": self.title,
+            "pubdate": self.pubdate.isoformat() if self.pubdate else None,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
+            "status": self.status,
+            "added_at": self.added_at.isoformat() if self.added_at else None,
+            "added_by": self.added_by,
+            "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
+            "comment_count": self.comment_count,
+            "danmaku_count": self.danmaku_count,
+            "fail_count": self.fail_count,
+            "fail_reason": self.fail_reason,
+            "revisit": self.revisit,
+            "note": self.note,
+        }
+
+
 def init_db(db_url: str | None = None) -> tuple:
     """初始化数据库
 

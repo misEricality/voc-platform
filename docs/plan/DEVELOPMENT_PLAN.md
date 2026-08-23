@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-08-23（P6 运行态收口：bootstrap release 已建 + 9 commit 已推送 + CI test job 上线；§四/§五/§六/§八 同步反转；最后一行加 `[OUT-OF-SCOPE]` 行写明明天 cron 验证由用户执行）
+> **最后更新**：2026-08-23（P6 运行态收口 + B 站自动化阶段 0 落地：`bilibili_queue` 表 + `python -m src.queue` CLI + `bilibili-daily.yml` workflow + `tests/test_bilibili_queue.py` 6 例；§四 P5 状态升级 🥉 → ✅；§五 主线加第 7 项 B 站自动化）
 
 ---
 
@@ -228,7 +228,7 @@
 
 ---
 
-### 🥉 P5 · B 站视频评论接入（采集器已完成 2026-08-13，跨平台仪表盘待做）
+### ✅ P5 · B 站视频评论接入（采集器 2026-08-13；自动化阶段 0 落地 2026-08-23）
 
 **为什么**：调研报告首推的扩展数据源。
 
@@ -239,12 +239,23 @@
 **✅ 采集策略已定稿（2026-08-13）**：接口实测（probe_bilibili.py，view/reply/dm/tag 均 code=0）、数据模型映射（comments/danmaku/targets）、采样策略（7 天稳态快照 / 阈值 T=2,000 全量或 K=1,000 抽样 / 弹幕时间轴分片 ≤3,000 / 默认单次采集）已全部写入规格文档：
 > 📄 [architecture/BILIBILI_COLLECTION.md](../architecture/BILIBILI_COLLECTION.md)（开发窗口按此执行，含字段级映射与验收标准）
 
+**✅ 自动化阶段 0 落地（2026-08-23）**：工程师手输 BV 号到 `bilibili_queue` 表 → 系统识别投稿时间 + 计算第 7 天 → 每日 cron 扫今天到期的视频触发采集。
+> 📄 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)（含状态机 / CLI / cron 行为 / 失败重试 / 未来可视化扩展）
+
 **交付物**：
 - 接入 B 站公开 Web 接口（非开放平台，免申请；风控参数见规格文档第二节）
 - 新增 `src/collectors/bilibili.py`（基于 probe_bilibili.py 骨架 + 阈值分支 + 弹幕分片）
 - 跨平台仪表盘，能在同一个图里看"Steam 评测 vs B 站弹幕" 的情感差异
+- `src/queue/{cli,runner,__main__}.py` B 站采集队列 CLI（add / list / due / run-due / skip / remove / show）
+- `.github/workflows/bilibili-daily.yml` 每日 cron（UTC 00:30 北京 08:30，错开 Steam daily 30 分钟）
+- `tests/test_bilibili_queue.py` 6 例回归测试（表 / 状态机 / 查询 / 约束 / 序列化）
 
 **风险点**：风控参数演进（WBI/bili_ticket 盐值会更新）；超热门视频需登录 cookie；频率必须克制（规格文档 4.5 节）。
+
+**未来扩展**（v2）：
+- 关键词 / UP 主白名单自动入候选池（spec 已留 hook）
+- 前端可视化（「系统管理」界面读 `bilibili_queue` 表）
+- high-value 重采标记（`revisit` 字段已预留）
 
 ---
 
@@ -326,6 +337,7 @@
 4. **P8 时间序列趋势图**：P6 已收口（2026-08-23），前置已解锁；明天 cron 后即可在仪表盘加折线图
 5. **CS2（appid 730）补采复查**：08-16 补采时 CS2 0 新增（仍 459 条 / 最新 08-04），需单独查一次采集链路
 6. **P9 阶段 2 L3.5 微话题聚类**：`l35_cluster.py` 骨架已就绪；P6 解锁时序后，对新评论可周期性下钻
+7. **🆕 B 站自动化（阶段 0）**：2026-08-23 落地 — `bilibili_queue` 表 + CLI（`python -m src.queue ...`）+ workflow `bilibili-daily.yml`；工程师手输 BV 号入清单，系统识别投稿时间后自动计算第 7 天，每日 cron 触发采集；详见 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)
 
 ### 🚦 中期主线（P8 + L3.5 + PEDM）
 
