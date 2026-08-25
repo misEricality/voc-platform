@@ -49,35 +49,35 @@ targets:
     id: "2358720"
     name: 黑神话：悟空
     language: schinese
-    count: 100  # 暂用100 避免超 30 min timeout（count=null 真目标，参见 .workbuddy/memory/2026-08-24.md）
+    count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
   - platform: steam
     id: "292030"
     name: 巫师 3：狂猎
     language: schinese
-    count: 100  # 暂用100 避免超 30 min timeout（count=null 真目标，参见 .workbuddy/memory/2026-08-24.md）
+    count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
   - platform: steam
     id: "289070"
     name: 文明 6
     language: schinese
-    count: 100  # 暂用100 避免超 30 min timeout（count=null 真目标，参见 .workbuddy/memory/2026-08-24.md）
+    count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
   - platform: steam
     id: "1222140"
     name: 底特律：化身为人
     language: schinese
-    count: 100  # 暂用100 避免超 30 min timeout（count=null 真目标，参见 .workbuddy/memory/2026-08-24.md）
+    count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
   - platform: steam
     id: "1903340"
     name: 光与影：33 号远征队
     language: schinese
-    count: 100  # 暂用100 避免超 30 min timeout（count=null 真目标，参见 .workbuddy/memory/2026-08-24.md）
+    count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
   - platform: steam
     id: "753640"
     name: 星际拓荒
     language: schinese
-    count: 100  # 暂用100 避免超 30 min timeout（count=null 真目标，参见 .workbuddy/memory/2026-08-24.md）
+    count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
