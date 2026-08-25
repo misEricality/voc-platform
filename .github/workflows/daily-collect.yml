@@ -60,7 +60,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           ANALYZER_PROVIDER: qwen
-          QWEN_MODEL: qwen3-flash
+          QWEN_MODEL: qwen3.6-flash
           # 默认 GITHUB_TOKEN 即可；gh CLI 自动使用 Actions token
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 抑制向量化（CI 无 ML 环境；embedder 自动降级跳过）
