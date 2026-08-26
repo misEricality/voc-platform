@@ -16,7 +16,8 @@ docs/
 │   ├── DATA_FIELDS.md              字段四级分类（A/B/C/D 前缀约定，D=本地模型派生向量）
 │   ├── DATA_STORAGE_DESIGN.md      数据分层架构 + 表设计（设计稿，含目标迁移路径）
 │   ├── BILIBILI_COLLECTION.md      B 站采集规格（接口/数据映射/采样策略，开发交接文档）
-│   └── BILIBILI_AUTOMATION.md      B 站自动化采集设计（待采清单 + cron + CLI；2026-08-23 落地）
+│   ├── BILIBILI_AUTOMATION.md      B 站自动化采集设计（待采清单 + cron + CLI；2026-08-23 落地）
+│   └── SELF_HOSTED_VPS_DEPLOYMENT.md 形态 A 部署指南（公网可访问 / 数据全私有；Oracle Always Free + Caddy + Streamlit）
 ├── plan/                   🗺️ 计划与里程碑
 │   ├── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
 │   ├── P3_COMPARE_DESIGN.md    P3 多目标对比设计（数据/口径/图表选型/技术实现）
@@ -44,6 +45,7 @@ docs/
 | **Steam API 能拿到哪些字段** | [STEAM_API_FIELDS.md](./STEAM_API_FIELDS.md) |
 | **B 站采集怎么设计（接口/采样/落库）** | [architecture/BILIBILI_COLLECTION.md](./architecture/BILIBILI_COLLECTION.md) |
 | **B 站自动化怎么跑（待采清单 + cron + CLI）** | [architecture/BILIBILI_AUTOMATION.md](./architecture/BILIBILI_AUTOMATION.md) |
+| **怎么把仪表盘部署到公网，同时不让外人拿到数据** | [architecture/SELF_HOSTED_VPS_DEPLOYMENT.md](./architecture/SELF_HOSTED_VPS_DEPLOYMENT.md) |
 | **数据库有哪些字段、怎么命名的** | [architecture/DATA_FIELDS.md](./architecture/DATA_FIELDS.md) |
 | **数据是怎么分层流转的、表怎么设计** | [architecture/DATA_STORAGE_DESIGN.md](./architecture/DATA_STORAGE_DESIGN.md) |
 | **为什么选这个数据源、不选别的** | [research/VoC平台竞品调研报告.md](./research/VoC平台竞品调研报告.md) |

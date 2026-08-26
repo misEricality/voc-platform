@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-08-24（新增 `ops/sync_local_from_release.py` + `ops/sync_local_from_artifact.py`；`sync_local_from_artifact.py` 是当前 release upload bug 期间的兜底路径）
+> **最后更新**：2026-08-25（新增 `ops/dual_annotate_qwen_flash.py`：DEEPSEEK vs QWEN-flash 双标注对比工具，2 阶段 backup/compare）
 
 ---
 
@@ -37,6 +37,7 @@ scripts/
     ├── daily_incremental_collect.py    ✅ P6 每日增量采集编排入口（GitHub Actions 调用）
     ├── sync_local_from_release.py      ✅ 本地从 GH Release asset 拉 DB 对齐（release 路径，2026-08-24）
     ├── sync_local_from_artifact.py     ✅ 本地从 GH Actions artifact 拉 DB 对齐（artifact 兜底，2026-08-24；当前 release upload bug 期间实际可用路径）
+    ├── dual_annotate_qwen_flash.py     ✅ DEEPSEEK vs QWEN-flash 双标注对比（backup + compare 两阶段，2026-08-25）
     └── archive_online_games.py         ✅ 一次性：4 款 Steam 网游数据归档 + 主库清理（2026-08-23）
 ```
 
