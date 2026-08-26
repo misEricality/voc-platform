@@ -183,9 +183,11 @@ def gh_release_upload(tag: str, db_path: Path, *, force: bool = True) -> bool:
         capture_output=True, text=True,
     )
     flags = ["--clobber"] if force else []
+    # 不要传 --name：gh CLI 新版不再支持，basename 已与 DB_ASSET_NAME 一致（voc.db）
+    # 旧版本会传 ["--name", DB_ASSET_NAME]，触发 "unknown flag: --name" 导致 upload 失败
+    # 但 daily 仍标 success（脚本只记 warning）→ release assets=[] 累积载体失效
     r = subprocess.run(
-        ["gh", "release", "upload", tag, str(db_path), "--name", DB_ASSET_NAME]
-        + flags,
+        ["gh", "release", "upload", tag, str(db_path)] + flags,
         capture_output=True, text=True,
     )
     if r.returncode == 0:
