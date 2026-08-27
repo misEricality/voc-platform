@@ -44,6 +44,7 @@ Thumbs.db
 data/exports/
 # B 站原型 build 临时导出（build_bilibili_video.py 重新生成，不入库）
 data/_bili_video.json
+data/_bili_videos.json
 # 标注验证中间产物（运行时生成，不入库）
 data/validation/
 

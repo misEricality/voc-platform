@@ -19,24 +19,25 @@
 
 > 📌 **项目定位**：学习大模型API集成、NLP应用、数据可视化全链路；非商业产品。
 
-## 🎯 当前进度（v0.4 完成，v0.5 进行中）
+## 🎯 当前进度（v0.7 完成，v1.0 作品化进行中）
 
 | 模块 | 状态 | 备注 |
 |------|------|------|
-| Steam 评测采集 | ✅ | 官方API + 翻页去重 + 验证页防漏采 |
-| **B站采集** | ✅ | 公开 Web 接口（免申请），7 天稳态快照 + 弹幕分片，已实测落库 |
+| Steam 评测采集 | ✅ | 官方API + 翻页去重 + 验证页防漏采（主库聚焦 6 款单机；4 款网游 2026-08-23 归档） |
+| **B站采集** | ✅ | 公开 Web 接口（免申请），7 天稳态快照 + 弹幕分片；3 视频 3030 评论已实测落库 |
 | SQLite 存储 | ✅ | SQLAlchemy 2.x，冷启动 NULL + 7 天回采机制 |
-| LLM 情感分析 | ✅ | 支持 DeepSeek/Qwen/GLM 切换 |
+| LLM 情感分析 | ✅ | DEEPSEEK 生产标注器（QWEN-flash 个人 token-plan 模型名 404，2026-08-25 回退） |
 | **L1-L3 三级标签标注** | ✅ | 方案4：观点短语 → 程序匹配（GDT v3.1.1，L1 10 / L2 28 / L3 111） |
 | **语义向量化** | ✅ | 本地 bge-small-zh（P2.5，零 API 成本，语义检索/聚类基建） |
 | 本地BERT情感分析 | ✅ | 零成本备选 |
 | **分析结果溯源** | ✅ | `comments.analyzer_version` 字段（`provider:model@prompt_hash8`），换模型/换 prompt 立刻可按 version 分组 |
 | 高保真原型 v3 | ✅ | 数据看板 + 原声列表 + 游戏对比卡片页（单文件自包含：内嵌子集字体 + logo） |
-| Streamlit Dashboard | ✅ | 单目标看板（6 图）+ 多目标对比视图（散点/堆叠/热力图/痛点/下钻） |
+| Streamlit Dashboard | ✅ | 单目标看板（6 图）+ 多目标对比视图（散点/堆叠/热力图/痛点/下钻）+ 📋 明细核查视图（多维筛选 + CSV 导出）|
+| B 站单视频看板 | ✅ | v0.3 接 DB SPA（3 视频切换 + 4 区块：视频概览 / 评论情感与画像 / 主题情感分析 + 下钻 / 弹幕时间轴） |
 | 微博采集 | 🚧 | 下一阶段 |
-| 自动化流水线 | 🚧 | workflow 已在远端；定时任务数据持久化方案待设计（当前每日全新库，不累积） |
+| 自动化流水线 | ✅ | P6 已落地：workflow cron + GH Release 累积 DB + CI pytest 护栏（test job）；P6 silent 失败防御上线（verify_release_upload.py）|
 
-> 📊 **当前数据**（2026-08-21）：**11332 条**评论（Steam 10 款游戏 + B站 1006，已分析 9242 + P6 增量 2090），观点级标注 15298 条，语义向量 9309 条（单模型 `bge-small-zh-v1.5`，已全量回填）。GDT v3.1.1 词典已扩充、兜底占比 topic 67.6% / opinion 67.4%，P3 多目标对比已上线，P6 自动化流水线每日增量入库（30 天回看），P10 analyzer_version 字段已加（老数据 NULL = 未溯源，新数据自动写入）。
+> 📊 **当前数据**（2026-08-27 sync 后，pending qwen-flash 261 条 bogus 清理）：**14,478 条**评论（Steam 6 款单机 + 归档 4 款 + B 站 3 视频），观点级标注约 11,500 条，语义向量约 6,400 条（单模型 `bge-small-zh-v1.5`，已全量回填）。GDT v3.1.1 词典已扩充、兜底占比 topic 67.6% / opinion 67.4%，P3 多目标对比已上线，P6 自动化流水线每日增量入库（30 天回看 + bootstrap 累积），P10 analyzer_version 字段已加（老数据 NULL = 未溯源，新数据自动写入）。
 
 ## 🏷️ L1-L3 三级标签标注管线（方案4）
 
@@ -118,7 +119,7 @@ voc-platform/
 │   └── topics/                         三级标签体系 + L3 定义词典
 │
 ├── data/                            # 【运行时数据】（gitignore，不入库）
-│   ├── voc.db                            SQLite 单库（11332 条评论，9242 已分析；P6 自动增量中）
+│   ├── voc.db                            SQLite 单库（2026-08-27 sync：14,478 条评论，已分析 ~12,170；P6 自动增量中）
 │   └── exports/                          导出产物（xlsx / csv / json）
 │
 ├── docs/                            # 【研发文档】（技术视角）
@@ -140,9 +141,9 @@ voc-platform/
 │   ├── smoke_test.py                    冒烟测试
 │   ├── dev/                             开发期一次性脚本（采集/标注/巡检/E2E）
 │   ├── analysis/                        分析脚本（ad-hoc 探索，占位）
-│   └── ops/                             refresh_likes 回采 / backfill_embeddings 向量回填 / daily_incremental_collect P6 自动化入口
+│   └── ops/                             refresh_likes 回采 / backfill_embeddings 向量回填 / daily_incremental_collect P6 自动化入口 / verify_release_upload P6 silent 失败防御 / reset_qwen_flash_bogus P11 QWEN-flash 假数据清理
 │
-└── tests/                           # 【测试】pytest 25 例（黄金集回归 + CI 自动化 + analyzer_version 等；bge 用例在无 ML 环境时跳过）
+└── tests/                           # 【测试】pytest 38 例（黄金集回归 + bilibili_queue + analyzer_version + daily_incremental_collect + verify_release_upload；bge 用例在无 ML 环境时跳过）
 ```
 
 > 📌 **目录设计原则**：研发与产品文档分离 / 代码与配置分离 / 脚本分阶段 / 数据运行时不入库（gitignore）。  
@@ -195,8 +196,10 @@ voc-platform/
 - [x] **v0.2** - 采集生命周期管理（7 天回采）+ 6 款游戏批量采集 + L1-L3 标注管线（方案4）
 - [x] **v0.3** - 语义向量化基础层（P2.5）+ 主题分类精细（L1-L3 三级标签）
 - [x] **v0.4** - 词云 + 仪表盘洞察力增强 + 多目标横向对比（P3 已上线）
-- [ ] **v0.5** - 自动化流水线（CI 远端就绪）+ 微博接入（B站已先行落地）
-- [ ] **v1.0** - 完整文档 + 技术博客 + 求职作品集发布
+- [x] **v0.5** - B 站采集 + 多平台扩展（采集器 + 看板 v0.3）
+- [x] **v0.6** - 自动化流水线 P6（GH Actions cron + GH Release 累积 DB）
+- [x] **v0.7** - 分析结果溯源 P10（analyzer_version 字段）+ CI pytest 护栏 + P11 QWEN-flash bogus 清理工具
+- [ ] **v1.0** - P8 时间序列趋势图（解锁前置已就绪） + 完整文档 + 技术博客 + 求职作品集发布
 
 ## 📄 License
 

@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-08-23（P6 运行态收口 + B 站自动化阶段 0 落地：`bilibili_queue` 表 + `python -m src.queue` CLI + `bilibili-daily.yml` workflow + `tests/test_bilibili_queue.py` 6 例；§四 P5 状态升级 🥉 → ✅；§五 主线加第 7 项 B 站自动化）
+> **最后更新**：2026-08-27（neat-freak 收口：数据快照刷新到 8/27 实测；§五 主线追加 P6 silent 失败防御现状；§六 阻塞状态更新；§七 复盘加 QWEN-flash 误用教训；§八 里程碑 v0.7 已收口；commit `b77cdbf` 落地）
 
 ---
 
@@ -120,25 +120,25 @@
 
 ---
 
-## 📊 三、当前数据快照（2026-08-23）
+## 📊 三、当前数据快照（2026-08-27 sync 后）
 
 | 指标 | 数值 | 业务解读 |
 |---|---|---|
-| 总评论数 | **6,417 条** | Steam 6 款单机 4,007（补采至 08-16）+ B站 4 个视频 2,030 + 380 B站弹幕（5,400 条弹幕已落库）|
-| Steam 主库覆盖 | **6 款单机** | 黑神话/巫师3/文明6/底特律/33号远征队/星际拓荒（每款 ~140-1500 条）|
-| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-08-23.db`** | PUBG 2571 / Apex 1452 / Dota 433 / CS2 459（2026-08-23 从主库归档，理由：网游反馈多短期行为与单机题面不匹配）|
-| Steam 早期占位 | `steam:999`（1 条 posted_at=NULL）| 已随归档一并移除 |
-| 情感分析覆盖 | **~99%（待精核）** | analyzer_version 溯源已上线；老数据列已加好，值 = NULL = 未溯源 |
-| 观点级标注 | 11,538 条 | `comment_opinions` 表（程序匹配到的观点短语；归档后从 18,627 → 11,538，差 7,089 即 4 款网游的） |
-| 语义向量覆盖 | **6,418 条（全量，单模型）** | `comment_embeddings` 表（bge-small-zh-v1.5，已全量回填） |
-| 已支持游戏/视频 | **6 款单机 Steam + 4 个 B站视频** | Steam 主库 6 款 + B站 4 条；网游 4 款去归档 |
-| 数据截至 | Steam 2026-08-16 / B站 2026-08-20 | Steam 最新评论 08-16 23:58；B站 08-20 14:54（手动补采，不在 daily cron 范围） |
-| 兜底占比 | topic 67.6% / opinion 67.4% | GDT v3.1.1 全量重打 + 重匹配 + 下沉后（基线 68.6% / 71.0%；归档后口径会变，待精核） |
-| 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111；旧标签已清零） |
-| 部署方式 | 本地 Streamlit | 含「单目标看板 / 多目标对比」双视图 |
-| 平台覆盖 | **Steam（单机 6 款）+ B站（4 个视频）+ Steam（网游 4 款，归档）** | 微博为下一主扩展点 |
-| 数据存储 | SQLite 单文件（data/voc.db，**45.7 MB**）| 增量 7 天后回采机制；远端累计 DB 已生效（见 P6 现状） |
-| 远端 GitHub 状态 | 已同步 `4f71ea1`（ahead 0，behind 0） | 10 commit 2026-08-23 通过 Git DB API 推送；`voc-daily-bootstrap` release 已建立 |
+| 总评论数 | **14,478 条** | Steam 11,448（含归档 4 款：PUBG 2571 + Apex 1452 + Dota 433 + CS2 459）+ 单机 6 款 8,977 + B 站 3 视频 3,030 |
+| Steam 主库覆盖 | **6 款单机** | 黑神话（3,179）/ 巫师3（976）/ 文明6（595）/ 底特律（1,155）/ 33号远征队（378）/ 星际拓荒（249） |
+| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-08-23.db`** | PUBG 2571 / Apex 1452 / Dota 433 / CS2 459；8/23 从主库归档；本次 sync 后 release 资产仍含此 4 款（bootstrap+累计）；监控目标已 exclude |
+| B 站支持 | **3 个视频 / 3,030 评论 + 5,400 弹幕** | `bilibili:video:{aid}` 形态 target；从主库 ad-hoc 采集（非每日 cron），3 个视频均 1000 条级别 |
+| 情感分析覆盖 | **~83% 已分析（待精核）** | analyzer_version 溯源已上线；新数据全部 `llm:deepseek-v4-flash@...`；P11 待清 261 条 qwen-flash bogus |
+| 观点级标注 | ~11,500 条 | `comment_opinions` 表（程序匹配观点短语；归档后基线未重数，待精核） |
+| 语义向量 | ~6,400 条 | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
+| 已支持游戏/视频 | **6 单机 Steam + 4 归档网游 + 3 B 站视频** | 主库聚焦 6 单机 + 3 B 站；4 网游可单独查归档 |
+| 数据截至 | Steam 2026-08-27 / B站 2026-08-20 | Steam 最新评论 08-27（今天 cron 增量 873 条）；B站 08-20（手动 ad-hoc） |
+| 兜底占比 | topic 67.6% / opinion 67.4% | GDT v3.1.1 全量重打 + 重匹配 + 下沉（8/19 锁定）；同前 |
+| 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111） |
+| 部署方式 | 本地 Streamlit + P6 GH Actions | 含「单目标看板 / 多目标对比 / 明细核查」三视图 + 「B 站单视频看板」原型（独立 HTML 作品集） |
+| 平台覆盖 | **Steam（单机 6 + 归档 4）+ B站（3 视频）+ Steam 网游（4，归档）** | 微博为下一主扩展 |
+| 数据存储 | SQLite 单文件（`data/voc.db`，**92.9 MB / 2026-08-27 sync 后**）| 增量 + 7 天回采；远端累计 DB 已生效，**P6 silent 失败防御上线**（`verify_release_upload.py` 2026-08-27）|
+| 远端 GitHub 状态 | 远端 `4f71ea1` / 本地 ahead by 1（`b77cdbf`） | 远端含 `voc-daily-bootstrap` + 后续 releases（含 2026-08-27 92.9 MB）；workflow cron 已改 `0 17 * * *` UTC（防延迟），workflow push 待用户 web commit |
 
 ---
 
@@ -339,11 +339,13 @@
 6. **P9 阶段 2 L3.5 微话题聚类**：`l35_cluster.py` 骨架已就绪；P6 解锁时序后，对新评论可周期性下钻
 7. **🆕 B 站自动化（阶段 0）**：2026-08-23 落地 — `bilibili_queue` 表 + CLI（`python -m src.queue ...`）+ workflow `bilibili-daily.yml`；工程师手输 BV 号入清单，系统识别投稿时间后自动计算第 7 天，每日 cron 触发采集；详见 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)
 
-### 🚦 中期主线（P8 + L3.5 + PEDM）
+### 🚦 中期主线（P8 + L3.5 + PEDM + P11 清理 + workflow push）
 
-1. P8 时间序列趋势图（依赖持久化落地）
-2. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
-3. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
+1. P8 时间序列趋势图（**前置已就绪**：bootstrap + 14K 累计）
+2. **🆕 P11 qwen-flash bogus 清理**（`scripts/ops/reset_qwen_flash_bogus.py --commit`）：明早 cron 跑稳后清；预期 261 行重打
+3. **🆕 workflow `0 17 * * *` cron change + verify step push**（待用户网页 commit `workflows:write` scope；本机 PAT 不能直接推 `.github/`）
+4. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
+5. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
 
 ### 🌅 长期作品化（v1.0）
 
@@ -393,6 +395,10 @@
     - （2026-08-15 评审注：day_range 的生效条件实际从未受控验证，且项目内两处历史记载相互矛盾；"不依赖 Steam 时间窗、恒传 0 + 应用层过滤"的结论仍然成立，详见 `src/collectors/steam.py` 注释）
 - ⚠️ **Steam API 翻页 bug**：跨页时偶尔返回已见过的 `recommendationid`，必须用 `seen_source_ids` 去重
 - ⚠️ **冷启动 likes=0 误导**：评论刚发布时点赞数=0，与"无人认可"语义不同，必须用 `NULL=未回采` 区分
+
+### v0.7 踩坑（已沉淀到 MEMORY.md）
+- ⚠️ **QWEN-flash 个人 token-plan 模型名 ≠ 阿里通用文档**：8/24-25 试 `qwen3.7-flash` / `qwen3-flash` / `qwen3.6-flash` 全部 API 404；2542 条 bogus 数据污染 DB，P11 cleanup 工具就位
+- ⚠️ **GH Actions `on: schedule` 没 SLA**：8/22-25 + 8/27 三次 release assets=[]（silent 失败），UI 仍显示 success；防御：`scripts/ops/verify_release_upload.py` + workflow step `if: always()`
 
 ### Vibe Coding 经验
 - ✅ **从「最快见到反馈」开始**：先跑通 Steam 一个游戏 50 条，比一开始就堆多平台更关键
@@ -445,4 +451,4 @@
 
 > 💡 **记住**：本项目核心价值 = 边学边做 + 能看到玩家真实声音。**不要为了完整功能而忘了这个核心价值**。
 >
-> 🎯 **当前最关键的一步**：P6 自动化流水线已于 2026-08-23 完整收口（bootstrap release + 9 commit 推送 + CI test job 上线），下一步主线 = **P8 时间序列趋势图**（前置已解锁，明天 cron 后即可用）+ P9 阶段 2 L3.5 微话题聚类 + P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）。
+> 🎯 **当前最关键的一步**（2026-08-27 update）：P6 silent 失败防御已上线（`scripts/ops/verify_release_upload.py` + workflow cron `0 17 * * *` UTC + verify step，`b77cdbf` 入本地仓 + workflow 待 `workflows:write` 推远端）；下一步主线 = **workflow push 远端**（解锁新 cron 防延迟 + 失败告警链路）+ **P11 qwen-flash bogus 清 261 条**（`reset_qwen_flash_bogus.py --commit`）+ P8 时间序列趋势图（前置已解锁，每天 run 后即可用）+ P9 阶段 2 L3.5 微话题聚类 + P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）。

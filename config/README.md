@@ -2,7 +2,7 @@
 
 > **业务知识与代码解耦** — 改业务配置不必动 Python 代码，不必重启服务。
 >
-> **最后更新**：2026-08-19
+> **最后更新**：2026-08-27
 
 ---
 
@@ -19,7 +19,7 @@ config/
 │   ├── gaming.yaml                     GDT v3.1.1：L1 10 / L2 28 / L3 111 三级标签树
 │   └── l3_definitions.yaml             111 个 L3 定义 + 关键词（程序匹配词典）
 └── monitoring/                     ⏰ 自动化采集监控目标（P6）
-    └── targets.yaml                    每日定时采集的目标清单（6 款 Steam 单机游戏）
+    └── targets.yaml                    每日定时采集的目标清单（6 款 Steam 单机游戏，2026-08-25 起 count: null auto 模式）
 ```
 
 ---
@@ -84,6 +84,9 @@ config/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-08-27 | P6 `targets.yaml`：cron 时间带改 `0 17 * * *` UTC（详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3`）；配置内容不变，仅 docs/scripts 同步 README + 排除说明 | 配合 P6 silent 失败防御（verify_release_upload.py + cron 防延迟） |
+| 2026-08-25 | `monitoring/targets.yaml`：count `30 → 100` → `null`（终极 auto 模式）；同步配 workflow timeout `30→60min`（用户网页 commit `a73ca33`） | P6 production bug 收口：避免单次 max_count 限制漏采 |
+| 2026-08-23 | `monitoring/targets.yaml` 新增 `excluded_targets` 段，列出 4 款已归档 Steam 网游（PUBG/Apex/Dota2/CS2），主库不再覆盖这 4 款 | 主库聚焦 6 款单机；归档数据可单独查询 |
 | 2026-08-21 | P10 · analyzer_version 溯源落地（`comments.analyzer_version` 字段 + `compute_prompt_set_hash` + `analyzer.analyzer_version` 属性）；prompt 文件改动自动联动 hash → 存量可按 version 分组重打或比对 | 🟡 分析结果无版本溯源（DEVELOPMENT_PLAN §六）|
 | 2026-08-19 | 词典扩充 30 词（战斗/动作/文化/反作弊/EA/微交易等），`topics/l3_definitions.yaml` 增补关键词；同步更新 `README` 版本记录 | 阶段 1 兜底治理：救回「总体体验评价」兜底里漏网的具体话题短语，观点级兜底 → 67.4% |
 | 2026-08-19 | 新建 `monitoring/targets.yaml`：6 款 Steam 单机游戏首批监控清单（每款 30 条/天） | P6 自动化流水线目标驱动：B 站为「发布满 7 天稳态快照」不属于每日采集，本批次不含 |
