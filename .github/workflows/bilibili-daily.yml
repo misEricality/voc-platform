@@ -1,19 +1,20 @@
 name: B站每日采集队列
 
 # 设计：工程师手输 BV 号到 bilibili_queue 表（status=scheduled），
-# 每天 UTC 00:30（北京 08:30）扫描 due_date <= today 的视频，调 pipeline 采集。
+# 每天 UTC 17:30（北京凌晨 1:30）扫描 due_date <= today 的视频，调 pipeline 采集。
 #
 # 与 daily-collect.yml 的关系：
-# - daily-collect.yml：Steam daily（UTC 00:00 北京 08:00），每天扫 6 款 Steam 单机
-# - bilibili-daily.yml：B站 daily（UTC 00:30 北京 08:30），扫今天到期的 B 站视频
+# - daily-collect.yml：Steam daily（UTC 17:00 北京凌晨 1:00），每天扫 6 款 Steam 单机
+# - bilibili-daily.yml：B站 daily（UTC 17:30 北京凌晨 1:30），扫今天到期的 B 站视频
 # - 错开 30 分钟避免同时调用 GitHub API 限流
 #
-# 详细设计：docs/architecture/BILIBILI_AUTOMATION.md（待补）
+# 详细设计：docs/architecture/BILIBILI_AUTOMATION.md
 
 on:
   schedule:
-    # 每天 UTC 00:30（北京时间 08:30）—— 比 Steam daily 晚 30 分钟
-    - cron: '30 0 * * *'
+    # 每天 UTC 17:30（北京时间 凌晨1:30）—— 比 Steam daily 晚 30 分钟
+    # 配 UTC 17 系时区的原因：即使 GH Actions schedule 延迟 8 小时也只在早上 9:30 北京触发
+    - cron: '30 17 * * *'
   workflow_dispatch:  # 支持手动触发
 
 jobs:
