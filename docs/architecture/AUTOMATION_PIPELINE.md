@@ -8,8 +8,8 @@
 > - 存储层：[DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
 > - P6 决策与风险历史：本文档 §8（2026-08-22 从 `plan/P6_AUTOMATION_PIPELINE.md` 合并，原文件已删）
 >
-> **最后更新**：2026-08-22
-> **状态**：✅ 已落地（2026-08-19）；2026-08-22 洁癖收口：合并 `plan/P6_AUTOMATION_PIPELINE.md` 决策与风险历史 → §8（详见版本记录）
+> **最后更新**：2026-08-27
+> **状态**：✅ 已落地（2026-08-19）；2026-08-22 洁癖收口：合并 `plan/P6_AUTOMATION_PIPELINE.md` 决策与风险历史 → §8；2026-08-27 §8.3 A1 升级：silent 失败实战案例 + verify_release_upload.py 防御上线（详见版本记录）
 
 ---
 
@@ -196,7 +196,7 @@ D1 候选详细对比（plan §2.1 原表，已与 §2.1 合并确认）：
 | 现有本地 `data/voc.db` 与首次 workflow 跑出来的 DB 数据集差异 | 🟢 | **首次跑前**本地备份现有库为 `voc.db.bootstrap.bak` 并手动创建「基线 release」`voc-daily-bootstrap`，workflow 从第二跑开始自动接续 |
 | CS2 (730) 补采 0 新增 | 🟡 | P6 落地后此问题可单独排查（见 DEVELOPMENT_PLAN §六 CS2 行） |
 
-### 8.3 A1 已知问题（2026-08-22 洁癖收口新增）
+### 8.3 A1 已知问题（2026-08-22 洁癖收口新增，2026-08-27 升级）
 
 > ⚠️ **P6 落地后实际运行发现**：GH Release 每日创建成功但 `assets: []`（voc.db 未上传）——「累积 DB」核心目标实际未生效。
 
@@ -207,13 +207,19 @@ D1 候选详细对比（plan §2.1 原表，已与 §2.1 合并确认）：
 3. 紧接着的 `gh release upload` 在 release 处于「刚被 publish 的瞬态」时失败
 4. 脚本仅打 warning，workflow 仍标 success → 远端 artifact 正常上传但 release asset 为空
 
-**修复方向**（评审中）：
+**沉默失败真实案例**（2026-08-27 audit）：
 
-- 最小变更：`gh_release_upload` 改成「先 `gh release view` 检查存在性，存在则跳过 create」
-- 最小验证：本地有 gh CLI 时跑 `gh release create voc-daily-YYYY-MM-DD --draft` + `gh release upload ... --clobber` 复现
-- 已加入 §7 故障排查速查表
+工程师中午手动 dispatch #29（run 14m34s，UI 显示 ✅ success），5h 后延迟 cron #30（run 16m53s，UI ✅ success）。
+sync 当天 release 后查 DB：873 条评论的 fetched_at **全部**落在 #30 的 UTC 08:01-08:15 窗口，#29 窗口（UTC 05:05-05:20 北京 13:05-13:20）**零数据**。
+即 #29 静默失败——UI success ≠ 数据成功。详见 `.workbuddy/memory/2026-08-27.md`。
 
-**blocker 现状**：手工 `voc-daily-bootstrap` release 仍未创建（plan §6.2 步骤 0 第 2 条「**首次跑前**手动创建」从开工起就一直挂着），导致 daily run 每日从空库起步，无法累积。
+**已上线防御（2026-08-27）**：
+
+- 新增 `scripts/ops/verify_release_upload.py`：daily collect 完成后立即用 `gh release view` 检查 `voc.db` asset（存在 + state=uploaded + size > 1KB）；失败 exit 1 让 GH Actions 步骤标红 → 邮件告警
+- 配套 8 例 pytest：`tests/test_verify_release_upload.py` 覆盖 happy + 4 种失败（资产缺失/大小过小/state 非 uploaded/release 不存在）+ gh 缺失 + 兼容网页端上传的后缀
+- 集成到 `.github/workflows/daily-collect.yml` 的「校验今日 Release asset」步骤（`if: always()`，在 collect 失败时也跑）
+
+**blocker 现状**：手工 `voc-daily-bootstrap` release 已建（2026-08-23），bootstrap 累积有效。剩下风险：每次 scheduled run 仍可能因 GH 平台偶发问题静默失败 —— 新 defense 后**至少会派工单**。
 
 ### 8.4 决策待确认 Q1-Q5（plan §9，2026-08-19 已全部确认）
 
@@ -233,3 +239,4 @@ D1 候选详细对比（plan §2.1 原表，已与 §2.1 合并确认）：
 |---|---|---|
 | 2026-08-19 | 初版：P6 自动化流水线落地架构文档 | P6 自动化收口，解锁 P9 阶段 0 + P8 时间序列 |
 | 2026-08-22 | §8 决策与风险历史新增；合并 `plan/P6_AUTOMATION_PIPELINE.md`；§7 故障排查加「release 存在但 assets 空」；更新「最后更新」日期 | 洁癖收口：消除两份 P6 文档重复；记录 A1 已知问题（每日 release asset 为空，累积 DB 未生效） |
+| 2026-08-27 | §8.3 A1 升级：补真实案例（8/27 #29 silent 失败 UI success 但 0 数据）+ 上线防御（`scripts/ops/verify_release_upload.py` + GH Actions step + 8 例 pytest） | P6 silent 失败实战解锁工程师告警链路 |
