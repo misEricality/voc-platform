@@ -14,8 +14,7 @@ product/
     ├── voc-platform-prototype.html     主看板（数据看板 + 原声列表）
     ├── game-compare.html               游戏对比看板（Steam 封面卡片 + 词云）
     ├── game-compare.html               游戏对比看板（Steam 封面卡片 + 词云）
-    ├── bilibili-video.html             B 站单视频看板（v0.1 简单原型，2026-08-21）
-    └── src/                             多文件源码（含 game-compare.* 等）
+    ├── bilibili-video.html             B 站单视频看板（v0.3 2026-08-26：接 DB · SPA 切换 3 视频；v0.3 bugfix 2026-08-26：Template 替换裸标识符 fix）
 ```
 
 ---
