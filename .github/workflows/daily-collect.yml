@@ -2,8 +2,11 @@ name: Daily VoC Collection
 
 on:
   schedule:
-    # 每天 UTC 00:00（北京时间 08:00）运行
-    - cron: '0 0 * * *'
+    # 每天 UTC 17:00（北京时间 凌晨 1:00）。
+    # 即使 GH Actions schedule 延迟 8 小时也只在早上 9:00 (北京) 触发，
+    # 比 UTC 00:00 配方案「延迟后变下午 4 点」更友好。
+    # 历史：2026-08-22 → 8/26 两次 scheduled 跑均延迟 1h+；8/27 直接丢了。
+    - cron: '0 17 * * *'
   workflow_dispatch:  # 支持手动触发
 
 jobs:
@@ -34,7 +37,7 @@ jobs:
   # ---- 每日采集 ----
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
 
     # 需要 contents: write 以创建/上传 GH Release asset
     permissions:
@@ -57,8 +60,10 @@ jobs:
       - name: 每日增量采集 + 上传 GH Release
         env:
           STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
+          # DEEPSEEK_API_KEY：当前 production 标注器（2026-08-25 回退决策）。
+          # 8/24-25 跑过 QWEN-flash 但 token-plan 模型名全 404，回 DEEPSEEK。
+          # DB 8/27 实测 612 条新标注全部 `llm:deepseek-v4-flash@...`。
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           ANALYZER_PROVIDER: deepseek
           # 默认 GITHUB_TOKEN 即可；gh CLI 自动使用 Actions token
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -74,3 +79,16 @@ jobs:
           name: voc-db-${{ github.run_number }}
           path: data/voc.db
           retention-days: 30
+
+      # P6 静默失败防御：daily_incremental_collect.py 的 gh release upload
+      # 失败仅记 warning，workflow 仍 success（assets=[] 累积失效）。
+      # 本步用 gh release view 检查 voc.db asset 实际状态：
+      # - 大小 < min_size（默认 1 KB）或 state != uploaded → exit 1 → 步骤 ❌
+      # - GH 邮件告警直接派到工程师邮箱，及时发现 silent 故障。
+      # 测试：tests/test_verify_release_upload.py（8 例覆盖 happy + 4 种失败 + gh 缺失）
+      - name: 校验今日 Release asset 成功上传（防 P6 静默失败）
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/ops/verify_release_upload.py
