@@ -450,5 +450,3 @@
 ---
 
 > 💡 **记住**：本项目核心价值 = 边学边做 + 能看到玩家真实声音。**不要为了完整功能而忘了这个核心价值**。
->
-> 🎯 **当前最关键的一步**（2026-08-27 update）：P6 silent 失败防御已上线（`scripts/ops/verify_release_upload.py` + workflow cron `0 17 * * *` UTC + verify step，`b77cdbf` 入本地仓 + workflow 待 `workflows:write` 推远端）；下一步主线 = **workflow push 远端**（解锁新 cron 防延迟 + 失败告警链路）+ **P11 qwen-flash bogus 清 261 条**（`reset_qwen_flash_bogus.py --commit`）+ P8 时间序列趋势图（前置已解锁，每天 run 后即可用）+ P9 阶段 2 L3.5 微话题聚类 + P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）。

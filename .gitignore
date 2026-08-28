@@ -40,7 +40,7 @@ Thumbs.db
 *.bak
 *.bak.*
 *.flag
-# 导出产物（注：cs2_50_full.csv/json、cs2_50_sample_5.json 3 个示例文件已跟踪，属文档引用例外）
+# 导出产物（运行时生成，不入库；2026-08-28 隐私清理前曾有 3 个示例文件作为文档引用例外跟踪，现已删除）
 data/exports/
 # B 站原型 build 临时导出（build_bilibili_video.py 重新生成，不入库）
 data/_bili_video.json

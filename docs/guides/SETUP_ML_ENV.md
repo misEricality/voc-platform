@@ -3,6 +3,11 @@
 > 用途：在本地准备一个能运行 bge 语义向量化（embedding / 聚类）的环境。
 >
 > 关联：`src/analyzers/embedder.py` · `scripts/ops/backfill_embeddings.py` · `scripts/dev/l35_cluster.py`
+>
+> **占位符说明**（2026-08-28 隐私清理后统一改写）：本文档用以下占位符代替各机器具体路径：
+> - `${PROJECT_ROOT}`：clone 后的项目根目录（如 Windows 上 `D:\path\to\voc-platform`，Linux 上 `/home/you/voc-platform`）
+> - `.venv-ml/`：相对于 `${PROJECT_ROOT}` 的 ML 虚拟环境目录
+> - `~/.cache/huggingface/hub/`：HuggingFace 模型缓存目录（Windows 上是 `%USERPROFILE%\.cache\huggingface\hub`）
 
 ## 0. 环境已就绪：给其他 Agent / 会话的执行须知（2026-08-16）
 
@@ -13,16 +18,16 @@
 
 ```powershell
 # 方式 A（推荐）：直接调绝对路径，不激活、不依赖 PATH
-D:\projects\voc_platform\.venv-ml\Scripts\python.exe -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); print('OK', e.model_name, e.dim)"
+${PROJECT_ROOT}\.venv-ml\Scripts\python.exe -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); print('OK', e.model_name, e.dim)"
 
 # 方式 B：激活后使用
-cd D:\projects\voc_platform
+cd ${PROJECT_ROOT}
 .\.venv-ml\Scripts\Activate.ps1
 python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); print('OK', e.model_name, e.dim)"
 ```
 
 - **禁止**用裸 `python`、`py -3.12`、`py` 跑本环境脚本——它们指向 3.14/其他解释器，torch 不可用或行为不一致。
-- 脚本自身会处理 `sys.path`（从项目根导入 `src.*`），**必须从项目根目录（`D:\projects\voc_platform`）运行**，不要在别的目录直接执行脚本路径。
+- 脚本自身会处理 `sys.path`（从项目根导入 `src.*`），**必须从项目根目录（`${PROJECT_ROOT}`）运行**，不要在别的目录直接执行脚本路径。
 
 ### 0.2 环境事实（已装好，勿动）
 
@@ -33,7 +38,7 @@ python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); pr
 | sentence-transformers | 5.7.0 |
 | transformers | 5.15.0 |
 | 其余依赖 | `requirements.txt` 全量装齐（含 pandas 3.0.5 / streamlit 1.61.1 / jieba 等） |
-| bge 模型 | 已缓存于 `C:\Users\44481\.cache\huggingface\hub\models--BAAI--bge-small-zh-v1.5`，运行时不会重新下载 |
+| bge 模型 | 已缓存于 `~/.cache/huggingface/hub/models--BAAI--bge-small-zh-v1.5`，运行时不会重新下载 |
 
 ### 0.3 本机环境的硬性禁令（违反会破坏环境）
 
@@ -42,10 +47,10 @@ python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); pr
 3. **新装包的正确方式**（二选一）：
    ```powershell
    # 方式 A：uv（推荐，不走沙箱回收站）
-   uv pip install --python D:\projects\voc_platform\.venv-ml\Scripts\python.exe <pkg>
+   uv pip install --python ${PROJECT_ROOT}\.venv-ml\Scripts\python.exe <pkg>
 
    # 方式 B：pip（若遇 SAFE_DELETE_FAIL_CLOSED，须在沙箱外执行）
-   D:\projects\voc_platform\.venv-ml\Scripts\python.exe -m pip install <pkg>
+   ${PROJECT_ROOT}\.venv-ml\Scripts\python.exe -m pip install <pkg>
    ```
 4. **环境说明**：本项目只有一个虚拟环境 `.venv-ml`（Python 3.12，全量依赖）；早期 `.venv-review`（3.14）已删除。
 
@@ -53,7 +58,7 @@ python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); pr
 
 - 首次运行会打印 `unauthenticated requests to the HF Hub` 警告——因未设 `HF_TOKEN`，**可忽略**（模型在本地缓存，不会联网下载）。
 - 上面的 `-c` 验证**只读**：仅加载模型并打印模型名/维度，不改数据库、不写任何文件。
-- 若需跑其他 ML 脚本（如 `scripts/ops/backfill_embeddings.py`），先看其是否调用 `src.analyzers.embedder`——该模块已由本环境支撑，但**回填操作会写数据库，执行前先向工程师确认**。
+- 若需跑其他 ML 脚本（如 `scripts/ops/backfill_embeddings.py`），先看其是否调用 `src.analyzers.embedder`——该模块已由本环境支撑，但**回填操作会写数据库，执行前先向作者确认**。
 
 ---
 
@@ -98,7 +103,7 @@ py -0p
 ## 2. 新建 ML 虚拟环境
 
 ```powershell
-cd D:\projects\voc_platform
+cd ${PROJECT_ROOT}
 
 # 用 3.12 建一个专门跑 embedding 的环境
 py -3.12 -m venv .venv-ml
@@ -153,6 +158,6 @@ python -c "from src.analyzers.embedder import get_embedder; e=get_embedder(); pr
 
 ## 注意事项
 
-1. **模型已缓存**：`BAAI/bge-small-zh-v1.5` 通常已在 `C:\Users\<用户>\.cache\huggingface\hub` 里，不会重复下载；若缓存缺失，首次运行会自动联网下载约 95MB。
+1. **模型已缓存**：`BAAI/bge-small-zh-v1.5` 通常已在 `~/.cache/huggingface/hub/` 里，不会重复下载；若缓存缺失，首次运行会自动联网下载约 95MB。
 2. **用 `.venv-ml`**：它是唯一且正确的 Python 3.12 环境。
 3. **CPU 即可**：bge-small-zh-v1.5 单条评论向量化在 CPU 上毫秒级完成，无需 CUDA。
