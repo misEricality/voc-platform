@@ -24,7 +24,9 @@ docs/
 │   └── next-gen-tagging/       下一代标签系统（GDT+PEDM 双轨）分阶段采纳计划 + 原稿备份 + 验证报告
 ├── guides/                 📖 操作指南（"我该怎么用"）
 │   ├── QUICK_START.md          5 分钟上手指南
-│   └── SETUP_ML_ENV.md         ML 环境搭建（torch + sentence-transformers）
+│   ├── QUICK_START.md          5 分钟上手指南
+│   ├── SETUP_ML_ENV.md         ML 环境搭建（torch + sentence-transformers）
+│   └── PUSH_TROUBLESHOOTING.md 🛠️ Push 排查指南（决策树 + 已知坑 + 验证清单，每次 push 前必读）
 └── research/               🔍 调研资料
     └── VoC平台竞品调研报告.md     国际 + 国内主流 VoC 平台对比与启示
 ```
@@ -46,6 +48,7 @@ docs/
 | **B 站采集怎么设计（接口/采样/落库）** | [architecture/BILIBILI_COLLECTION.md](./architecture/BILIBILI_COLLECTION.md) |
 | **B 站自动化怎么跑（待采清单 + cron + CLI）** | [architecture/BILIBILI_AUTOMATION.md](./architecture/BILIBILI_AUTOMATION.md) |
 | **怎么把仪表盘部署到公网，同时不让外人拿到数据** | [architecture/SELF_HOSTED_VPS_DEPLOYMENT.md](./architecture/SELF_HOSTED_VPS_DEPLOYMENT.md) |
+| **怎么把代码推送到 GitHub（sandbox 推 vs 手动 git 推的决策树）** | [guides/PUSH_TROUBLESHOOTING.md](./guides/PUSH_TROUBLESHOOTING.md) |
 | **数据库有哪些字段、怎么命名的** | [architecture/DATA_FIELDS.md](./architecture/DATA_FIELDS.md) |
 | **数据是怎么分层流转的、表怎么设计** | [architecture/DATA_STORAGE_DESIGN.md](./architecture/DATA_STORAGE_DESIGN.md) |
 | **为什么选这个数据源、不选别的** | [research/VoC平台竞品调研报告.md](./research/VoC平台竞品调研报告.md) |
