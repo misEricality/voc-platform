@@ -140,7 +140,7 @@ def test_load_targets_and_first_run_writes_to_empty_db(monkeypatch):
     assert len(targets) == 1
     assert targets[0]["id"] == "999"
 
-    result = run_one_target(targets[0])
+    result = run_one_target(targets[0], now_utc=now)
     assert result["ok"] is True
     assert result["fetched"] == 3
     assert result["analyzed"] == 3
@@ -220,7 +220,7 @@ def test_incremental_run_preserves_existing_data(monkeypatch):
         "language": "schinese", "count": 30, "enabled": True,
     }])
     targets = load_targets(targets_cfg)
-    result = run_one_target(targets[0])
+    result = run_one_target(targets[0], now_utc=now)
 
     # 验证：likes=42 likes_refreshed_at 没被擦掉
     _, SessionLocal = init_db()
@@ -253,7 +253,7 @@ def test_single_target_failure_does_not_block_others(monkeypatch):
     monkeypatch.setattr("scripts.ops.daily_incremental_collect.run_pipeline", fake_run_pipeline)
 
     targets = load_targets(targets_cfg)
-    results = [run_one_target(t) for t in targets]
+    results = [run_one_target(t, now_utc=datetime.now(timezone.utc).replace(tzinfo=None)) for t in targets]
 
     assert call_count["n"] == 2, "应尝试两个 target"
     assert results[0]["ok"] is False
@@ -273,6 +273,117 @@ def test_gh_release_exists_handles_missing_gh_cli(monkeypatch):
 
     from scripts.ops.daily_incremental_collect import gh_release_exists
     assert gh_release_exists("nonexistent") is False
+
+
+# ---------- 用例 6：smart_window 正常场景（max_ts 推进到昨天 workflow 跑完时间） ----------
+
+def test_smart_window_normal_yesterday_max():
+    """DB max_ts ≈ 北京昨天 8:00（昨天 workflow 成功）→ posted_after=max_ts-1d, posted_before=北京今天 0:00
+
+    行为矩阵第 1 行：
+    ┌──────────────────────────────┬─────────────────────────────┐
+    │ DB max_ts ≈ 北京昨天 8:00   │ posted_after = 北京前天 8:00 │
+    │ （正常）                    │ posted_before = 北京今天 0:00│
+    └──────────────────────────────┴─────────────────────────────┘
+    """
+    from src.storage.db import init_db, CommentRepository
+
+    now_utc = datetime(2026, 8, 29, 0, 0, 0)   # 北京 8/29 8:00
+    max_ts = datetime(2026, 8, 28, 0, 0, 0)     # 北京 8/28 8:00（昨天 release 的 max）
+
+    _, SessionLocal = init_db()
+    with SessionLocal() as s:
+        repo = CommentRepository(s)
+        repo.bulk_upsert([_make_raw_comment("r1", "content", "999", max_ts)])
+
+    from scripts.ops.daily_incremental_collect import smart_window
+    posted_after, posted_before = smart_window("steam:999", now_utc)
+
+    # posted_before: 北京 8/29 0:00 → UTC 8/28 16:00
+    assert posted_before == datetime(2026, 8, 28, 16, 0, 0), f"posted_before={posted_before}"
+    # posted_after: max_ts - 1d = UTC 8/27 0:00（北京 8/27 8:00），floor = UTC 8/26 16:00（不生效）
+    assert posted_after == datetime(2026, 8, 27, 0, 0, 0), f"posted_after={posted_after}"
+
+
+# ---------- 用例 7：smart_window 补救场景（昨天 workflow 失败，floor 生效） ----------
+
+def test_smart_window_recovery_floor_engages():
+    """DB max_ts ≈ 北京前天 8:00（昨天 workflow 失败）→ posted_after=floor 北京前天 0:00
+
+    行为矩阵第 2 行：
+    ┌──────────────────────────────┬─────────────────────────────┐
+    │ DB max_ts ≈ 北京前天 8:00   │ posted_after = 北京前天 0:00 │
+    │ （昨天失败，floor 生效）     │ posted_before = 北京今天 0:00│
+    └──────────────────────────────┴─────────────────────────────┘
+    """
+    from src.storage.db import init_db, CommentRepository
+
+    now_utc = datetime(2026, 8, 29, 0, 0, 0)
+    max_ts = datetime(2026, 8, 27, 0, 0, 0)    # 北京 8/27 8:00（昨天 workflow 没成功，max 还停在这）
+
+    _, SessionLocal = init_db()
+    with SessionLocal() as s:
+        repo = CommentRepository(s)
+        repo.bulk_upsert([_make_raw_comment("r1", "content", "999", max_ts)])
+
+    from scripts.ops.daily_incremental_collect import smart_window
+    posted_after, posted_before = smart_window("steam:999", now_utc)
+
+    # posted_before: 北京 8/29 0:00 UTC 表示 = UTC 8/28 16:00
+    assert posted_before == datetime(2026, 8, 28, 16, 0, 0), f"posted_before={posted_before}"
+    # posted_after: target_posted_after = UTC 8/26 0:00 < floor = UTC 8/26 16:00 → floor 生效
+    assert posted_after == datetime(2026, 8, 26, 16, 0, 0), f"posted_after={posted_after}"
+
+
+# ---------- 用例 8：smart_window 空 DB ----------
+
+def test_smart_window_empty_db():
+    """DB 无数据 → posted_after=floor（空 DB 起步采前天 + 昨天）
+
+    行为矩阵第 4 行（特例）：
+    ┌──────────────────────────────┬─────────────────────────────┐
+    │ DB 无数据                   │ posted_after = floor         │
+    │                              │ posted_before = 北京今天 0:00│
+    └──────────────────────────────┴─────────────────────────────┘
+    """
+    from src.storage.db import init_db
+
+    now_utc = datetime(2026, 8, 29, 0, 0, 0)
+    init_db()  # 建空表
+
+    from scripts.ops.daily_incremental_collect import smart_window
+    posted_after, posted_before = smart_window("steam:nonexistent", now_utc)
+
+    assert posted_before == datetime(2026, 8, 28, 16, 0, 0)
+    assert posted_after == datetime(2026, 8, 26, 16, 0, 0)
+
+
+# ---------- 用例 9：smart_window BJT 跨 UTC 日界 ----------
+
+def test_smart_window_bjt_midnight_boundary():
+    """now_utc 在 UTC 日界附近（北京刚跨入新一天）→ 窗口仍按北京日历日正确切分
+
+    边界场景：now_utc = UTC 8/28 16:01 = 北京 8/29 0:01
+    → 北京日历日 = 8/29（不是 8/28）
+    → posted_before 应 = 北京 8/29 0:00 UTC 表示 = UTC 8/28 16:00
+    """
+    from src.storage.db import init_db, CommentRepository
+
+    now_utc = datetime(2026, 8, 28, 16, 1, 0)  # 北京 8/29 0:01（北京时间刚跨日）
+    max_ts = datetime(2026, 8, 28, 0, 0, 0)     # 北京 8/28 8:00
+
+    _, SessionLocal = init_db()
+    with SessionLocal() as s:
+        repo = CommentRepository(s)
+        repo.bulk_upsert([_make_raw_comment("r1", "content", "999", max_ts)])
+
+    from scripts.ops.daily_incremental_collect import smart_window
+    posted_after, posted_before = smart_window("steam:999", now_utc)
+
+    # posted_before: 北京 8/29 0:00 UTC 表示（注意：now_utc UTC 日是 8/28，但北京已 8/29）
+    assert posted_before == datetime(2026, 8, 28, 16, 0, 0), f"posted_before={posted_before}"
+    # posted_after: max_ts - 1d = UTC 8/27 0:00（北京 8/27 8:00），floor = UTC 8/26 16:00
+    assert posted_after == datetime(2026, 8, 27, 0, 0, 0), f"posted_after={posted_after}"
 
 
 # ---------- main（直接跑时） ----------

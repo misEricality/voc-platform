@@ -69,3 +69,14 @@ pytest-of-*/
 
 # ---- WorkBuddy 本机数据（不应提交）----
 .workbuddy/
+
+# ---- Secrets / token 文件（任何形式都不入库）----
+# 2026-08-28 隐私清理后强化：经典 PAT / fine-grained token / 通用 *_token / PAT.txt 形式全拦截
+PAT.txt
+*.token
+*.pat
+secrets.txt
+.env.local
+
+# ---- MCP 工具运行时产物（Chrome profile 等；不应提交）----
+.baoyu_profile/

@@ -143,6 +143,21 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             "model_env": "GLM_MODEL",
             "default_model": "glm-4-flash",
         },
+        # 备选 LLM：智谱 BigModel GLM-5.3-Flash（VLM 范畴）。
+        # 与「glm」provider 共享 OpenAI 兼容端点，但走独立凭据
+        # （用户变量「glm_api_voc_platform」→ .env 用 GLM_API_KEY），
+        # 方便与主 GLM API Key 解耦（额度隔离 / 失败回退 / 配额黑洞排查）。
+        # 文档：https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash
+        #      https://docs.bigmodel.cn/cn/api/introduction#python-sdk
+        # 注：api_key_env 统一为 GLM_API_KEY（2026-08-31 决策：与 DEEPSEEK/QWEN/STEAM
+        #     命名一致；保留独立 GLM_5_3_FLASH_BASE_URL/MODEL 因为端点/模型独立）。
+        "glm-5.3-flash": {
+            "api_key_env": "GLM_API_KEY",  # 用户变量 glm_api_voc_platform（Windows 大小写不敏感）
+            "base_url_env": "GLM_5_3_FLASH_BASE_URL",
+            "default_base_url": "https://open.bigmodel.cn/api/paas/v4/",
+            "model_env": "GLM_5_3_FLASH_MODEL",
+            "default_model": "glm-5.3-flash",
+        },
     }
 
     def __init__(self, provider: str = "deepseek", topic_category: str = "gaming", **kwargs):

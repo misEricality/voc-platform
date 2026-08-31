@@ -393,6 +393,79 @@ def test_init_db_auto_alters_missing_nullable_column(test_db_path):
         assert row.analyzer_version == "llm:any@12345678"
 
 
+# ---------- 用例 11：备选 provider「glm-5.3-flash」注册与 version 格式 ----------
+
+def test_glm_5_3_flash_provider_registered():
+    """glm-5.3-flash provider 在 PROVIDER_CONFIG 中注册，且凭据用 GLM_API_VOC_PLATFORM"""
+    from src.analyzers.sentiment_llm import LLMSentimentAnalyzer
+
+    assert "glm-5.3-flash" in LLMSentimentAnalyzer.PROVIDER_CONFIG, \
+        f"glm-5.3-flash 应注册到 PROVIDER_CONFIG，可用 provider：{list(LLMSentimentAnalyzer.PROVIDER_CONFIG.keys())}"
+
+    cfg = LLMSentimentAnalyzer.PROVIDER_CONFIG["glm-5.3-flash"]
+    # 凭据走用户变量 glm_api_voc_platform（→ env GLM_API_VOC_PLATFORM）
+    assert cfg["api_key_env"] == "GLM_API_VOC_PLATFORM", \
+        f"凭据 env 应为 GLM_API_VOC_PLATFORM（映射用户变量 glm_api_voc_platform），实际 {cfg['api_key_env']!r}"
+    # 默认 model = glm-5.3-flash
+    assert cfg["default_model"] == "glm-5.3-flash", \
+        f"默认 model 应为 glm-5.3-flash，实际 {cfg['default_model']!r}"
+    # 与主 GLM 同端点（OpenAI 兼容协议 /v4/）
+    assert cfg["default_base_url"] == "https://open.bigmodel.cn/api/paas/v4/", \
+        f"应复用 BigModel OpenAI 兼容端点，实际 {cfg['default_base_url']!r}"
+
+
+def test_glm_5_3_flash_analyzer_version_format(monkeypatch):
+    """provider='glm-5.3-flash' 时 analyzer_version = 'llm:glm-5.3-flash@{prompt_hash8}'"""
+    fake_key = "sk-fake-glm-5-3-flash-test"
+    monkeypatch.setenv("GLM_API_VOC_PLATFORM", fake_key)
+    # 防止主 glm provider 的 env 泄漏（不设 GLM_API_KEY 也行，但显式 unset 更稳）
+    monkeypatch.delenv("GLM_API_KEY", raising=False)
+
+    from src.analyzers.sentiment_llm import LLMSentimentAnalyzer
+
+    a = LLMSentimentAnalyzer(provider="glm-5.3-flash")
+    # 凭据从用户变量 GLM_API_VOC_PLATFORM 读到
+    assert a.api_key == fake_key, f"api_key 应从 GLM_API_VOC_PLATFORM 读，实际 {a.api_key!r}"
+    # model 默认就是 glm-5.3-flash
+    assert a.model == "glm-5.3-flash", f"model 应为 glm-5.3-flash，实际 {a.model!r}"
+    assert a.provider == "glm-5.3-flash"
+
+    # analyzer_version 格式：llm:{model}@{prompt_hash8}
+    v = a.analyzer_version
+    assert v.startswith("llm:glm-5.3-flash@"), f"应 'llm:glm-5.3-flash@' 开头，实际 {v!r}"
+    _, hash8 = v.split("@")
+    assert len(hash8) == 8 and all(c in "0123456789abcdef" for c in hash8), \
+        f"hash8 应为 8 位 hex，实际 {v!r}"
+
+
+def test_glm_5_3_flash_missing_api_key_raises(monkeypatch):
+    """glm-5.3-flash 凭据缺失（GLM_API_VOC_PLATFORM + GLM_API_KEY 都未设）→ ValueError"""
+    monkeypatch.delenv("GLM_API_VOC_PLATFORM", raising=False)
+    monkeypatch.delenv("GLM_API_KEY", raising=False)
+
+    from src.analyzers.sentiment_llm import LLMSentimentAnalyzer
+
+    with pytest.raises(ValueError, match="GLM_API_VOC_PLATFORM"):
+        LLMSentimentAnalyzer(provider="glm-5.3-flash")
+
+
+def test_pipeline_cli_accepts_glm_5_3_flash_choice():
+    """pipeline --analyzer choices 必须包含 glm-5.3-flash（CLI 可用）"""
+    import subprocess
+    import sys
+
+    # 显式跑 --help 验证 choices；轻量，无需起 DB
+    result = subprocess.run(
+        [sys.executable, "-m", "src.pipeline", "--platform", "steam", "--target", "999",
+         "--analyzer", "glm-5.3-flash", "--help"],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    # choices 在 --help 里，进程退出码可能非 0（argparse 解析顺序问题），只验 stderr/stdout 内容
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "glm-5.3-flash" in combined, \
+        f"pipeline --analyzer 应接受 glm-5.3-flash；choices 信息：{combined[:500]!r}"
+
+
 # ---------- main（直接跑时） ----------
 
 if __name__ == "__main__":

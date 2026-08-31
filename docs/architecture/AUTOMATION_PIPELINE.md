@@ -83,9 +83,14 @@ GitHub Actions 每天 UTC 00:00 调 `scripts/ops/daily_incremental_collect.py`�
 - Python 可测试（`tests/test_daily_incremental_collect.py` 6 个用例全绿），可本地复现（`--no-download --no-upload`）。
 - workflow 唯一业务决定：cron + 调用哪个 Python 脚本。
 
-### 2.4 增量语义 = 滑窗 + DB 去重
+### 2.4 增量语义 = 滑窗 + DB 去重（v2：北京日历日 + 当天严格不采）
 
-- **采集时间窗**：`posted_after = max(posted_at) - 1 天`（1 天缓冲，覆盖边界漏采）。
+- **采集时间窗（v2，2026-08-31 升级）**：以**北京日历日**为准，每天采集「**北京昨天全天 + 北京前天全天**」，**当天严格不采**。
+  - `posted_before = 北京当天 0:00 UTC 表示`（= UTC T-1 16:00），由 `_passes_time_filter` 卡死当天边界（`ts >= posted_before` 返回 False）
+  - `posted_after = max(target_posted_after, 北京前天 0:00 UTC 表示)`，floor 兜底补救（昨天 workflow 失败时扩到前天）
+  - `target_posted_after = max(posted_at) - 1 day`（保留原 calc_posted_after 行为，复用以做增量去重）
+  - 实现：`scripts/ops/daily_incremental_collect.py::smart_window()`（30 行），整批 target 共享同一 `now_utc` 保证基准一致
+- **采集时间窗（v1，已弃用）**：`posted_after = max(posted_at) - 1 天`，无 `posted_before` —— 导致每天有 10.9% 当天数据混入（2026-08-27 audit 发现）。
 - **去重**：复用 `bulk_upsert` 的 `(platform, source_id)` 唯一键（已有机制，不引入新逻辑）。
 - **分析去重**：复用 `if c.analyzed_at is not None: continue`（已有机制）。
 - **向量化去重**：复用 `find_missing_embedding_ids`（已有机制；CI 环境无 ML 模型时自动降级跳过）。
@@ -105,14 +110,14 @@ GitHub Actions 每天 UTC 00:00 调 `scripts/ops/daily_incremental_collect.py`�
 | `.github/workflows/daily-collect.yml` | cron + setup + 调用 Python 入口 + artifact fallback |
 | `scripts/ops/daily_incremental_collect.py` | 主入口：拉/推 release + 跑各 target + 写摘要 |
 | `config/monitoring/targets.yaml` | 监控目标清单（6 款 Steam 单机游戏） |
-| `tests/test_daily_incremental_collect.py` | 6 个回归用例（空库起步/时间窗/不擦旧数据/单失败容错/gh 容错） |
+| `tests/test_daily_incremental_collect.py` | 10 个回归用例（空库起步/时间窗/不擦旧数据/单失败容错/gh 容错/smart_window 4 场景） |
 | `docs/architecture/AUTOMATION_PIPELINE.md §8` | P6 决策与风险历史（原 `plan/P6_AUTOMATION_PIPELINE.md` 已合并删除） |
 
 ---
 
-## 4. 验收（已通过 2026-08-19）
+## 4. 验收（已通过 2026-08-19，2026-08-31 v2 升级重测通过）
 
-- [x] `pytest tests/test_daily_incremental_collect.py` 全 6 用例绿
+- [x] `pytest tests/test_daily_incremental_collect.py` 全 10 用例绿（v1=6 用例，v2 新增 4 个 smart_window 场景）
 - [x] `pytest tests/` 全绿（含既有测试不退化）
 - [x] `scripts/smoke_test.py` 通过
 - [x] AGENTS.md §6 健康检查 7 条（按 §6 自检）
@@ -170,7 +175,7 @@ python scripts/ops/daily_incremental_collect.py --no-download --no-upload \
 | D1 | 跨 run DB 持久化方式 | GH Release asset / GH artifact / git push / 自托管对象存储 | GH Release asset（长期保留 + 公开可下载 + 命令行可拉） | §2.1 |
 | D2 | 多目标驱动 | 硬编码 vs YAML | `config/monitoring/targets.yaml`（业务配置与代码解耦） | §2.2 |
 | D3 | workflow 编排 | 全部进 YAML vs Python 入口 + 薄 YAML | Python 入口（可测试 + 可本地复现） | §2.3 |
-| D4 | 增量语义 | 全量 vs 时间窗 vs DB 去重 | `posted_after = max(posted_at) - 1 天` 滑窗 + 复用 `bulk_upsert` 去重 + 复用分析/向量化跳过 | §2.4 |
+| D4 | 增量语义 | 全量 vs 时间窗 vs DB 去重 | **v2**：以北京日历日为准 + `smart_window()` 算 posted_after/Before（floor = 北京前天 0:00 补救；当天严格不采）；复用 `bulk_upsert` 去重 + 复用分析/向量化跳过<br>**v1**（已弃用）：`posted_after = max(posted_at) - 1 天`，无 posted_before | §2.4 |
 | D5 | 失败处理 | 任一失败中断 vs 全部跳过 vs 单点隔离 | 单 target try/except 隔离 + release 失败仅 warning（不丢数据） | §2.5 |
 
 D1 候选详细对比（plan §2.1 原表，已与 §2.1 合并确认）：
@@ -231,6 +236,49 @@ sync 当天 release 后查 DB：873 条评论的 fetched_at **全部**落在 #30
 | Q4 | 首次跑前是否同意手动建 `voc-daily-bootstrap` release | ✅ 推荐 | ❌ **至今未执行**（见 §8.3 blocker） |
 | Q5 | 回采 likes（7 天）是否合并入 daily workflow | ❌ 建议独立 | ✅ 已独立（`scripts/ops/refresh_likes.py` + 未来独立 workflow） |
 
+### 8.5 每日时间窗策略 v2（2026-08-31 升级）
+
+> **动机**：v1（`posted_after = max(posted_at) - 1 天`，无 `posted_before`）有两个实际痛点：
+> 1. workflow 在 UTC 0:00（北京时间 8:00）跑，下载的是**昨天的 release**，而昨天 release 里的 max 通常是**前天 23:xx UTC**，导致 `posted_after = 前天 23:xx - 1 天 = 3 天前` —— **采集窗口永远落后 1-2 天**。
+> 2. 没有 `posted_before`，每天有约 10.9% 的「当天」数据被混入（AGENTS.md 2026-08-27 audit 记录），违反「每天采昨天」的语义直觉。
+
+**v2 设计**（`smart_window()` 函数，30 行）：
+
+- **以北京日历日为准**（用户视角 = 北京时间；不依赖 UTC 时区切换）：
+  - `posted_before = 北京当天 0:00 UTC 表示` = UTC T-1 16:00，由 `_passes_time_filter` 卡死当天边界
+  - `posted_after = max(target_posted_after, 北京前天 0:00 UTC 表示)` = UTC T-3 16:00（floor 补救下限）
+- **每款游戏独立窗口**（复用 `calc_posted_after`）：
+  - `target_posted_after = max(posted_at) - 1 day`（v1 同款语义，保留去重优势）
+  - 正常情况（昨天 workflow 成功）：`posted_after ≈ max_ts - 1d ≈ 北京前天 8:00`，floor 不生效
+  - 补救情况（昨天 workflow 失败）：`posted_after = floor = 北京前天 0:00`，覆盖前天全天
+- **整批共享 `now_utc`**：`main()` 算一次 `now_utc = _utcnow()` 传给每个 target，保证窗口基准一致
+
+**行为矩阵**：
+
+| DB max_ts（昨天 release） | posted_after            | 采集范围（北京日历日） |
+|---|---|---|
+| ≈ 北京昨天 8:00（正常）   | 北京前天 8:00           | 前天后半天 + 昨天全天 |
+| ≈ 北京前天 8:00（昨天失败）| 北京前天 0:00（floor 生效）| 前天全天 + 昨天全天 ✓ |
+| ≈ 北京前天 8:00（前天也败）| 北京前天 0:00（floor 生效）| 前天全天 + 昨天全天 |
+| ≈ 北京大前天 8:00（连败 3d）| 北京前天 0:00（floor 生效）| 前天全天 + 昨天全天 |
+
+**已知边界风险**：
+- 8 小时窗口（[北京前天 0:00, 北京前天 8:00)）由「前天 workflow」覆盖，若前天失败由 floor 兜底
+- 每天重复采「北京前天 0:00 ~ 8:00」（前天 workflow 已采过的 8 小时），靠 upsert 去重
+
+**回归测试**（`tests/test_daily_incremental_collect.py`，新增 4 用例 = 10/10 全绿）：
+1. `test_smart_window_normal_yesterday_max` — 正常场景，max 推进到昨天 8:00
+2. `test_smart_window_recovery_floor_engages` — 补救场景，floor 生效
+3. `test_smart_window_empty_db` — 空 DB 起步
+4. `test_smart_window_bjt_midnight_boundary` — UTC 跨日（北京刚跨入新一天）
+
+**为什么不上「每天重复采」开销**：
+- 每款游戏每天多采 8 小时（前天 0:00 ~ 8:00），共 6 款 ≈ 6 页 Steam API 调用（~10 秒）
+- upsert 去重保证数据正确性，重复评论被覆盖但不影响分析
+- 用户明确「可以尝试补全前天的数据」（需求来自 `2026-08-29` 工程师对话）
+
+**回滚路径**：把 `smart_window()` 替换回 v1 调用（`posted_after = calc_posted_after(...)`，`posted_before = None`），3 处签名改回 + 删 4 个 smart_window 测试用例。预计 5 分钟。
+
 ---
 
 ## 📋 版本记录
@@ -240,3 +288,4 @@ sync 当天 release 后查 DB：873 条评论的 fetched_at **全部**落在 #30
 | 2026-08-19 | 初版：P6 自动化流水线落地架构文档 | P6 自动化收口，解锁 P9 阶段 0 + P8 时间序列 |
 | 2026-08-22 | §8 决策与风险历史新增；合并 `plan/P6_AUTOMATION_PIPELINE.md`；§7 故障排查加「release 存在但 assets 空」；更新「最后更新」日期 | 洁癖收口：消除两份 P6 文档重复；记录 A1 已知问题（每日 release asset 为空，累积 DB 未生效） |
 | 2026-08-27 | §8.3 A1 升级：补真实案例（8/27 #29 silent 失败 UI success 但 0 数据）+ 上线防御（`scripts/ops/verify_release_upload.py` + GH Actions step + 8 例 pytest） | P6 silent 失败实战解锁工程师告警链路 |
+| 2026-08-31 | **每日时间窗策略 v2**：§2.4 升级（以北京日历日为准 + 当天严格不采）；§8.5 新增设计记录；§3/§4 用例数 6→10；D4 决策标注 v1 弃用；新增 4 个 pytest；`scripts/ops/daily_incremental_collect.py` 加 `smart_window()` 函数（30 行） | 解决 v1 两个痛点：①窗口永远落后 1-2 天（昨天 release 的 max 通常是前天 23:xx UTC）；②每天混入 10.9% 当天数据 |

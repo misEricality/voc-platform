@@ -238,8 +238,8 @@ def main():
     parser.add_argument(
         "--analyzer",
         default=None,
-        choices=["deepseek", "qwen", "glm", "local"],
-        help="分析器后端",
+        choices=["deepseek", "qwen", "glm", "glm-5.3-flash", "local"],
+        help="分析器后端（glm-5.3-flash 为智谱 BigModel 备选 LLM，独立凭据）",
     )
     parser.add_argument("--skip-analysis", action="store_true", help="仅采集不分析")
     parser.add_argument(

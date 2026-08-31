@@ -65,6 +65,9 @@ DB_ASSET_NAME = "voc.db"
 # 先用 --pattern 精确匹配，失败则按前缀 voc.db.* 接受带后缀的文件。
 DB_ASSET_PREFIX = "voc.db"
 
+# 北京时区固定偏移（UTC+8）。用 timedelta 而非 zoneinfo 避免 DST 影响（中国不实行夏令时）。
+BJT_OFFSET = timedelta(hours=8)
+
 
 def load_targets(config_path: Path) -> list[dict]:
     """加载 targets.yaml，返回启用的目标列表（保留原顺序）"""
@@ -104,6 +107,58 @@ def calc_posted_after(target_id_with_platform: str, *, lookback_days: int = 1) -
         return None
     # max_ts 是 naive UTC，向前 lookback_days；转回 naive UTC 便于 run_pipeline 直接用
     return (max_ts - timedelta(days=lookback_days))
+
+
+def smart_window(target_id_with_platform: str, now_utc: datetime) -> tuple[datetime, datetime]:
+    """智能时间窗口（以北京日历日为准）
+
+    每天采「北京昨天全天 + 北京前天全天」（auto 模式翻页到窗外，upsert 去重）。
+    当天（北京时间）严格不采（posted_before 卡死边界）。
+
+    Args:
+        target_id_with_platform: 形如 "steam:2358720"
+        now_utc: 当前 UTC 时间（naive 或 aware 都接受；统一转 naive UTC）
+
+    Returns:
+        (posted_after, posted_before) 都是 naive UTC
+        posted_before: 北京当天 0:00 UTC 表示（= UTC T-1 16:00），不采当天
+        posted_after: max(target_posted_after, 北京前天 0:00 UTC 表示)
+            target_posted_after = max(posted_at) - 1 day（复用 calc_posted_after 拿到的）
+            floor = 北京前天 0:00 UTC 表示（补救窗口下限）
+
+    行为矩阵：
+    ┌──────────────────────────────┬─────────────────────────────┬──────────────────────────────┐
+    │ DB max_ts（昨天 release） │ posted_after                 │ 采集范围（北京日历日）     │
+    ├──────────────────────────────┼─────────────────────────────┼──────────────────────────────┤
+    │ ≈ 北京昨天 8:00（正常）      │ 北京前天 8:00               │ 前天后半天 + 昨天全天     │
+    │ ≈ 北京前天 8:00（昨天失败）  │ 北京前天 0:00（floor 生效） │ 前天全天 + 昨天全天 ✓ │
+    │ ≈ 北京前天 8:00（前天也败）  │ 北京前天 0:00（floor 生效） │ 前天全天 + 昨天全天      │
+    │ ≈ 北京大前天 8:00（连败 3d） │ 北京前天 0:00（floor 生效） │ 前天全天 + 昨天全天      │
+    └──────────────────────────────┴─────────────────────────────┴──────────────────────────────┘
+
+    边界 8 小时漏采风险（[北京前天 0:00, 北京前天 8:00)）由「前天 workflow」负责，
+    若前天 workflow 失败由今天 floor 兜底（= 北京前天 0:00）。
+    """
+    # aware → naive（_utcnow 返回 naive，外部传入 aware 也兼容）
+    if now_utc.tzinfo is not None:
+        now_utc = now_utc.replace(tzinfo=None)
+
+    # 北京日历日：now_utc + 8h 取日历日部分
+    now_bjt = now_utc + BJT_OFFSET
+    today_bjt_midnight = now_bjt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # posted_before: 北京当天 0:00 → 转 UTC 表示
+    posted_before = today_bjt_midnight - BJT_OFFSET
+    # posted_after floor: 北京前天 0:00 → 转 UTC 表示
+    posted_after_floor = posted_before - timedelta(days=2)
+
+    # 复用 calc_posted_after（默认 lookback_days=1，即 max_ts - 1 day）
+    target_posted_after = calc_posted_after(target_id_with_platform)
+    if target_posted_after is None:
+        # 空 DB：起步采前天 + 昨天（floor 起作用）
+        return (posted_after_floor, posted_before)
+
+    return (max(target_posted_after, posted_after_floor), posted_before)
 
 
 # ---------- GH Release 操作 ----------
@@ -204,8 +259,18 @@ def today_tag(prefix: str = "voc-daily") -> str:
     return f"{prefix}-{_utcnow().strftime('%Y-%m-%d')}"
 
 
-def run_one_target(target: dict, *, full_replay: bool = False) -> dict:
+def run_one_target(
+    target: dict,
+    *,
+    now_utc: datetime,
+    full_replay: bool = False,
+) -> dict:
     """对单个目标运行一次 run_pipeline（增量）
+
+    Args:
+        target: targets.yaml 单条目标配置
+        now_utc: 整批共享的「当前时间」（naive UTC），保证所有 target 的窗口基准一致
+        full_replay: True 时禁用滑窗（posted_after/Before=None），全量起步
 
     Returns:
         {"target": ..., "ok": bool, "fetched": int, "analyzed": int, "embedded": int, "error": str|None}
@@ -216,14 +281,18 @@ def run_one_target(target: dict, *, full_replay: bool = False) -> dict:
     count = target.get("count", 50)
     label = f"{platform}:{tid} ({name})"
 
-    # 计算 posted_after 滑窗
+    # 计算 posted_after / posted_before 滑窗（以北京日历日为准）
     posted_after = None
+    posted_before = None
     if not full_replay:
         target_id_with_platform = f"{platform}:{tid}"
-        posted_after = calc_posted_after(target_id_with_platform)
+        posted_after, posted_before = smart_window(target_id_with_platform, now_utc)
 
     log.info(f"── 增量采集 {label} ──")
-    log.info(f"   posted_after={posted_after} count={count} full_replay={full_replay}")
+    log.info(
+        f"   posted_after={posted_after} posted_before={posted_before} "
+        f"count={count} full_replay={full_replay}"
+    )
 
     try:
         report = run_pipeline(
@@ -232,7 +301,7 @@ def run_one_target(target: dict, *, full_replay: bool = False) -> dict:
             max_count=count,
             language=target.get("language", "schinese"),
             posted_after=posted_after,
-            posted_before=None,
+            posted_before=posted_before,
             skip_analysis=False,
         )
         return {
@@ -328,8 +397,10 @@ def main():
         return
 
     results = []
+    # 整批共享同一 now_utc，保证所有 target 的窗口基准一致
+    now_utc = _utcnow()
     for t in targets:
-        results.append(run_one_target(t, full_replay=args.full_replay))
+        results.append(run_one_target(t, now_utc=now_utc, full_replay=args.full_replay))
 
     # 4. 写步骤摘要
     emit_step_summary(results)

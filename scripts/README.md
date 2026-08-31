@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-08-27（新增 `ops/verify_release_upload.py`：P6 silent 失败防御；新增 `ops/reset_qwen_flash_bogus.py`：P11 清理 QWEN-flash 404 假数据；产物 `_dual_annotate_*.{md,json}` 已归档至 `docs/architecture/duals_2026-08-25_archive.md`）
+> **最后更新**：2026-08-28（新增 `ops/smart_sync_release.py`：本地自动 sync GH Release（幂等，4 task 错开 10:00/13:00/18:00/22:00）；新增 `ops/register_sync_tasks.ps1`：Windows Task Scheduler 4 task 注册脚本）
 
 ---
 
@@ -36,6 +36,7 @@ scripts/
     ├── backfill_embeddings.py          ✅ 评论向量回填 / 换模型全量重算（已实现）
     ├── daily_incremental_collect.py    ✅ P6 每日增量采集编排入口（GitHub Actions 调用）
     ├── verify_release_upload.py        ✅ P6 静默失败防御：校验 GH Release asset 上传状态（2026-08-27）
+    ├── smart_sync_release.py           ✅ 本地自动 sync GH Release → voc.db（幂等 + 文件锁处理，2026-08-28）
     ├── reset_qwen_flash_bogus.py       ✅ P11 清理 QWEN-flash 404 假数据（dry-run 默认；--commit 真正清，2026-08-27）
     ├── sync_local_from_release.py      ✅ 本地从 GH Release asset 拉 DB 对齐（release 路径，2026-08-24）
     ├── sync_local_from_artifact.py     ✅ 本地从 GH Actions artifact 拉 DB 对齐（artifact 兜底，2026-08-24；当前 release upload bug 期间实际可用路径）
@@ -56,6 +57,8 @@ scripts/
 | **ops/backfill_embeddings.py** | 评论语义向量回填 / 换模型全量重算 | `python scripts/ops/backfill_embeddings.py --limit 100`（增量）；`--force`（清空重算，单事务原子切换） |
 | **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调） | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地调试） |
 | **ops/verify_release_upload.py** | P6 静默失败防御：daily collect 跑完后用 `gh release view` 检查 `voc.db` asset 实际状态（size > 1KB + state=uploaded），失败 exit 1 让 workflow 标红。详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3` | GH Actions workflow 自动调用；也可 `--tag voc-daily-YYYY-MM-DD` 手动验证；测试：`tests/test_verify_release_upload.py` 8 例 |
+| **ops/smart_sync_release.py** | 本地自动 sync GH Release → `data/voc.db`（幂等）：①今天 release 未上传 → 安静 exit 0（专为"10:00 早跑，workflow 还没好"场景设计）②本地比远端新 → noop exit 0 ③远端比本地新 → 下载 + 安全 rename 替换 → exit 0 ④文件锁（Streamlit 打开）→ exit 1 + 提示"关仪表盘" | `python scripts/ops/smart_sync_release.py`（默认 today UTC）或 `--date 2026-08-28` 指定日期。注册到 Windows Task Scheduler 见 `register_sync_tasks.ps1`（4 task 错开 10:00/13:00/18:00/22:00） |
+| **ops/register_sync_tasks.ps1** | 注册 Windows Task Scheduler 任务：4 个 daily VOC-Sync-Release-* 任务，分别 10:00 / 13:00 / 18:00 / 22:00，每天跑 `smart_sync_release.py` | **需以管理员身份运行 PowerShell**：`powershell -ExecutionPolicy Bypass -File scripts\ops\register_sync_tasks.ps1`。卸载：`... -Uninstall`。DSH agent 无 admin 权限，不能自动注册 |
 | **ops/reset_qwen_flash_bogus.py** | P11 清理 8/24-25 QWEN-flash 模型 404 留下的假数据：UPDATE 261 条 `analyzer_version=llm:qwen3-flash@...` 的评论清掉分析字段，让明早 cron 重新打 | 默认 dry-run 打印预演；`--commit` 真正清；`--like` 宽松匹配（清所有 `llm:qwen%` 假数据） |
 | **ops/archive_online_games.py** | 一次性：把 4 款 Steam 网游（PUBG/Apex/Dota2/CS2）数据从主库抽到 `data/archive/online_games_YYYY-MM-DD.db`，并从主库删除（2026-08-23 已执行） | `python scripts/ops/archive_online_games.py --dry-run`（预览）；不带参数实际执行；归档后主库 VACUUM |
 
@@ -82,6 +85,9 @@ scripts/
 | `collect_6_games.py` | 6 款 Steam 游戏批量采集（黑神话/巫师3/文明6/底特律/33号远征队/星际拓荒） |
 | `verify_appids.py` / `verify_appids_zh.py` | 验证 Steam appid 有效性（含中文名查询） |
 | `verify_collect.py` | 采集结果落库验证 |
+| `verify_smart_window_e2e.py` | `daily_incremental_collect.smart_window` v2 端到端验证（mock run_pipeline，看 posted_after/Before 传递是否正确；不联网不污染主库） |
+| `verify_glm_5_3_flash.py` | `glm-5.3-flash` provider 接通验证（用真实 key 跑一条样本评论，确认 analyzer_version=llm:glm-5.3-flash@xxx + 标注结果合法；切默认标注器后跑一次回归用） |
+| `verify_today_collect.py` | 一键验证今日 workflow 跑通后本地数据（自动 sync release + 检查 posted_at 分布/analyzer_version=v2 时间窗/6 款游戏采集率/情感分布；切默认标注器后验证端到端用） |
 | `e2e_lifecycle.py` | 首次采集 + 回采全链路 E2E（独立测试 DB，不污染主库） |
 
 ### dev/ · 数据巡检与修复
@@ -175,5 +181,6 @@ scripts/
 |---|---|---|
 | 2026-08-19 | 新建 `ops/daily_incremental_collect.py`：GitHub Actions 每日调用的增量采集编排入口；同步登记 ops 章节 | P6 自动化流水线落地 |
 | 2026-08-27 | 新建 `ops/verify_release_upload.py` + 8 例 pytest：P6 release upload 静默失败防御；同步新增 workflow 步骤「校验今日 Release asset」 | 解锁 P6「silent 失败不告警」问题（assets=[] 但 workflow 仍 success）；让日常 cron / 工程师 manual dispatch 都能拿到明确 ❌ 告警 |
+| 2026-08-28 | 新建 `ops/smart_sync_release.py`（智能 sync：幂等 + 文件锁处理 + 4 task 错开调度）+ `ops/register_sync_tasks.ps1`（Windows Task Scheduler 注册） | 解锁 P6 「GH Release → 本地」自动 sync（之前需手动跑 sync_local_from_release.py）；4 task 错开应对 8h 延迟；幂等设计支持任意次重跑 |
 | 2026-08-27 | 新建 `ops/reset_qwen_flash_bogus.py`：P11 清理 8/24-25 QWEN-flash 404 假数据（dry-run 默认；--commit 真正清）；归档 `_dual_annotate_*.{md,json}` 至 `docs/architecture/duals_2026-08-25_archive.md` | P11 收尾；产物文件原本违规命名（scripts/ops/ 不应放 `_` 开头报告）已纠正 |
 - 不要把 prompt 模板或业务配置写死在脚本里，统一从 `config/` 加载
