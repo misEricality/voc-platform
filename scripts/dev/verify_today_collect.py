@@ -58,7 +58,7 @@ def main() -> int:
                 capture_output=True, text=True, timeout=5,
             )
             if "streamlit" in r.stdout.lower():
-                print("⚠️ Streamlit 正在运行！请先关掉再 sync（否则 safe_replace_db 会失败）")
+                print("[WARN] Streamlit 正在运行！请先关掉再 sync（否则 safe_replace_db 会失败）")
                 print("    命令: Get-Process streamlit | Stop-Process -Force")
                 return 1
             print("[OK] Streamlit 未运行")
@@ -74,7 +74,7 @@ def main() -> int:
         for line in r.stdout.splitlines()[-10:]:
             print(f"  {line}")
         if r.returncode != 0:
-            print(f"❌ sync 失败 (exit={r.returncode})")
+            print(f"[FAIL] sync 失败 (exit={r.returncode})")
             print(r.stderr)
             return 1
         print("[OK] sync 成功")
@@ -82,7 +82,7 @@ def main() -> int:
     # ---- Step 2: 验证 DB ----
     section("Step 2 · DB 内容验证")
     if not DB.exists():
-        print(f"❌ DB 不存在: {DB}")
+        print(f"[FAIL] DB 不存在: {DB}")
         return 1
     print(f"[OK] DB 大小: {DB.stat().st_size:,} bytes")
 
@@ -100,7 +100,7 @@ def main() -> int:
     """, (target_date,))
     rows = c.fetchall()
     if not rows:
-        print(f"⚠️ 今日 (UTC {target_date}) 无入库数据")
+        print(f"[WARN] 今日 (UTC {target_date}) 无入库数据")
     else:
         for d, cnt in rows:
             tag = ""
@@ -108,11 +108,11 @@ def main() -> int:
             # 简单判断：今天不应该出现
             td = datetime.strptime(target_date, "%Y-%m-%d").date()
             if d == target_date:
-                tag = "  ← 当天（违反 v2 '不采当天' 语义）"
+                tag = "  <- 当天（违反 v2 '不采当天' 语义）"
             elif d == (td - timedelta(days=1)).isoformat():
-                tag = "  ← 昨天（主采集目标）"
+                tag = "  <- 昨天（主采集目标）"
             elif d == (td - timedelta(days=2)).isoformat():
-                tag = "  ← 前天（补采目标）"
+                tag = "  <- 前天（补采目标）"
             print(f"  {d}: {cnt:>4} 条{tag}")
 
     # 2.2 analyzer_version 分布（关键）
@@ -126,11 +126,11 @@ def main() -> int:
     """, (target_date,))
     rows = c.fetchall()
     if not rows:
-        print(f"⚠️ 今日无已分析评论")
+        print(f"[WARN] 今日无已分析评论")
     for ver, cnt in rows:
-        marker = " ✅ GLM" if "glm-5.3-flash" in ver else ""
+        marker = " [OK] GLM" if "glm-5.3-flash" in ver else ""
         marker += " [v2 默认标注器]" if "glm-5.3-flash" in ver else ""
-        marker += " ⚠️ 回退到旧 provider" if "deepseek" in ver or "glm" == ver.split(":")[1].split("@")[0] else ""
+        marker += " [WARN] 回退到旧 provider" if "deepseek" in ver or "glm" == ver.split(":")[1].split("@")[0] else ""
         print(f"  {ver}: {cnt} 条{marker}")
 
     # 2.3 按 target 看 fetched / analyzed
@@ -168,9 +168,9 @@ def main() -> int:
     """, (target_date, target_date))
     same_day_count = c.fetchone()[0]
     if same_day_count == 0:
-        print(f"  ✅ 当天 (UTC {target_date}) 数据 0 条（v2 时间窗生效）")
+        print(f"  [OK] 当天 (UTC {target_date}) 数据 0 条（v2 时间窗生效）")
     else:
-        print(f"  ⚠️ 当天 (UTC {target_date}) 有 {same_day_count} 条数据（违反 v2 语义）")
+        print(f"  [WARN] 当天 (UTC {target_date}) 有 {same_day_count} 条数据（违反 v2 语义）")
 
     # ---- Step 3: 总结 ----
     section("Step 3 · 总评")
@@ -181,12 +181,12 @@ def main() -> int:
     glm_count = c.fetchone()[0]
     print(f"GLM-5.3-Flash 标注写入: {glm_count} 条")
     if glm_count > 0 and same_day_count == 0:
-        print("✅ 全部验证通过！")
+        print("[OK] 全部验证通过！")
         print("  - 主标注器已切到 GLM-5.3-Flash")
         print("  - 时间窗 v2 生效（不采当天）")
         return 0
     else:
-        print("⚠️ 验证未完全通过，看上面提示排查")
+        print("[WARN] 验证未完全通过，看上面提示排查")
         return 1
 
 

@@ -396,16 +396,17 @@ def test_init_db_auto_alters_missing_nullable_column(test_db_path):
 # ---------- 用例 11：备选 provider「glm-5.3-flash」注册与 version 格式 ----------
 
 def test_glm_5_3_flash_provider_registered():
-    """glm-5.3-flash provider 在 PROVIDER_CONFIG 中注册，且凭据用 GLM_API_VOC_PLATFORM"""
+    """glm-5.3-flash provider 在 PROVIDER_CONFIG 中注册，且凭据用 GLM_API_KEY"""
     from src.analyzers.sentiment_llm import LLMSentimentAnalyzer
 
     assert "glm-5.3-flash" in LLMSentimentAnalyzer.PROVIDER_CONFIG, \
         f"glm-5.3-flash 应注册到 PROVIDER_CONFIG，可用 provider：{list(LLMSentimentAnalyzer.PROVIDER_CONFIG.keys())}"
 
     cfg = LLMSentimentAnalyzer.PROVIDER_CONFIG["glm-5.3-flash"]
-    # 凭据走用户变量 glm_api_voc_platform（→ env GLM_API_VOC_PLATFORM）
-    assert cfg["api_key_env"] == "GLM_API_VOC_PLATFORM", \
-        f"凭据 env 应为 GLM_API_VOC_PLATFORM（映射用户变量 glm_api_voc_platform），实际 {cfg['api_key_env']!r}"
+    # 凭据 env 统一 GLM_API_KEY（2026-08-31 决策：XXX_API_KEY 格式与 DEEPSEEK/QWEN/STEAM 一致；
+    # 本地 key 来源 Windows 用户变量 glm_api_voc_platform，大小写不敏感传递）
+    assert cfg["api_key_env"] == "GLM_API_KEY", \
+        f"凭据 env 应为 GLM_API_KEY（统一 XXX_API_KEY 命名约定），实际 {cfg['api_key_env']!r}"
     # 默认 model = glm-5.3-flash
     assert cfg["default_model"] == "glm-5.3-flash", \
         f"默认 model 应为 glm-5.3-flash，实际 {cfg['default_model']!r}"
@@ -417,15 +418,15 @@ def test_glm_5_3_flash_provider_registered():
 def test_glm_5_3_flash_analyzer_version_format(monkeypatch):
     """provider='glm-5.3-flash' 时 analyzer_version = 'llm:glm-5.3-flash@{prompt_hash8}'"""
     fake_key = "sk-fake-glm-5-3-flash-test"
-    monkeypatch.setenv("GLM_API_VOC_PLATFORM", fake_key)
-    # 防止主 glm provider 的 env 泄漏（不设 GLM_API_KEY 也行，但显式 unset 更稳）
-    monkeypatch.delenv("GLM_API_KEY", raising=False)
+    monkeypatch.setenv("GLM_API_KEY", fake_key)
+    # 防止旧 glm_api_voc_platform 用户变量泄漏干扰（Windows 大小写不敏感）
+    monkeypatch.delenv("glm_api_voc_platform", raising=False)
 
     from src.analyzers.sentiment_llm import LLMSentimentAnalyzer
 
     a = LLMSentimentAnalyzer(provider="glm-5.3-flash")
-    # 凭据从用户变量 GLM_API_VOC_PLATFORM 读到
-    assert a.api_key == fake_key, f"api_key 应从 GLM_API_VOC_PLATFORM 读，实际 {a.api_key!r}"
+    # 凭据从 GLM_API_KEY 读到
+    assert a.api_key == fake_key, f"api_key 应从 GLM_API_KEY 读，实际 {a.api_key!r}"
     # model 默认就是 glm-5.3-flash
     assert a.model == "glm-5.3-flash", f"model 应为 glm-5.3-flash，实际 {a.model!r}"
     assert a.provider == "glm-5.3-flash"
@@ -439,13 +440,13 @@ def test_glm_5_3_flash_analyzer_version_format(monkeypatch):
 
 
 def test_glm_5_3_flash_missing_api_key_raises(monkeypatch):
-    """glm-5.3-flash 凭据缺失（GLM_API_VOC_PLATFORM + GLM_API_KEY 都未设）→ ValueError"""
-    monkeypatch.delenv("GLM_API_VOC_PLATFORM", raising=False)
+    """glm-5.3-flash 凭据缺失（GLM_API_KEY + 用户变量 glm_api_voc_platform 都未设）→ ValueError"""
     monkeypatch.delenv("GLM_API_KEY", raising=False)
+    monkeypatch.delenv("glm_api_voc_platform", raising=False)
 
     from src.analyzers.sentiment_llm import LLMSentimentAnalyzer
 
-    with pytest.raises(ValueError, match="GLM_API_VOC_PLATFORM"):
+    with pytest.raises(ValueError, match="GLM_API_KEY"):
         LLMSentimentAnalyzer(provider="glm-5.3-flash")
 
 
