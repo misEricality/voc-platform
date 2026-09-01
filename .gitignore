@@ -82,3 +82,4 @@ secrets.txt
 
 # ---- MCP 工具运行时产物（Chrome profile 等；不应提交）----
 .baoyu_profile/
+.baoyu_debug/
