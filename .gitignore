@@ -60,6 +60,8 @@ logs/
 .tmp-test/
 .mypy_cache/
 .ruff_cache/
+# pip install 临时目录（sandbox 里 pip install 受限时常把 tempdir 重定向到这里；2026-09-01 教训：加上以避免 git status 报警）
+.pip_tmp/
 # pytest 临时缓存/工作目录（pytest 自管的运行时垃圾；曾出现 Owner 为空 + ACL 不可读导致 git status 报警的烂摊子，源头忽略）
 pytest-cache-files-*/
 pytest-of-*/

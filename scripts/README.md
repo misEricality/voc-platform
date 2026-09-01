@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-08-31（新增 `ops/push_via_api.py`：sandbox 屏蔽 git push 时走 GH REST API 兜底，含 5 已知坑修复；`docs/guides/PUSH_TROUBLESHOOTING.md` 同步上线）
+> **最后更新**：2026-09-01（HANDOVER 收口：`scripts/dev/` 激进归档 42 个一次性脚本到 `archive/` 子目录，按 9 类分组；dev/ 保留 11 个核心脚本；`README.md` 同步登记）
 
 ---
 
@@ -12,24 +12,29 @@
 scripts/
 ├── README.md                       ⬅ 你在这里
 ├── smoke_test.py                   ✅ 项目骨架冒烟测试（长期保留，CI 用）
-├── dev/                            🧪 开发期一次性脚本
-│   ├── 采集与验证                      batch_collect_recent / backfill_0816 / collect_6_games / verify_*
-│   ├── 数据巡检与修复                   db_stats / inspect_aug3_data / cleanup_cs2 / debug_*
-│   ├── 标注管线（方案4）               reanalyze_all / reanalyze_outliers / gen_l3_definitions
-│   │                                   migrate_opinions_v2 / dump_opinions / export_xlsx
-│   │                                   write_completion_flag / curate_l3_definitions
-│   │                                   rebuild_golden_set / clean_old_labels / recompute_topics
-│   │                                   stage1_report / rematch_opinions / mine_fallback_candidates
-│   │                                   select_random500 / export_sample_xlsx
-│   │                                   export_validation_sample
-│   ├── 诊断对比                         diag_batch_vs_single / diag_prompt_a / verify_config
-│   ├── B 站探针（2026-08-13）           probe_bilibili / probe_bili_wbi / probe_bili_ticket
-│   │                                   diag_bili_412
-│   ├── 原型构建                         build_prototype / export_prototype_data / subset_font
-│   ├── L3.5 微话题下钻                  l35_cluster
-│   ├── 数据修复                         backfill_steam_target_names
-│   ├── P6 收口一次性（2026-08-22）       setup_p6_bootstrap（建 voc-daily-bootstrap release + git push）
-│   └── E2E 验证                         e2e_lifecycle
+├── dev/                            🧪 开发期活跃脚本（11 个，hander 真正会用到的工具集）
+│   ├── 标注核心                       reanalyze_all / rematch_opinions / recompute_topics
+│   │                                   rebuild_golden_set / mine_fallback_candidates（按需跑）
+│   ├── 微话题下钻                     l35_cluster（P9 阶段2 骨架）
+│   ├── 弹幕分析                       analyze_danmaku（B 站弹幕词典匹配）
+│   ├── 原型数据导出                   export_prototype_data（被 product/ 下脚本引用）
+│   └── 端到端验证（2026-08-31 新增）   verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect
+├── dev/archive/                    📦 已完成任务的一次性脚本（42 个，2026-09-01 归档）
+│   ├── debug/                           debug_dup_source_id / debug_pagination_loss / debug_recent_order
+│   ├── diag/                            diag_batch_vs_single / diag_prompt_a / diag_bili_412
+│   │                                     probe_bilibili / probe_bili_wbi / probe_bili_ticket
+│   ├── e2e/                             e2e_lifecycle / show_refreshed_sample / check_likes_status / dump_opinions
+│   ├── one_shot_backfill/               backfill_0816 / backfill_steam_target_names / cleanup_cs2
+│   │                                     clean_old_labels / migrate_opinions_v2 / batch_collect_recent
+│   │                                     export_cs2 / inspect_aug3_data / collect_6_games / db_stats
+│   │                                     reanalyze_outliers / select_random500
+│   ├── one_shot_curate/                 curate_l3_definitions / gen_l3_definitions / gen_prototype_data
+│   │                                     stage1_report / write_completion_flag
+│   ├── one_shot_export/                 export_bilibili / export_game_compare / export_sample_xlsx
+│   │                                     export_validation_sample / export_xlsx
+│   ├── one_shot_prototype/              build_prototype / build_game_compare / subset_font
+│   ├── one_shot_verify/                 verify_appids / verify_appids_zh / verify_collect / verify_config
+│   └── P6_bootstrap/                    setup_p6_bootstrap（已用完，voc-daily-bootstrap 已建）
 ├── analysis/                       🔬 分析脚本（ad-hoc 探索）
 └── ops/                            ⚙️ 运维脚本
     ├── refresh_likes.py                ✅ 7 天后回采脚本（已实现）
@@ -41,7 +46,9 @@ scripts/
     ├── sync_local_from_release.py      ✅ 本地从 GH Release asset 拉 DB 对齐（release 路径，2026-08-24）
     ├── sync_local_from_artifact.py     ✅ 本地从 GH Actions artifact 拉 DB 对齐（artifact 兜底，2026-08-24；当前 release upload bug 期间实际可用路径）
     ├── dual_annotate_qwen_flash.py     ✅ DEEPSEEK vs QWEN-flash 双标注对比（backup + compare 两阶段，2026-08-25；产物已归档）
-    └── archive_online_games.py         ✅ 一次性：4 款 Steam 网游数据归档 + 主库清理（2026-08-23）
+    ├── archive_online_games.py         ✅ 一次性：4 款 Steam 网游数据归档 + 主库清理（2026-08-23）
+    ├── push_via_api.py                 ✅ sandbox 屏蔽 git push 时走 GH REST API 兜底（2026-08-31）
+    └── register_sync_tasks.ps1         ✅ Windows Task Scheduler 注册（10:00/13:00/18:00/22:00 sync）
 ```
 
 ---
@@ -162,10 +169,11 @@ scripts/
 
 | 新增类型 | 归类到 |
 |----------|--------|
-| 一次性验证某功能 | `dev/` |
+| 一次性验证某功能 | `dev/`（任务完成后迁到 `dev/archive/<分类>/`，见下） |
 | 每天/每周跑一次的运维任务 | `ops/` |
 | ad-hoc 数据探索（看一次就丢） | `scripts/analysis/`（`notebooks/` 已移除） |
 | 长期保留的回归测试 | `tests/`（不在 scripts/） |
+| **dev/archive/ 收纳规则** | 任务完成的一次性脚本移到对应子目录：`debug/`（bug 排查）/ `diag/`（方案选型 / 接口风控）/ `e2e/`（一次性端到端）/ `one_shot_backfill/`（数据回填）/ `one_shot_curate/`（词典 / 报告生成）/ `one_shot_export/`（数据导出）/ `one_shot_prototype/`（HTML 装配）/ `one_shot_verify/`（一次性校验）/ `P6_bootstrap/`（P6 收口自助）。**判断标准**：用一次就不用了 = 归档；可能周期性跑的（如 `mine_fallback_candidates.py`）= 留在 dev/ 根目录 + 顶部加「按需跑」注 |
 
 ---
 
@@ -181,8 +189,8 @@ scripts/
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
 | 2026-08-19 | 新建 `ops/daily_incremental_collect.py`：GitHub Actions 每日调用的增量采集编排入口；同步登记 ops 章节 | P6 自动化流水线落地 |
-| 2026-08-27 | 新建 `ops/verify_release_upload.py` + 8 例 pytest：P6 release upload 静默失败防御；同步新增 workflow 步骤「校验今日 Release asset」 | 解锁 P6「silent 失败不告警」问题（assets=[] 但 workflow 仍 success）；让日常 cron / 工程师 manual dispatch 都能拿到明确 ❌ 告警 |
+| 2026-08-27 | 新建 `ops/verify_release_upload.py` + 8 例 pytest：P6 release upload 静默失败防御；同步新增 workflow 步骤「校验今日 Release asset」；同周新建 `ops/reset_qwen_flash_bogus.py`：P11 清理 8/24-25 QWEN-flash 404 假数据（dry-run 默认；--commit 真正清）；归档 `_dual_annotate_*.{md,json}` 至 `docs/architecture/duals_2026-08-25_archive.md` | 解锁 P6「silent 失败不告警」问题（assets=[] 但 workflow 仍 success）；让日常 cron / 工程师 manual dispatch 都能拿到明确 ❌ 告警；P11 收尾；产物文件原本违规命名（scripts/ops/ 不应放 `_` 开头报告）已纠正 |
 | 2026-08-28 | 新建 `ops/smart_sync_release.py`（智能 sync：幂等 + 文件锁处理 + 4 task 错开调度）+ `ops/register_sync_tasks.ps1`（Windows Task Scheduler 注册） | 解锁 P6 「GH Release → 本地」自动 sync（之前需手动跑 sync_local_from_release.py）；4 task 错开应对 8h 延迟；幂等设计支持任意次重跑 |
 | 2026-08-31 | 新建 `ops/push_via_api.py`（sandbox 屏蔽 git push 时走 GH REST API 兜底）+ `docs/guides/PUSH_TROUBLESHOOTING.md`（7 章节决策树 + 5 已知坑 + 验证清单，每次 push 前必读） | 解锁 sandbox 推 main 通道；沉淀本次 push 踩的 4 个新坑（REMOTE_HEAD 硬编码 / root 排序 / basename 冲突 / refs 二级限流）+ 历史 1 个（dotfile 404），避免重复踩；与 8-28 §沙箱 push 护栏配套（决策树明示「sandbox refs 限流时立即提示手动 git 推」） |
-| 2026-08-27 | 新建 `ops/reset_qwen_flash_bogus.py`：P11 清理 8/24-25 QWEN-flash 404 假数据（dry-run 默认；--commit 真正清）；归档 `_dual_annotate_*.{md,json}` 至 `docs/architecture/duals_2026-08-25_archive.md` | P11 收尾；产物文件原本违规命名（scripts/ops/ 不应放 `_` 开头报告）已纠正 |
+| 2026-09-01 | **HANDOVER 收口 · dev/ 激进归档 42 个一次性脚本到 `archive/`**：按 9 个子目录分类（debug/ diag/ e2e/ one_shot_backfill/ one_shot_curate/ one_shot_export/ one_shot_prototype/ one_shot_verify/ P6_bootstrap/）；dev/ 保留 11 个核心脚本（reanalyze_all / rematch_opinions / recompute_topics / rebuild_golden_set / mine_fallback_candidates / l35_cluster / analyze_danmaku / export_prototype_data / verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect）；ops/ 补 `push_via_api.py` + `register_sync_tasks.ps1`；README 头部时间戳与目录树同步 | 项目交接准备：让新接手者一眼看到「真正活跃的工具集」；冗余一次性脚本不污染日常 dev/ 视角 |
 - 不要把 prompt 模板或业务配置写死在脚本里，统一从 `config/` 加载

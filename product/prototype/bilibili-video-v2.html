@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灵听 ·Lynx · B 站视频 · 《黑神话：钟馗》15分钟实机演示</title>
+<link rel="stylesheet" href="src/tokens.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-sans);
+  background:var(--bg);color:var(--ink);min-width:1080px;line-height:1.5}
+h1,h2,h3{margin:0;font-weight:600}
+a{color:var(--primary);text-decoration:none}
+
+/* §5: topbar 64px */
+.topbar{height:64px;background:var(--panel);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;padding:0 28px;position:sticky;top:0;z-index:30}
+.brand{display:flex;align-items:center;gap:12px}
+.brand h1{font-size:18px;color:var(--ink);letter-spacing:1px}
+.brand .sub{color:var(--muted);font-size:13px;margin-left:8px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:12px}
+/* §5: icon-btn 38px */
+.icon-btn{width:38px;height:38px;border:1px solid var(--line);background:var(--panel2);
+  border-radius:var(--r-md);color:var(--muted);display:grid;place-items:center;cursor:pointer}
+.icon-btn:hover{border-color:var(--primary);color:var(--primary)}
+.icon-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5}
+
+.main{max-width:1320px;margin:auto;padding:24px 28px 60px}
+/* §5: section r-xl */
+.section{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-xl);
+  padding:22px 26px;margin-bottom:18px}
+.section h2{font-size:17px;color:var(--ink);margin-bottom:14px;
+  display:flex;align-items:center;gap:10px}
+.section h2 .pill{font-size:11px;padding:2px 8px;border-radius:var(--r-sm);
+  background:var(--primary);color:#0e141b;font-weight:700}
+
+/* §6: section title icons -> SVG */
+.section h2 svg.sec-ico{width:18px;height:18px;stroke:var(--primary);fill:none;stroke-width:1.5}
+
+/* 区块 1：概览 */
+.overview{display:grid;grid-template-columns:240px 1fr;gap:24px}
+.cover{aspect-ratio:16/9;background:linear-gradient(135deg,var(--panel),var(--bg));
+  border-radius:var(--r-md);display:grid;place-items:center;color:var(--dim);
+  border:1px solid var(--line2)}
+.cover svg{width:48px;height:48px;stroke:var(--dim);fill:none;stroke-width:1}
+.meta h3{font-size:22px;margin-bottom:8px;line-height:1.3}
+.meta-line{font-size:13px;color:var(--ink2);margin-bottom:12px}
+.meta-line .key{color:var(--muted);margin-right:6px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
+.tag{padding:3px 9px;border-radius:var(--r-sm);background:var(--panel2);
+  border:1px solid var(--line2);font-size:11.5px;color:var(--ink2)}
+
+.stat-row{display:flex;flex-wrap:wrap;gap:18px;margin:14px 0 12px;font-size:13px;color:var(--ink2)}
+.stat-row .s{display:flex;align-items:center;gap:6px}
+.stat-row .s strong{color:var(--ink);font-weight:700;font-size:15px}
+.stat-row .ic{color:var(--primary);display:flex;align-items:center}
+.stat-row .ic svg{width:15px;height:15px;stroke:var(--primary);fill:none;stroke-width:1.5}
+.three-rate{font-size:12px;color:var(--muted);margin-bottom:14px}
+.three-rate b{color:var(--pos)}
+
+.compose{font-size:13px;color:var(--ink2);padding:10px 14px;background:var(--panel2);
+  border-radius:var(--r-md);border:1px solid var(--line2);display:flex;flex-wrap:wrap;gap:18px}
+.compose .v{color:var(--ink);font-weight:700}
+
+/* 区块 2：情感总览 — 语义色 token 化 */
+.sent-grid{display:grid;grid-template-columns:300px 1fr;gap:24px;align-items:center}
+.sent-chart{height:240px}
+.sent-stats{display:flex;flex-direction:column;gap:10px}
+.sent-stats .row{display:flex;align-items:center;gap:10px;font-size:14px}
+.sent-stats .dot{width:10px;height:10px;border-radius:50%}
+.sent-stats .pos{background:var(--pos)}
+.sent-stats .neu{background:var(--neu)}
+.sent-stats .neg{background:var(--neg)}
+.sent-stats .bar{flex:1;height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
+.sent-stats .fill{height:100%}
+.sent-stats .num{font-weight:700;color:var(--ink);min-width:40px;text-align:right}
+
+/* 区块 3：主题 — 语义色 token 化 */
+.topic-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2)}
+.topic-row:last-child{border-bottom:none}
+.topic-row .name{width:130px;font-size:13px;color:var(--ink2)}
+.topic-row .bar{flex:1;height:18px;border-radius:4px;overflow:hidden;display:flex}
+.topic-row .seg{height:100%}
+.topic-row .seg.pos{background:var(--pos)}
+.topic-row .seg.neu{background:var(--neu)}
+.topic-row .seg.neg{background:var(--neg)}
+.topic-row .pct{width:60px;text-align:right;font-size:12px;color:var(--muted);font-weight:600}
+.topic-row .legend{display:flex;gap:8px;font-size:11px;color:var(--muted);width:160px;justify-content:flex-end}
+.topic-row .legend span{display:flex;align-items:center;gap:3px}
+.topic-row .legend .d{width:7px;height:7px;border-radius:2px}
+
+/* §9.3.3: TOP 负面观点先按 L2 聚合 */
+.neg-list{margin-top:14px;padding:14px 16px;background:var(--panel2);border-radius:var(--r-lg);
+  border:1px solid var(--line2)}
+.neg-list h4{font-size:13px;color:var(--neg);margin:0 0 10px;letter-spacing:.5px;display:flex;align-items:center;gap:6px}
+.neg-list h4 svg{width:14px;height:14px;stroke:var(--neg);fill:none;stroke-width:1.5}
+.neg-group{margin-bottom:8px;border:1px solid var(--line2);border-radius:var(--r-sm);overflow:hidden}
+.neg-group-head{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--panel);cursor:pointer}
+.neg-group-head:hover{background:var(--panel3)}
+.neg-group .np{color:var(--ink);font-weight:600;font-size:12.5px}
+.neg-count{color:var(--neg);font-style:normal;font-size:11px;font-weight:700;
+  background:var(--neg-bg);border:1px solid var(--neg-line);border-radius:var(--r-sm);padding:1px 6px}
+.neg-toggle{margin-left:auto;border:1px solid var(--line);background:var(--panel2);
+  border-radius:var(--r-sm);font-size:11px;color:var(--muted);cursor:pointer;padding:2px 8px}
+.neg-toggle:hover{border-color:var(--primary);color:var(--primary)}
+.neg-group-items{margin:0;padding:8px 10px 8px 24px;list-style:none;font-size:12.5px;color:var(--ink2)}
+.neg-group-items li{padding:3px 0;border-bottom:1px solid var(--line2)}
+.neg-group-items li:last-child{border-bottom:none}
+
+/* 区块 4：弹幕时间轴 */
+.dm-legend{display:flex;gap:18px;font-size:12px;color:var(--muted);margin-bottom:10px;flex-wrap:wrap}
+.dm-legend span{display:flex;align-items:center;gap:5px}
+.dm-legend .d{width:11px;height:11px;border-radius:2px}
+.dm-legend .warm{background:var(--warm)}
+.dm-legend .cool{background:var(--cool)}
+.dm-legend .neu{background:var(--neu)}
+/* §9.3.2: mode ①④⑤ 折叠进技术细节 */
+.dm-tech-toggle{font-size:11px;color:var(--muted);cursor:pointer;
+  border:1px dashed var(--line2);border-radius:var(--r-sm);padding:2px 8px;background:transparent}
+.dm-tech-toggle:hover{border-color:var(--primary);color:var(--primary)}
+.dm-tech-detail{display:none;margin-top:6px;padding:8px 12px;background:var(--panel2);
+  border-radius:var(--r-sm);border:1px solid var(--line2);font-size:11px;color:var(--muted)}
+.dm-tech-detail.show{display:block}
+.dm-tech-detail .dm-legend{margin-bottom:6px}
+.dm-legend .m1{background:var(--primary)}
+.dm-legend .m4{background:var(--pos)}
+.dm-legend .m5{background:var(--neg)}
+
+.dm-timeline{height:300px;margin-bottom:12px}
+.dm-scatter{height:140px;margin-bottom:14px}
+.top-moments{background:var(--panel2);border-radius:var(--r-lg);border:1px solid var(--line2);
+  padding:14px 16px;font-size:12.5px}
+.top-moments h4{margin:0 0 10px;font-size:13px;color:var(--primary);letter-spacing:.5px;display:flex;align-items:center;gap:6px}
+.top-moments h4 svg{width:14px;height:14px;stroke:var(--primary);fill:none;stroke-width:1.5}
+.top-moments ol{margin:0;padding:0 0 0 22px;columns:2;column-gap:24px}
+.top-moments li{margin-bottom:6px;break-inside:avoid;color:var(--ink2)}
+.top-moments li b{color:var(--warm);font-family:var(--font-mono)}
+.top-moments .sm{color:var(--muted);font-size:11.5px;margin-left:6px}
+/* §6: play icon SVG in top moments */
+.top-moments li .play-ico{display:inline-flex;vertical-align:middle;margin-right:2px}
+.top-moments li .play-ico svg{width:10px;height:10px;fill:var(--warm);stroke:none}
+.dm-warn{margin-top:14px;padding:8px 12px;font-size:11.5px;color:var(--neu);
+  background:var(--neu-bg);border:1px solid var(--neu-line);border-radius:var(--r-sm);display:flex;align-items:flex-start;gap:6px}
+.dm-warn svg{width:14px;height:14px;stroke:var(--neu);fill:none;stroke-width:1.5;flex:none;margin-top:1px}
+
+/* §9.3.5: footer static + token 化 */
+.footer{margin-top:30px;padding:20px;text-align:center;color:var(--muted);font-size:12px;
+  border-top:1px solid var(--line2)}
+.footer a{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:8px 20px;
+  background:var(--primary);color:#0e141b;border-radius:var(--r-md);font-weight:700;font-size:13px;
+  text-decoration:none}
+.footer a:hover{background:var(--primary-hover)}
+
+/* §6: SVG logo */
+.brand .logo-svg{height:28px;width:auto}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">
+    <!-- §6.5: SVG logo replaces 🎙️ -->
+    <svg class="logo-svg" viewBox="0 0 100 28" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="22" font-family="var(--font-sans)" font-size="20" font-weight="700" fill="var(--primary)">灵听</text>
+      <text x="44" y="22" font-family="var(--font-sans)" font-size="14" font-weight="600" fill="var(--ink2)" letter-spacing="1">Lynx</text>
+    </svg>
+    <span class="sub">B 站视频看板 · v0.2</span>
+  </div>
+  <div class="top-actions">
+    <!-- §6.1: functional icons -> inline SVG -->
+    <div class="icon-btn" title="对比模式（v0.3 规划）">
+      <svg viewBox="0 0 24 24"><path d="M7 4 L12 12 L7 20 M17 4 L12 12 L17 20" stroke-linecap="round"/></svg>
+    </div>
+    <div class="icon-btn" title="数据导出">
+      <svg viewBox="0 0 24 24"><path d="M12 4 v12 M7 11 l5 5 l5-5 M5 20 h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- 区块 1 · 视频概览 -->
+  <div class="section">
+    <h2>
+      <svg class="sec-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8 v8 M8 12 h8" stroke-linecap="round"/></svg>
+      视频概览
+      <span class="pill">BV1kS8H6VERt</span>
+    </h2>
+    <div class="overview">
+      <!-- §6.3: cover play icon as SVG -->
+      <div class="cover">
+        <svg viewBox="0 0 48 48"><path d="M16 10 L34 24 L16 38 Z" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="meta">
+        <h3>《黑神话：钟馗》15分钟实机演示</h3>
+        <div class="meta-line">
+          <span class="key">UP 主:</span><b>黑神话</b>
+          <span class="key" style="margin-left:14px">发布:</span>2026-08-20
+        </div>
+        <div class="tags"><span class="tag">ARPG</span><span class="tag">单机游戏</span><span class="tag">黑神话</span><span class="tag">黑神话钟馗</span><span class="tag">动作游戏</span><span class="tag">游戏科学</span></div>
+        <div class="stat-row">
+          <!-- §6.3: play icon SVG (not shared with danmaku) -->
+          <div class="s"><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 5 L19 12 L8 19 Z" stroke-linejoin="round"/></svg></span><strong>3,225,884</strong><span>播放</span></div>
+          <div class="s"><span class="ic"><svg viewBox="0 0 24 24"><path d="M21 12 a9 9 0 1 1-9-9 M21 12 h-9 M21 12 a9 9 0 0 0-9-9" stroke-linecap="round"/></svg></span><strong>62,154</strong><span>评论</span></div>
+          <!-- §6.3: danmaku icon = scrolling text SVG (not play triangle) -->
+          <div class="s"><span class="ic"><svg viewBox="0 0 24 24"><path d="M3 8 h18 M3 12 h14 M3 16 h18" stroke-linecap="round"/><path d="M18 12 l3 0" stroke-linecap="round"/><path d="M14 12 l-2 -1 v2 z" stroke-linejoin="round"/></svg></span><strong>71,835</strong><span>弹幕</span></div>
+          <div class="s"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 21 C12 21 4 14 4 9 a5 5 0 0 1 10-2 a5 5 0 0 1 6 5 c0 5-8 9-8 9z" stroke-linejoin="round"/></svg></span><strong>381,895</strong><span>点赞</span></div>
+          <div class="s"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3 l3 7 h7 l-5.5 4.5 l2 7 L12 17 l-6.5 4.5 l2-7 L2 10 h7 z" stroke-linejoin="round"/></svg></span><strong>105,212</strong><span>收藏</span></div>
+          <div class="s"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><strong>354,429</strong><span>投币</span></div>
+          <div class="s"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 4 v12 M7 9 l5-5 l5 5 M5 20 h14" stroke-linecap="round" stroke-linejoin="round"/></svg></span><strong>315,673</strong><span>分享</span></div>
+        </div>
+        <div class="three-rate">三连率 (like + coin + favorite) / view = <b>26.1%</b></div>
+        <div class="compose">
+          <span>评论构成：评论 <span class="v">1006</span> 条 · 已分析 <span class="v">998</span> (99.2%)</span>
+          <!-- §9.3.4: gender ratio rewritten -->
+          <span>已知性别中男性占 <span class="v">88.8%</span>（男 <span class="v">44.5%</span> / 女 <span class="v">5.6%</span> / 未填 <span class="v">49.9%</span>）</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 区块 2 · 评论情感总览 -->
+  <div class="section">
+    <h2>
+      <svg class="sec-ico" viewBox="0 0 24 24"><path d="M12 3 a9 9 0 1 0 9 9 a7 7 0 0 1-9-9z" stroke-linejoin="round"/></svg>
+      评论情感总览
+    </h2>
+    <div class="sent-grid">
+      <div class="sent-chart" id="sentChart"></div>
+      <div class="sent-stats">
+        <div class="row"><span class="dot pos"></span><span style="width:60px">正面</span><div class="bar"><div class="fill" style="background:var(--pos);width:55.9%"></div></div><span class="num">558</span><span style="color:var(--muted);width:50px;text-align:right">(55.9%)</span></div>
+        <div class="row"><span class="dot neu"></span><span style="width:60px">中性</span><div class="bar"><div class="fill" style="background:var(--neu);width:32.3%"></div></div><span class="num">322</span><span style="color:var(--muted);width:50px;text-align:right">(32.3%)</span></div>
+        <div class="row"><span class="dot neg"></span><span style="width:60px">负面</span><div class="bar"><div class="fill" style="background:var(--neg);width:11.8%"></div></div><span class="num">118</span><span style="color:var(--muted);width:50px;text-align:right">(11.8%)</span></div>
+        <div style="margin-top:8px;padding-top:12px;border-top:1px solid var(--line2);font-size:13px;color:var(--ink2)">
+          情感均分 <b style="color:var(--ink)">0.365</b> （核心观点 · -1~+1） · 平均置信度 <b style="color:var(--ink)">0.796</b>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 区块 3 · 主题 × 情感下钻 -->
+  <div class="section">
+    <h2>
+      <svg class="sec-ico" viewBox="0 0 24 24"><path d="M4 6 h16 M4 12 h16 M4 18 h10" stroke-linecap="round"/></svg>
+      L1 主题 × 情感下钻
+    </h2>
+    <div class="topic-row"><span class="name">综合与元表达</span><div class="bar"><div class="seg pos" style="width:50.9%"></div><div class="seg neu" style="width:39.7%"></div><div class="seg neg" style="width:9.5%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>354</span><span><span class="d" style="background:var(--neu)"></span>276</span><span><span class="d" style="background:var(--neg)"></span>66</span></span><span class="pct">69.7%</span></div>
+    <div class="topic-row"><span class="name">机制与内容</span><div class="bar"><div class="seg pos" style="width:71.1%"></div><div class="seg neu" style="width:14.0%"></div><div class="seg neg" style="width:14.9%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>86</span><span><span class="d" style="background:var(--neu)"></span>17</span><span><span class="d" style="background:var(--neg)"></span>18</span></span><span class="pct">12.1%</span></div>
+    <div class="topic-row"><span class="name">视觉与艺术</span><div class="bar"><div class="seg pos" style="width:79.0%"></div><div class="seg neu" style="width:4.8%"></div><div class="seg neg" style="width:16.1%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>49</span><span><span class="d" style="background:var(--neu)"></span>3</span><span><span class="d" style="background:var(--neg)"></span>10</span></span><span class="pct">6.2%</span></div>
+    <div class="topic-row"><span class="name">叙事与世界观</span><div class="bar"><div class="seg pos" style="width:44.4%"></div><div class="seg neu" style="width:35.2%"></div><div class="seg neg" style="width:20.4%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>24</span><span><span class="d" style="background:var(--neu)"></span>19</span><span><span class="d" style="background:var(--neg)"></span>11</span></span><span class="pct">5.4%</span></div>
+    <div class="topic-row"><span class="name">技术与性能</span><div class="bar"><div class="seg pos" style="width:52.6%"></div><div class="seg neu" style="width:10.5%"></div><div class="seg neg" style="width:36.8%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>10</span><span><span class="d" style="background:var(--neu)"></span>2</span><span><span class="d" style="background:var(--neg)"></span>7</span></span><span class="pct">1.9%</span></div>
+    <div class="topic-row"><span class="name">声音与音频</span><div class="bar"><div class="seg pos" style="width:73.3%"></div><div class="seg neu" style="width:0%"></div><div class="seg neg" style="width:26.7%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>11</span><span><span class="d" style="background:var(--neu)"></span>0</span><span><span class="d" style="background:var(--neg)"></span>4</span></span><span class="pct">1.5%</span></div>
+    <div class="topic-row"><span class="name">操控与交互</span><div class="bar"><div class="seg pos" style="width:76.9%"></div><div class="seg neu" style="width:15.4%"></div><div class="seg neg" style="width:7.7%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>10</span><span><span class="d" style="background:var(--neu)"></span>2</span><span><span class="d" style="background:var(--neg)"></span>1</span></span><span class="pct">1.3%</span></div>
+    <div class="topic-row"><span class="name">社区与社交</span><div class="bar"><div class="seg pos" style="width:77.8%"></div><div class="seg neu" style="width:22.2%"></div><div class="seg neg" style="width:0%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>7</span><span><span class="d" style="background:var(--neu)"></span>2</span><span><span class="d" style="background:var(--neg)"></span>0</span></span><span class="pct">0.9%</span></div>
+    <div class="topic-row"><span class="name">商业与运营</span><div class="bar"><div class="seg pos" style="width:75%"></div><div class="seg neu" style="width:12.5%"></div><div class="seg neg" style="width:12.5%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>6</span><span><span class="d" style="background:var(--neu)"></span>1</span><span><span class="d" style="background:var(--neg)"></span>1</span></span><span class="pct">0.8%</span></div>
+    <div class="topic-row"><span class="name">平台与安全</span><div class="bar"><div class="seg pos" style="width:100%"></div></div><span class="legend"><span><span class="d" style="background:var(--pos)"></span>1</span></span><span class="pct">0.1%</span></div>
+
+    <!-- §9.3.3: TOP 负面观点按 L2 聚合 -->
+    <div class="neg-list">
+      <h4>
+        <svg viewBox="0 0 24 24"><path d="M12 9 v4 M12 17 v.5 M10.5 3 L3 20 h18 L13.5 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        TOP 负面观点（按 L2 聚合，排除综合与元表达）
+      </h4>
+      <div class="neg-group"><div class="neg-group-head"><span class="np">剧情与叙事</span><i class="neg-count">x9</i><button class="neg-toggle" type="button">展开</button></div><ul class="neg-group-items" style="display:none">
+<li>"为什么不讲钟馗的故事"</li>
+<li>"剧情云里雾里"</li>
+<li>"剧情和氛围别烂"</li>
+<li>"剧情好好写别像黑悟空一样"</li>
+<li>"剧情拉"</li>
+<li>"剧情演绎希望更直白"</li>
+<li>"剧情谜语人，希望线性剧情"</li>
+<li>"故事吸引力不足"</li>
+<li>"独立作品更希望能有剧情共鸣情感带入"</li>
+</ul></div>
+<div class="neg-group"><div class="neg-group-head"><span class="np">画面品质与技术</span><i class="neg-count">x2</i><button class="neg-toggle" type="button">展开</button></div><ul class="neg-group-items" style="display:none">
+<li>"画面太暗"</li>
+</ul></div>
+    </div>
+  </div>
+
+  <!-- 区块 4 · 弹幕时间轴（B 站独有） -->
+  <div class="section">
+    <h2>
+      <svg class="sec-ico" viewBox="0 0 24 24"><path d="M3 8 h18 M3 12 h14 M3 16 h18" stroke-linecap="round"/><path d="M14 12 l-2 -1 v2 z" stroke-linejoin="round"/></svg>
+      弹幕时间轴
+      <span class="pill" style="background:var(--warm)">B 站独有</span>
+    </h2>
+    <!-- §9.3.2: default only emotion 3 colors, mode ①④⑤ folded -->
+    <div class="dm-legend">
+      <span><span class="d warm"></span>暖（激动）</span>
+      <span><span class="d neu"></span>中性</span>
+      <span><span class="d cool"></span>冷（吐槽）</span>
+      <button class="dm-tech-toggle" id="dmTechToggle" type="button">技术细节 ▾</button>
+      <span style="margin-left:auto;color:var(--muted)">共 3,000 条弹幕 · 视频时长 952s</span>
+    </div>
+    <div class="dm-tech-detail" id="dmTechDetail">
+      <div class="dm-legend">
+        <span><span class="d m1"></span>① 滚动</span>
+        <span><span class="d m4"></span>④ 底部</span>
+        <span><span class="d m5"></span>⑤ 顶部</span>
+      </div>
+    </div>
+    <div class="dm-timeline" id="dmTimeline"></div>
+    <div class="dm-scatter" id="dmScatter"></div>
+    <div class="top-moments">
+      <h4>
+        <svg viewBox="0 0 24 24"><path d="M12 2 L15 9 L22 9 L16.5 13.5 L18.5 21 L12 17 L5.5 21 L7.5 13.5 L2 9 L9 9 z" stroke-linejoin="round"/></svg>
+        TOP 弹幕高亮时刻（按桶内密度排序）
+      </h4>
+      <ol>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>900s</b><span class="sm">(799条)</span> "卧槽，这是武当山吗？" · "江湖" · "大战凌云窟"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>0s</b><span class="sm">(648条)</span> "至少还有三年啊" · "完了 最少还得一年" · "见证历史"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>840s</b><span class="sm">(227条)</span> "汉服" · "恶魔猎手" · "说实话不愧是冯骥团队，混剪风格真好"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>720s</b><span class="sm">(204条)</span> "第一个BOSS就那么肉" · "铠甲合体！" · "大哥，你谁？太帅了"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>360s</b><span class="sm">(175条)</span> "防火烧山，牢底坐穿" · "画面到时候自己调节啊" · "牢底坐穿咒"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>300s</b><span class="sm">(173条)</span> "这布料有点怪" · "还有雨滴" · "游科的作品就是一部艺术品"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>540s</b><span class="sm">(129条)</span> "水猴子" · "差点以为是水下BOSS战" · "红狼李要去瘌痢？"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>780s</b><span class="sm">(106条)</span> "还有猎犬长牙" · "两位搓澡师傅" · "你才是挑战者"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>600s</b><span class="sm">(91条)</span> "白厄？" · "蚌埠住了" · "爱上雷神"</li>
+        <li><b><span class="play-ico"><svg viewBox="0 0 10 10"><path d="M3 2 L8 5 L3 8 Z"/></svg></span>180s</b><span class="sm">(83条)</span> "动作太丰富了" · "大厂确实稳" · "打击感很细腻"</li>
+      </ol>
+    </div>
+    <div class="dm-warn">
+      <svg viewBox="0 0 24 24"><path d="M12 9 v4 M12 17 v.5 M10.5 3 L3 20 h18 L13.5 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>弹幕情绪 = 词典匹配 + 颜色信号 · 仅作情绪分布参考（成本红线：弹幕不进 LLM 精标链路）</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- §9.3.4: localhost → relative path -->
+<div class="footer">
+  数据截至 2026-08-21 · v0.2（DESIGN_TOKENS 迁移版）<br>
+  <a href="/dashboard" target="_blank">打开分析看板 →</a>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+const DATA = {"video": {"bvid": "BV1kS8H6VERt", "aid": 117123103856658, "cid": 41074626031, "title": "《黑神话：钟馗》15分钟实机演示", "owner_name": "黑神话", "owner_face": "https://i1.hdslb.com/bfs/face/83e2465c27a1afb69316d270a94cbf9ca64a4070.jpg", "pubdate_iso": "2026-08-20T02:00:00", "tags": ["ARPG", "单机游戏", "黑神话", "黑神话钟馗", "动作游戏", "游戏科学"], "stat": {"aid": 117123103856658, "view": 3225884, "danmaku": 71835, "reply": 62154, "favorite": 105212, "coin": 354429, "share": 315673, "now_rank": 0, "his_rank": 2, "like": 381895, "dislike": 0, "evaluation": "", "vt": 0}}, "comments": {"total": 1006, "analyzed": 998, "analyzed_rate": 99.2, "sentiment_dist": {"positive": 558, "neutral": 322, "negative": 118}, "sentiment_dist_pct": {"positive": 55.9, "neutral": 32.3, "negative": 11.8}, "avg_score": 0.365, "avg_confidence": 0.796, "topics_l1": [{"name": "综合与元表达", "total": 696, "positive": 354, "neutral": 276, "negative": 66, "pct": 69.7}, {"name": "机制与内容", "total": 121, "positive": 86, "neutral": 17, "negative": 18, "pct": 12.1}, {"name": "视觉与艺术", "total": 62, "positive": 49, "neutral": 3, "negative": 10, "pct": 6.2}, {"name": "叙事与世界观", "total": 54, "positive": 24, "neutral": 19, "negative": 11, "pct": 5.4}, {"name": "技术与性能", "total": 19, "positive": 10, "neutral": 2, "negative": 7, "pct": 1.9}, {"name": "声音与音频", "total": 15, "positive": 11, "neutral": 0, "negative": 4, "pct": 1.5}, {"name": "操控与交互", "total": 13, "positive": 10, "neutral": 2, "negative": 1, "pct": 1.3}, {"name": "社区与社交", "total": 9, "positive": 7, "neutral": 2, "negative": 0, "pct": 0.9}, {"name": "商业与运营", "total": 8, "positive": 6, "neutral": 1, "negative": 1, "pct": 0.8}, {"name": "平台与安全", "total": 1, "positive": 1, "neutral": 0, "negative": 0, "pct": 0.1}], "top_negative_opinions": [{"full_path": "视觉与艺术/画面品质与技术/画面分辨率·清晰度", "l1": "视觉与艺术", "l2": "画面品质与技术", "phrase": "画面太暗", "count": 2}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "为什么不讲钟馗的故事", "count": 1}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "剧情云里雾里", "count": 1}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "剧情和氛围别烂", "count": 1}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "剧情好好写别像黑悟空一样", "count": 1}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "剧情拉", "count": 1}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "剧情演绎希望更直白", "count": 1}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "剧情谜语人，希望线性剧情", "count": 1}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "故事吸引力不足", "count": 1}, {"full_path": "叙事与世界观/剧情与叙事/主线剧情", "l1": "叙事与世界观", "l2": "剧情与叙事", "phrase": "独立作品更希望能有剧情共鸣情感带入", "count": 1}]}, "danmaku": {"total": 3000, "duration_s": 952, "bucket_size_s": 60, "buckets": [{"start_s": 0, "end_s": 60, "count": 648, "top_emotion": "warm", "warm": 641, "neutral_emo": 4, "cool": 3, "mode_dist": {"1": 614, "5": 31, "4": 3}}, {"start_s": 60, "end_s": 120, "count": 66, "top_emotion": "warm", "warm": 64, "neutral_emo": 1, "cool": 1, "mode_dist": {"1": 56, "5": 9, "4": 1}}, {"start_s": 120, "end_s": 180, "count": 61, "top_emotion": "warm", "warm": 59, "neutral_emo": 1, "cool": 1, "mode_dist": {"1": 51, "5": 10}}, {"start_s": 180, "end_s": 240, "count": 83, "top_emotion": "warm", "warm": 78, "neutral_emo": 1, "cool": 4, "mode_dist": {"1": 70, "5": 11, "4": 2}}, {"start_s": 240, "end_s": 300, "count": 53, "top_emotion": "warm", "warm": 51, "neutral_emo": 1, "cool": 1, "mode_dist": {"5": 3, "1": 50}}, {"start_s": 300, "end_s": 360, "count": 173, "top_emotion": "warm", "warm": 173, "neutral_emo": 0, "cool": 0, "mode_dist": {"1": 168, "5": 4, "4": 1}}, {"start_s": 360, "end_s": 420, "count": 175, "top_emotion": "warm", "warm": 174, "neutral_emo": 0, "cool": 1, "mode_dist": {"1": 167, "5": 7, "4": 1}}, {"start_s": 420, "end_s": 480, "count": 63, "top_emotion": "warm", "warm": 61, "neutral_emo": 1, "cool": 1, "mode_dist": {"1": 52, "5": 8, "4": 3}}, {"start_s": 480, "end_s": 540, "count": 63, "top_emotion": "warm", "warm": 60, "neutral_emo": 2, "cool": 1, "mode_dist": {"1": 51, "5": 12}}, {"start_s": 540, "end_s": 600, "count": 129, "top_emotion": "warm", "warm": 125, "neutral_emo": 1, "cool": 3, "mode_dist": {"1": 112, "4": 2, "5": 15}}, {"start_s": 600, "end_s": 660, "count": 91, "top_emotion": "warm", "warm": 89, "neutral_emo": 2, "cool": 0, "mode_dist": {"1": 84, "4": 1, "5": 6}}, {"start_s": 660, "end_s": 720, "count": 59, "top_emotion": "warm", "warm": 59, "neutral_emo": 0, "cool": 0, "mode_dist": {"1": 55, "5": 4}}, {"start_s": 720, "end_s": 780, "count": 204, "top_emotion": "warm", "warm": 201, "neutral_emo": 1, "cool": 2, "mode_dist": {"1": 185, "4": 2, "5": 17}}, {"start_s": 780, "end_s": 840, "count": 106, "top_emotion": "warm", "warm": 106, "neutral_emo": 0, "cool": 0, "mode_dist": {"1": 92, "5": 14}}, {"start_s": 840, "end_s": 900, "count": 227, "top_emotion": "warm", "warm": 221, "neutral_emo": 6, "cool": 0, "mode_dist": {"1": 195, "5": 32}}, {"start_s": 900, "end_s": 960, "count": 799, "top_emotion": "warm", "warm": 798, "neutral_emo": 0, "cool": 1, "mode_dist": {"1": 773, "5": 23, "4": 3}}], "mode_dist": {"mode_1": 92.5, "mode_5": 6.9, "mode_4": 0.6}, "top_moments": [{"start_s": 900, "end_s": 960, "count": 799, "samples": ["卧槽，这是武当山吗？", "江湖", "大战凌云窟"]}, {"start_s": 0, "end_s": 60, "count": 648, "samples": ["至少还有三年啊", "完了 最少还得一年", "见证历史"]}, {"start_s": 840, "end_s": 900, "count": 227, "samples": ["汉服", "恶魔猎手", "说实话不愧是冯骥团队，混剪风格真好"]}, {"start_s": 720, "end_s": 780, "count": 204, "samples": ["第一个BOSS就那么肉", "铠甲合体！", "大哥，你谁？太帅了"]}, {"start_s": 360, "end_s": 420, "count": 175, "samples": ["防火烧山，牢底坐穿", "画面到时候自己调节啊", "牢底坐穿咒"]}, {"start_s": 300, "end_s": 360, "count": 173, "samples": ["这布料有点怪", "还有雨滴", "游科的作品就是一部艺术品，得细品，开弹幕一遍、关弹幕一遍"]}, {"start_s": 540, "end_s": 600, "count": 129, "samples": ["水猴子", "差点以为是水下BOSS战", "红狼李要去瘌痢？"]}, {"start_s": 780, "end_s": 840, "count": 106, "samples": ["还有猎犬长牙", "两位搓澡师傅愣是把客户身上的藤壶搓的是干干净净", "你才是挑战者"]}, {"start_s": 600, "end_s": 660, "count": 91, "samples": ["白厄？", "蚌埠住了", "爱上雷神"]}, {"start_s": 180, "end_s": 240, "count": 83, "samples": ["动作太丰富了，各种交互。", "大厂确实稳", "这个打击感很细腻，如果剑能把敌人的衣服劈烂就更好了。"]}], "scatter_sample": [{"progress_s": 0, "mode": 1, "color_int": 16707842, "content": "至少还有三年啊", "emotion": "warm"}, {"progress_s": 1, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 1, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 2, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 2, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 2, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 3, "mode": 5, "color_int": 16777215, "content": "合影！", "emotion": "warm"}, {"progress_s": 3, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 3, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 3, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 3, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 3, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 3, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 4, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 4, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 4, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 4, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 4, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 5, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 5, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 5, "mode": 1, "color_int": 16777215, "content": "卧槽卧槽", "emotion": "warm"}, {"progress_s": 5, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 6, "mode": 1, "color_int": 16777215, "content": "三小时前！！！！", "emotion": "warm"}, {"progress_s": 6, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 6, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 6, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 7, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 7, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 7, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 8, "mode": 1, "color_int": 16777215, "content": "这就来实机了", "emotion": "warm"}, {"progress_s": 8, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 9, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 9, "mode": 1, "color_int": 16777215, "content": "芜湖~", "emotion": "warm"}, {"progress_s": 10, "mode": 1, "color_int": 16707842, "content": "820来了！有感觉吗？", "emotion": "warm"}, {"progress_s": 11, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 11, "mode": 1, "color_int": 16777215, "content": "你也发预告？", "emotion": "warm"}, {"progress_s": 12, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 13, "mode": 1, "color_int": 16777215, "content": "戴耳机妹妹们", "emotion": "warm"}, {"progress_s": 14, "mode": 1, "color_int": 16777215, "content": "来 了来了来了，出必买", "emotion": "warm"}, {"progress_s": 14, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 15, "mode": 1, "color_int": 16777215, "content": "再来一遍", "emotion": "warm"}, {"progress_s": 16, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 17, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 18, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 18, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 19, "mode": 1, "color_int": 16777215, "content": "来了来了", "emotion": "warm"}, {"progress_s": 20, "mode": 5, "color_int": 15138834, "content": "已经分不清游戏和现实了", "emotion": "warm"}, {"progress_s": 22, "mode": 5, "color_int": 16733525, "content": "这里哼唱的是钟馗第一个PV里的主题曲！", "emotion": "warm"}, {"progress_s": 23, "mode": 1, "color_int": 16777215, "content": "这是游戏啊？？？", "emotion": "warm"}, {"progress_s": 24, "mode": 1, "color_int": 16777215, "content": "真的一样！地形绝", "emotion": "warm"}, {"progress_s": 25, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 27, "mode": 1, "color_int": 16777215, "content": "我还以为我周围有蚊子", "emotion": "warm"}, {"progress_s": 27, "mode": 1, "color_int": 16707842, "content": "等等，这是实机？？？？", "emotion": "warm"}, {"progress_s": 28, "mode": 1, "color_int": 16707842, "content": "奔跑姿势不够帅", "emotion": "warm"}, {"progress_s": 30, "mode": 1, "color_int": 16777215, "content": "虚幻五CG画质的确可以到这个程度，不是野外", "emotion": "warm"}, {"progress_s": 32, "mode": 1, "color_int": 16777215, "content": "来了", "emotion": "warm"}, {"progress_s": 34, "mode": 1, "color_int": 16777215, "content": "东北人：哎呦，我擦", "emotion": "warm"}, {"progress_s": 40, "mode": 1, "color_int": 41194, "content": "小怪看戏有点严重", "emotion": "neutral"}, {"progress_s": 42, "mode": 1, "color_int": 16777215, "content": "这张脸有点像：叻个怕是有点痛哦", "emotion": "warm"}, {"progress_s": 44, "mode": 1, "color_int": 16777215, "content": "赵又廷", "emotion": "warm"}, {"progress_s": 45, "mode": 1, "color_int": 16777215, "content": "脸模很帅", "emotion": "warm"}, {"progress_s": 47, "mode": 1, "color_int": 16777215, "content": "画质起飞", "emotion": "warm"}, {"progress_s": 50, "mode": 1, "color_int": 11890, "content": "小怪看戏有点严重", "emotion": "neutral"}, {"progress_s": 53, "mode": 1, "color_int": 16777215, "content": "这是游戏还是现实？", "emotion": "warm"}, {"progress_s": 57, "mode": 1, "color_int": 16777215, "content": "这画面无敌了", "emotion": "warm"}, {"progress_s": 61, "mode": 1, "color_int": 16777215, "content": "我电脑换不起啦！！！", "emotion": "warm"}, {"progress_s": 65, "mode": 1, "color_int": 16777215, "content": "电脑要热炸了那你开空调啊（笑）", "emotion": "warm"}, {"progress_s": 71, "mode": 1, "color_int": 16777215, "content": "电影级画质", "emotion": "warm"}, {"progress_s": 78, "mode": 1, "color_int": 16777215, "content": "确实像章宇", "emotion": "warm"}, {"progress_s": 89, "mode": 5, "color_int": 16777215, "content": "藤壶好吃", "emotion": "warm"}, {"progress_s": 104, "mode": 1, "color_int": 16777215, "content": "為什麼要突然踢木筏?", "emotion": "warm"}, {"progress_s": 117, "mode": 5, "color_int": 16707842, "content": "疯狂水世界——等我造出尿液过滤器！", "emotion": "warm"}, {"progress_s": 126, "mode": 5, "color_int": 16777215, "content": "开局一定要选海水过滤器", "emotion": "warm"}, {"progress_s": 130, "mode": 1, "color_int": 16777215, "content": "黑神话葫芦娃", "emotion": "warm"}, {"progress_s": 155, "mode": 5, "color_int": 16777215, "content": "慢工出细活，不着急，但是一定要快", "emotion": "warm"}, {"progress_s": 171, "mode": 1, "color_int": 16777215, "content": "血条，法力条，体力条，回血葫芦，棍势，四个法术，这下看懂了", "emotion": "warm"}, {"progress_s": 178, "mode": 1, "color_int": 16777215, "content": "这是用武器缠搅吗", "emotion": "warm"}, {"progress_s": 183, "mode": 1, "color_int": 16777215, "content": "这动作真的超越了生化九了", "emotion": "warm"}, {"progress_s": 188, "mode": 1, "color_int": 16777215, "content": "熟悉的剑术！", "emotion": "warm"}, {"progress_s": 191, "mode": 1, "color_int": 16777215, "content": "无感很一般", "emotion": "warm"}, {"progress_s": 198, "mode": 1, "color_int": 16777215, "content": "这个飙血帅的", "emotion": "warm"}, {"progress_s": 215, "mode": 1, "color_int": 16777215, "content": "有弹刀，好", "emotion": "warm"}, {"progress_s": 222, "mode": 1, "color_int": 16777215, "content": "我去 是化劲", "emotion": "warm"}, {"progress_s": 231, "mode": 1, "color_int": 16777215, "content": "开发都说了武器都不止一种，肯定有一大堆的还没有展现出来", "emotion": "warm"}, {"progress_s": 242, "mode": 1, "color_int": 16707842, "content": "好身法", "emotion": "warm"}, {"progress_s": 256, "mode": 1, "color_int": 16777215, "content": "左下角原来还是葫芦，我还以为是个灵芝呢", "emotion": "warm"}, {"progress_s": 261, "mode": 1, "color_int": 16777215, "content": "真一闪", "emotion": "warm"}, {"progress_s": 268, "mode": 1, "color_int": 16777215, "content": "打击感不太行啊", "emotion": "warm"}, {"progress_s": 282, "mode": 1, "color_int": 16777215, "content": "完了 老头没了", "emotion": "warm"}, {"progress_s": 299, "mode": 1, "color_int": 16777215, "content": "羊蹄山倭游也跑来碰瓷了", "emotion": "warm"}, {"progress_s": 310, "mode": 1, "color_int": 16777215, "content": "必吃榜", "emotion": "warm"}, {"progress_s": 314, "mode": 1, "color_int": 16777215, "content": "诶，大狗", "emotion": "warm"}, {"progress_s": 325, "mode": 1, "color_int": 16777215, "content": "棍花挡远程啊会不会玩", "emotion": "warm"}, {"progress_s": 332, "mode": 1, "color_int": 15138834, "content": "换皮吗，感觉还是黑悟空的味道", "emotion": "warm"}, {"progress_s": 344, "mode": 1, "color_int": 16777215, "content": "我空气墙呢", "emotion": "warm"}, {"progress_s": 352, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 353, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 354, "mode": 1, "color_int": 16777215, "content": "羊蹄山？请问弹幕我一个玩过的人没看出有什么一样的", "emotion": "warm"}, {"progress_s": 354, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 355, "mode": 5, "color_int": 16707842, "content": "放火烧山 牢底坐穿", "emotion": "warm"}, {"progress_s": 355, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 356, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 357, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 358, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 358, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 359, "mode": 1, "color_int": 16777215, "content": "太原火焰刀 主角是树哥", "emotion": "warm"}, {"progress_s": 359, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 361, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 362, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 364, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 365, "mode": 5, "color_int": 16777215, "content": "冒火的直剑，吓哭了", "emotion": "warm"}, {"progress_s": 366, "mode": 1, "color_int": 16777215, "content": "我去，烧山了", "emotion": "warm"}, {"progress_s": 367, "mode": 1, "color_int": 16777215, "content": "放火烧山", "emotion": "warm"}, {"progress_s": 368, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 368, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 368, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 369, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 369, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 369, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 371, "mode": 1, "color_int": 16777215, "content": "放火烧山，牢底坐穿", "emotion": "warm"}, {"progress_s": 379, "mode": 1, "color_int": 16777215, "content": "楼兰斩", "emotion": "warm"}, {"progress_s": 386, "mode": 1, "color_int": 16777215, "content": "一刀一刀燃烧刀", "emotion": "warm"}, {"progress_s": 404, "mode": 5, "color_int": 16777215, "content": "这里不演示攀爬是和黑猴一样空气墙吗", "emotion": "warm"}, {"progress_s": 421, "mode": 1, "color_int": 16777215, "content": "没有闪光弹了，好评", "emotion": "warm"}, {"progress_s": 435, "mode": 1, "color_int": 16777215, "content": "看一下进度条，甚是满意", "emotion": "warm"}, {"progress_s": 445, "mode": 1, "color_int": 16777215, "content": "开毛线的开放世界，想玩开放世界去其他游戏", "emotion": "warm"}, {"progress_s": 460, "mode": 1, "color_int": 16777215, "content": "音效到时候可能是要换的，但其实我感觉没什么问题", "emotion": "warm"}, {"progress_s": 465, "mode": 1, "color_int": 16777215, "content": "空旷场地，BOSS战来了", "emotion": "warm"}, {"progress_s": 474, "mode": 1, "color_int": 16777215, "content": "神秘园来活了，又一个洞潜的", "emotion": "warm"}, {"progress_s": 478, "mode": 1, "color_int": 15138834, "content": "黑屏加载", "emotion": "warm"}, {"progress_s": 488, "mode": 1, "color_int": 16777215, "content": "我负责搅动泥沙", "emotion": "warm"}, {"progress_s": 497, "mode": 5, "color_int": 16707842, "content": "@神秘园", "emotion": "warm"}, {"progress_s": 508, "mode": 1, "color_int": 16777215, "content": "老妹啊", "emotion": "warm"}, {"progress_s": 514, "mode": 1, "color_int": 16777215, "content": "@神秘园", "emotion": "warm"}, {"progress_s": 522, "mode": 1, "color_int": 16777215, "content": "水下耍起嘛", "emotion": "warm"}, {"progress_s": 533, "mode": 1, "color_int": 16777215, "content": "应该只是CG", "emotion": "warm"}, {"progress_s": 542, "mode": 1, "color_int": 16777215, "content": "歪歪精", "emotion": "warm"}, {"progress_s": 546, "mode": 1, "color_int": 16777215, "content": "穿模了喂，壳被自己的刀劈开了", "emotion": "warm"}, {"progress_s": 548, "mode": 1, "color_int": 15138834, "content": "科斯孤儿", "emotion": "warm"}, {"progress_s": 553, "mode": 1, "color_int": 16777215, "content": "大蚌真君有点搞笑", "emotion": "warm"}, {"progress_s": 555, "mode": 1, "color_int": 16777215, "content": "蚌埠住了", "emotion": "warm"}, {"progress_s": 560, "mode": 5, "color_int": 15138834, "content": "破蚌了", "emotion": "warm"}, {"progress_s": 564, "mode": 1, "color_int": 16777215, "content": "蚌精不是要吃唐僧的吗？参考那首ONLY YOU", "emotion": "warm"}, {"progress_s": 571, "mode": 5, "color_int": 15138834, "content": "这里剑斩到蚌壳上被弹刀了", "emotion": "warm"}, {"progress_s": 574, "mode": 1, "color_int": 16777215, "content": "我的冰箱啊", "emotion": "warm"}, {"progress_s": 587, "mode": 5, "color_int": 16777215, "content": "我要这铁蚌有何用", "emotion": "warm"}, {"progress_s": 590, "mode": 1, "color_int": 16777215, "content": "密恐犯了", "emotion": "warm"}, {"progress_s": 595, "mode": 5, "color_int": 16707842, "content": "这下没蚌住了", "emotion": "warm"}, {"progress_s": 597, "mode": 1, "color_int": 16777215, "content": "迪迦：这集我看过！", "emotion": "warm"}, {"progress_s": 605, "mode": 1, "color_int": 16777215, "content": "二游蛆又来闹了", "emotion": "warm"}, {"progress_s": 608, "mode": 1, "color_int": 16777215, "content": "藤壶真人", "emotion": "warm"}, {"progress_s": 619, "mode": 1, "color_int": 16777215, "content": "你也配叫真君", "emotion": "warm"}, {"progress_s": 624, "mode": 1, "color_int": 16777215, "content": "运镜真的帅", "emotion": "warm"}, {"progress_s": 631, "mode": 1, "color_int": 16777215, "content": "五脏藏鬼术？", "emotion": "warm"}, {"progress_s": 640, "mode": 1, "color_int": 16777215, "content": "我来助你", "emotion": "warm"}, {"progress_s": 645, "mode": 1, "color_int": 16777215, "content": "广智救我", "emotion": "warm"}, {"progress_s": 650, "mode": 1, "color_int": 16777215, "content": "猴里面还可以7打1", "emotion": "warm"}, {"progress_s": 656, "mode": 1, "color_int": 16777215, "content": "辛苦摄影师了，一直跟着", "emotion": "warm"}, {"progress_s": 669, "mode": 1, "color_int": 16707842, "content": "感觉好难打这个怪", "emotion": "warm"}, {"progress_s": 688, "mode": 1, "color_int": 16777215, "content": "这个蚌上个预告片里是冰箱吧", "emotion": "warm"}, {"progress_s": 700, "mode": 1, "color_int": 16777215, "content": "四夜雷电光！", "emotion": "warm"}, {"progress_s": 704, "mode": 1, "color_int": 16777215, "content": "急急如律令", "emotion": "warm"}, {"progress_s": 707, "mode": 1, "color_int": 16777215, "content": "在下厉飞雨", "emotion": "warm"}, {"progress_s": 717, "mode": 1, "color_int": 16777215, "content": "雷电招来", "emotion": "warm"}, {"progress_s": 722, "mode": 1, "color_int": 16777215, "content": "我操，广智救我", "emotion": "warm"}, {"progress_s": 724, "mode": 1, "color_int": 16777215, "content": "还能这么玩？", "emotion": "warm"}, {"progress_s": 727, "mode": 1, "color_int": 16777215, "content": "哈哈哈", "emotion": "warm"}, {"progress_s": 729, "mode": 1, "color_int": 16777215, "content": "出现了！铜头铁臂", "emotion": "warm"}, {"progress_s": 732, "mode": 1, "color_int": 16777215, "content": "卧槽", "emotion": "warm"}, {"progress_s": 734, "mode": 1, "color_int": 16777215, "content": "卧槽卧槽卧槽的！！", "emotion": "warm"}, {"progress_s": 737, "mode": 1, "color_int": 16777215, "content": "空！", "emotion": "warm"}, {"progress_s": 738, "mode": 1, "color_int": 16777215, "content": "卧槽，是新能源广智", "emotion": "warm"}, {"progress_s": 743, "mode": 1, "color_int": 16777215, "content": "幻影剑舞来了", "emotion": "warm"}, {"progress_s": 744, "mode": 1, "color_int": 16777215, "content": "握草。游科，你是神", "emotion": "warm"}, {"progress_s": 745, "mode": 1, "color_int": 16777215, "content": "卧槽帅", "emotion": "warm"}, {"progress_s": 746, "mode": 1, "color_int": 16777215, "content": "卧槽卧槽太帅了吧", "emotion": "warm"}, {"progress_s": 748, "mode": 1, "color_int": 15138834, "content": "爽飞了", "emotion": "warm"}, {"progress_s": 749, "mode": 1, "color_int": 16777215, "content": "剑圣！！", "emotion": "warm"}, {"progress_s": 752, "mode": 1, "color_int": 16777215, "content": "帅", "emotion": "warm"}, {"progress_s": 754, "mode": 1, "color_int": 16777215, "content": "这么帅", "emotion": "warm"}, {"progress_s": 757, "mode": 5, "color_int": 16707842, "content": "属性解放斩！！！", "emotion": "warm"}, {"progress_s": 761, "mode": 1, "color_int": 16777215, "content": "换人玩了", "emotion": "warm"}, {"progress_s": 764, "mode": 1, "color_int": 16777215, "content": "游科牛逼", "emotion": "warm"}, {"progress_s": 773, "mode": 1, "color_int": 16777215, "content": "不会每个boss都能收服吧", "emotion": "warm"}, {"progress_s": 781, "mode": 1, "color_int": 16777215, "content": "你才是挑战者", "emotion": "warm"}, {"progress_s": 790, "mode": 1, "color_int": 16777215, "content": "藤壶都打光了……", "emotion": "warm"}, {"progress_s": 796, "mode": 1, "color_int": 16777215, "content": "我们自己的圣莫妮卡，这下真的要和战神平起平坐了", "emotion": "warm"}, {"progress_s": 800, "mode": 1, "color_int": 15138834, "content": "[前方高能]", "emotion": "warm"}, {"progress_s": 804, "mode": 1, "color_int": 16777215, "content": "鬼起来了", "emotion": "warm"}, {"progress_s": 808, "mode": 1, "color_int": 16777215, "content": "？？？？", "emotion": "warm"}, {"progress_s": 813, "mode": 1, "color_int": 15138834, "content": "我擦", "emotion": "warm"}, {"progress_s": 819, "mode": 1, "color_int": 16777215, "content": "吓我一雷~~~", "emotion": "warm"}, {"progress_s": 828, "mode": 1, "color_int": 16777215, "content": "胆小鬼？", "emotion": "warm"}, {"progress_s": 830, "mode": 1, "color_int": 16740868, "content": "强力", "emotion": "warm"}, {"progress_s": 835, "mode": 5, "color_int": 16707842, "content": "这些估计都是鬼兵鬼将，帮钟馗抓鬼的吧", "emotion": "warm"}, {"progress_s": 843, "mode": 1, "color_int": 16777215, "content": "少年燕赤霞么", "emotion": "warm"}, {"progress_s": 847, "mode": 1, "color_int": 16777215, "content": "我擦不会是钟馗妹夫吧", "emotion": "warm"}, {"progress_s": 851, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 852, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 852, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 853, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 853, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 854, "mode": 5, "color_int": 15138834, "content": "钟馗嫁妹", "emotion": "warm"}, {"progress_s": 854, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 855, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 856, "mode": 1, "color_int": 16740868, "content": "组一辈子乐队", "emotion": "warm"}, {"progress_s": 857, "mode": 5, "color_int": 16707842, "content": "欢迎来到，潜藏者时代", "emotion": "warm"}, {"progress_s": 857, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 858, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 859, "mode": 1, "color_int": 16777215, "content": "嘟嘟哒嘟嘟哒", "emotion": "warm"}, {"progress_s": 861, "mode": 1, "color_int": 16777215, "content": "还有音游？希望对指法要求别太难", "emotion": "warm"}, {"progress_s": 867, "mode": 1, "color_int": 16777215, "content": "还有冯杨？", "emotion": "warm"}, {"progress_s": 871, "mode": 1, "color_int": 16777215, "content": "还有钓鱼系统", "emotion": "warm"}, {"progress_s": 880, "mode": 1, "color_int": 16777215, "content": "竟然是菇", "emotion": "warm"}, {"progress_s": 882, "mode": 1, "color_int": 16777215, "content": "死亡菌团", "emotion": "warm"}, {"progress_s": 886, "mode": 1, "color_int": 16777215, "content": "竹笙？？", "emotion": "warm"}, {"progress_s": 891, "mode": 1, "color_int": 16777215, "content": "食材展示", "emotion": "warm"}, {"progress_s": 897, "mode": 1, "color_int": 16777215, "content": "听着这曲儿，真TM的过瘾！", "emotion": "warm"}, {"progress_s": 903, "mode": 1, "color_int": 16777215, "content": "斩尸成道，这是哪个？", "emotion": "warm"}, {"progress_s": 908, "mode": 1, "color_int": 16777215, "content": "老外那边又要炸锅了吧", "emotion": "warm"}, {"progress_s": 913, "mode": 1, "color_int": 16777215, "content": "这段好牛", "emotion": "warm"}, {"progress_s": 916, "mode": 1, "color_int": 16777215, "content": "秀", "emotion": "warm"}, {"progress_s": 923, "mode": 1, "color_int": 16777215, "content": "明天能出吗？明天不行后天呢？（doge）", "emotion": "warm"}, {"progress_s": 928, "mode": 5, "color_int": 16777215, "content": "钟馗你怎么现在才来", "emotion": "warm"}, {"progress_s": 932, "mode": 1, "color_int": 16777215, "content": "我眼泪哗哗滴", "emotion": "warm"}, {"progress_s": 935, "mode": 1, "color_int": 16777215, "content": "明年见", "emotion": "warm"}, {"progress_s": 939, "mode": 1, "color_int": 16777215, "content": "令我欢喜", "emotion": "warm"}, {"progress_s": 941, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 941, "mode": 1, "color_int": 16777215, "content": "明年820见！", "emotion": "warm"}, {"progress_s": 941, "mode": 1, "color_int": 16777215, "content": "出必鸽", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "又要等多少年好急", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 942, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "我靠，我现在就想玩，", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "nb", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 943, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 944, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 945, "mode": 4, "color_int": 15138834, "content": "要哭了！永远热爱第九艺术！热爱游戏！", "emotion": "warm"}, {"progress_s": 945, "mode": 5, "color_int": 16777215, "content": "牛逼！！！！还得是你！！", "emotion": "warm"}, {"progress_s": 945, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 945, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 945, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 945, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 945, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 945, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 946, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 946, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 946, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 946, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 946, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 947, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 947, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 947, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 947, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 948, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 948, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 949, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 949, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 950, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}, {"progress_s": 951, "mode": 1, "color_int": 16777215, "content": "牛逼", "emotion": "warm"}]}, "profile": {"sex_dist_pct": {"男": 44.5, "保密": 49.9, "女": 5.6}, "sex_sample_size": 1006}};
+
+// §7.2: read token colors via getComputedStyle
+const _cs = getComputedStyle(document.documentElement);
+const _c = name => _cs.getPropertyValue(name).trim();
+const C = {
+  pos: _c('--pos'), neu: _c('--neu'), neg: _c('--neg'),
+  primary: _c('--primary'), warm: _c('--warm'), cool: _c('--cool'),
+  ink2: _c('--ink2'), muted: _c('--muted'),
+  line: _c('--line'), line2: _c('--line2'),
+  panel3: _c('--panel3'), line3: _c('--line3'),
+  panel: _c('--panel'), bg: _c('--bg')
+};
+
+// ===== 区块 2 饼图 =====
+(function() {
+  const d = DATA.comments.sentiment_dist;
+  echarts.init(document.getElementById('sentChart')).setOption({
+    backgroundColor:'transparent',
+    tooltip:{trigger:'item',formatter:'{b}: {c} ({d}%)'},
+    legend:{show:false},
+    series:[{
+      type:'pie',radius:['55%','78%'],center:['50%','55%'],
+      avoidLabelOverlap:false,label:{show:false},labelLine:{show:false},
+      itemStyle:{borderColor:C.bg,borderWidth:2},
+      data:[
+        {name:'正面',value:d.positive,itemStyle:{color:C.pos}},
+        {name:'中性',value:d.neutral,itemStyle:{color:C.neu}},
+        {name:'负面',value:d.negative,itemStyle:{color:C.neg}}
+      ]
+    }]
+  });
+})();
+
+// ===== 区块 4 主图：密度曲线 + 情绪色分段 =====
+(function() {
+  const buckets = DATA.danmaku.buckets;
+  const warm = buckets.map(b => [b.start_s, b.warm]);
+  const neutral = buckets.map(b => [b.start_s, b.neutral_emo]);
+  const cool = buckets.map(b => [b.start_s, b.cool]);
+  const top = DATA.danmaku.top_moments.slice(0, 5).map(m => ({
+    name: m.start_s + 's · ' + m.count + '条',
+    coord: [m.start_s + (DATA.danmaku.bucket_size_s/2),
+      (buckets.find(b => b.start_s === m.start_s) || {}).count || 0],
+    symbolSize: 14, itemStyle:{color:C.warm}
+  }));
+  echarts.init(document.getElementById('dmTimeline')).setOption({
+    backgroundColor:'transparent',
+    tooltip:{trigger:'axis',axisPointer:{type:'cross'}},
+    legend:{textStyle:{color:C.ink2},top:0,right:10},
+    grid:{left:50,right:24,top:36,bottom:36},
+    xAxis:{type:'value',name:'progress (s)',nameTextStyle:{color:C.muted},
+      axisLabel:{color:C.muted},axisLine:{lineStyle:{color:C.line}},
+      splitLine:{lineStyle:{color:C.line2}}},
+    yAxis:{type:'value',name:'条数',nameTextStyle:{color:C.muted},
+      axisLabel:{color:C.muted},axisLine:{lineStyle:{color:C.line}},
+      splitLine:{lineStyle:{color:C.line2}}},
+    series:[
+      {name:'暖(激动)',type:'line',smooth:true,stack:'emo',areaStyle:{opacity:.7},
+        lineStyle:{color:C.warm},itemStyle:{color:C.warm},data:warm,
+        markPoint:{data:top,symbol:'pin',label:{formatter:'{b}',color:'#fff',fontSize:10}}},
+      {name:'中性',type:'line',smooth:true,stack:'emo',areaStyle:{opacity:.6},
+        lineStyle:{color:C.neu},itemStyle:{color:C.neu},data:neutral},
+      {name:'冷(吐槽)',type:'line',smooth:true,stack:'emo',areaStyle:{opacity:.7},
+        lineStyle:{color:C.cool},itemStyle:{color:C.cool},data:cool}
+    ]
+  });
+})();
+
+// ===== 区块 4 辅图：模式散点云 =====
+(function() {
+  const sc = DATA.danmaku.scatter_sample;
+  const byMode = {};
+  sc.forEach(s => { const k = s.mode; (byMode[k] = byMode[k] || []).push(s); });
+  const seriesNames = {1:'① 滚动',4:'④ 底部',5:'⑤ 顶部',7:'⑦ 高级'};
+  const colors = {1:C.primary,4:C.pos,5:C.neg,7:C.neu};
+  const series = Object.keys(byMode).sort().map(m => ({
+    name: seriesNames[m] || ('mode ' + m),
+    type:'scatter',symbolSize:4,
+    data: byMode[m].map(s => [s.progress_s, 0.5 + Math.random() * 0.4,
+      s.content, s.color_int]),
+    itemStyle:{color:colors[m] || C.muted,opacity:0.7}
+  }));
+  echarts.init(document.getElementById('dmScatter')).setOption({
+    backgroundColor:'transparent',
+    tooltip:{trigger:'item',formatter:p => `${p.value[2]} · ${(p.value[0]/60).toFixed(1)}min`},
+    legend:{textStyle:{color:C.ink2},top:0},
+    grid:{left:50,right:24,top:30,bottom:36},
+    xAxis:{type:'value',name:'progress (s)',nameTextStyle:{color:C.muted},
+      axisLabel:{color:C.muted},axisLine:{lineStyle:{color:C.line}},
+      splitLine:{lineStyle:{color:C.line2}}},
+    yAxis:{type:'value',min:0,max:1,show:false},
+    series: series
+  });
+})();
+
+// §9.3.2: tech detail toggle
+document.getElementById('dmTechToggle').addEventListener('click', function() {
+  const d = document.getElementById('dmTechDetail');
+  d.classList.toggle('show');
+  this.textContent = d.classList.contains('show') ? '技术细节 ▴' : '技术细节 ▾';
+});
+
+// §9.3.3: negative group toggle
+document.querySelectorAll('.neg-toggle').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const items = this.closest('.neg-group').querySelector('.neg-group-items');
+    const shown = items.style.display !== 'none';
+    items.style.display = shown ? 'none' : 'block';
+    this.textContent = shown ? '展开' : '收起';
+  });
+});
+</script>
+</body>
+</html>

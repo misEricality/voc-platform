@@ -1,25 +1,28 @@
 name: B站每日采集队列
 
 # 设计：工程师手输 BV 号到 bilibili_queue 表（status=scheduled），
-# 每天 UTC 00:30（北京 08:30）扫描 due_date <= today 的视频，调 pipeline 采集。
+# 每天 UTC 17:30（北京次日凌晨 1:30）扫描 due_date <= today 的视频，调 pipeline 采集。
 #
 # 与 daily-collect.yml 的关系：
-# - daily-collect.yml：Steam daily（UTC 00:00 北京 08:00），每天扫 6 款 Steam 单机
-# - bilibili-daily.yml：B站 daily（UTC 00:30 北京 08:30），扫今天到期的 B 站视频
+# - daily-collect.yml：Steam daily（UTC 17:00 北京次日凌晨 1:00），每天扫 6 款 Steam 单机
+# - bilibili-daily.yml：B站 daily（UTC 17:30 北京次日凌晨 1:30），扫今天到期的 B 站视频
 # - 错开 30 分钟避免同时调用 GitHub API 限流
 #
 # 详细设计：docs/architecture/BILIBILI_AUTOMATION.md（待补）
 
 on:
   schedule:
-    # 每天 UTC 00:30（北京时间 08:30）—— 比 Steam daily 晚 30 分钟
-    - cron: '30 0 * * *'
+    # 每天 UTC 17:30（北京时间次日凌晨 1:30）—— 与 daily-collect 错开 30 分钟避开 GitHub API 限流
+    # 选 17:30 UTC 而非 0:30 UTC：与 Steam daily 同步对齐「GH Actions 延迟 8h 也只到次日上午 9 点 BJT」
+    # （详见 docs/architecture/AUTOMATION_PIPELINE.md §8.5 + AGENTS.md 2026-08-27）
+    - cron: '30 17 * * *'
   workflow_dispatch:  # 支持手动触发
 
 jobs:
   bili-due:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 与 Steam daily 一致 60 分钟兜底（B 站单视频量小，正常 < 5 分钟；保守对齐）
+    timeout-minutes: 60
 
     steps:
       - name: 检出代码
@@ -44,9 +47,10 @@ jobs:
       - name: 触发今天到期的 B 站采集
         env:
           STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GLM_API_KEY: ${{ secrets.GLM_API_KEY }}  # 主标注器：智谱 BigModel GLM-5.3-Flash（2026-08-31 切换）
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}  # 暂留以备回退
           BILIBILI_SESSDATA: ${{ secrets.BILIBILI_SESSDATA }}
-          ANALYZER_PROVIDER: deepseek
+          ANALYZER_PROVIDER: glm-5.3-flash
           VOC_SKIP_EMBEDDING: "1"  # CI 无 ML 环境
         run: |
           python -m src.queue run-due --limit 50

@@ -15,14 +15,16 @@
 
 ## 0. 一句话总览
 
-GitHub Actions 每天 UTC 00:00 调 `scripts/ops/daily_incremental_collect.py`，把"前一天累积的 DB"从 GitHub Release 拉下来 → 对 6 款 Steam 单机游戏做增量采集 → 把更新后的 DB 上传回 GitHub Release。**每天的 DB 是同一份累积库**，不再每天生成新库。
+GitHub Actions 每天 UTC 17:00 调 `scripts/ops/daily_incremental_collect.py`，把"前一天累积的 DB"从 GitHub Release 拉下来 → 对 6 款 Steam 单机游戏做增量采集 → 把更新后的 DB 上传回 GitHub Release。**每天的 DB 是同一份累积库**，不再每天生成新库。
+
+> **cron 时间变更**：2026-08-27 把 daily-collect cron 从 `0 0 * * *` UTC（= 北京 08:00）改为 `0 17 * * *` UTC（= 北京次日凌晨 1:00）—— GH Actions schedule 历史上最多延迟 ~8 小时，0:00 UTC 配延迟会让 workflow 在北京下午 4 点才跑完，太晚；17:00 UTC 即便延迟 8 小时也只到次日上午 9 点 BJT。详见 §8.5。
 
 ---
 
 ## 1. 端到端流程图
 
 ```
-┌─────────────────────── GitHub Actions (UTC 00:00) ───────────────────────┐
+┌─────────────────── GitHub Actions (UTC 17:00 · 北京次日凌晨 1:00) ──────────────────┐
 │                                                                          │
 │   ┌─checkout─┐                                                           │
 │   │ setup-py │                                                           │

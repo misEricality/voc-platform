@@ -10,12 +10,21 @@
 product/
 ├── README.md                       ⬅ 你在这里：产品文档地图
 ├── prototype_overview.md           界面原型交付概览（视觉决策 + 后续建议）
+├── export_bilibili_data.py         B 站单视频原型数据导出（read DB → JSON）
+├── build_bilibili_video.py         B 站单视频原型 HTML 组装
 └── prototype/                      🎨 高保真原型（静态作品集封面，双击可开，可挂 Pages）
-    ├── voc-platform-prototype.html     主看板（数据看板 + 原声列表）
-    ├── game-compare.html               游戏对比看板（Steam 封面卡片 + 词云）
-    ├── game-compare.html               游戏对比看板（Steam 封面卡片 + 词云）
-    ├── bilibili-video.html             B 站单视频看板（v0.3 2026-08-26：接 DB · SPA 切换 3 视频；v0.3 bugfix 2026-08-26：Template 替换裸标识符 fix）
+    ├── src/                            设计 Token 单一来源（DESIGN_TOKENS v1.0 · 2026-08-31）
+    │   └── tokens.css
+    ├── voc-platform-prototype.html     主看板 v1（历史版，diff 对照）
+    ├── voc-platform-prototype-v2.html  主看板 v2（DESIGN_TOKENS v1.0 合规版 · 当前推荐）
+    ├── game-compare.html               游戏对比看板 v1（历史版，diff 对照）
+    ├── game-compare-v2.html            游戏对比看板 v2（DESIGN_TOKENS v1.0 合规版 · 当前推荐）
+    ├── bilibili-video.html             B 站单视频看板 v1（v0.3 2026-08-26：接 DB · SPA 切换 3 视频）
+    └── bilibili-video-v2.html          B 站单视频看板 v2（DESIGN_TOKENS v1.0 合规版 · 当前推荐）
 ```
+
+> ⚠️ **v1 与 v2 双版本说明**：v2（`* -v2.html`）是 2026-08-31 评审通过后按 `docs/architecture/DESIGN_TOKENS.md` v1.0 重新构建的合规版，使用 `tokens.css` 单一来源、`data-theme="dark"`、新组件规格。v1 保留作为 diff 对照（按工程师指示不覆盖、不删）。
+> 颜色 / 字体 / 组件 / 图标 / 图表规范 → [docs/architecture/DESIGN_TOKENS.md](../docs/architecture/DESIGN_TOKENS.md)
 
 ---
 

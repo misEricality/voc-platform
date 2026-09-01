@@ -3,7 +3,7 @@
 > **这份文件是代理（Agent）与工程师共同遵守的唯一工程规范来源。**
 > 每次新会话开始时，代理必须先读完本文件再动手，无需工程师重复强调。
 >
-> **最后更新**：2026-08-19
+> **最后更新**：2026-09-01
 
 ---
 
@@ -138,6 +138,7 @@ voc_platform/
 - [ ] **命名合规**：新文件符合命名规范（snake_case / CamelCase / 自解释）
 - [ ] **数据/备份瘦身**：`.bak`、过期导出、`__pycache__` 是否堆积（运行时产物不提交 git）
 - [ ] **工作树干净**：`git status --short` 无意外改动 / 未跟踪残留
+- [ ] **workflow yaml 与版本记录一致**：每次在版本记录登记「yml 已改」前，先 `git diff .github/workflows/*.yml` 确认改动已落盘；P6 silent 失败 / cron / timeout 等已知生产 bug 修完后尤其要核对（2026-09-01 教训：AGENTS.md 写了 yml 改了，但实际没改）
 
 ---
 
@@ -168,3 +169,8 @@ voc_platform/
 | 2026-08-31 | **沙箱推送踩坑沉淀 + push 排查指南**：本地 16 文件改动（含 smart_window v2 + GLM-5.3-Flash 切换）推到 GitHub 过程踩 4 个新坑：①REMOTE_HEAD 硬编码过期 → parent 用旧 SHA 截断 e1380fe squash 历史；②root 目录排序 bug（`''` 和 `src` depth 都 0，set 无序导致 root 先处理时子目录新 SHA 还没注册）→ 子目录改动全部失效；③**basename key 冲突**（`src` vs `product/prototype/src` 同名）→ `new_subdir_trees` key 用 basename 致后处理覆盖前处理，src/ 被前端文件污染；④**GitHub refs 二级限流**（与权限无关，blob POST 仍 201，ref POST/PATCH 持续 403）→ sandbox 写操作连续 5+ 次触发；最终兜底：用户本机 `git push origin main:main --force`。新建 `docs/guides/PUSH_TROUBLESHOOTING.md`（7 章节：决策树 / 用法 / 已知坑 / 验证 / 回滚 / 检查清单 / 相关文档），登记到 `docs/00-index.md` 文档地图 + 「按我想知道」表；`.workbuddy/memory/2026-08-31.md` 完整复盘；`MEMORY.md` §沙箱 push 段增订 4 个坑摘要。清理 30 个临时调试脚本（`_check_*.py` / `_test_*.py` / `_verify_*.py` / `_debug_*.py` 等） | 解锁「每次 push 前先读 PUSH_TROUBLESHOOTING.md」的长效机制 + 「sandbox refs 限流时立即提示用户手动 git 推」的硬约束；避免下次重复踩坑 |
 | 2026-08-31 | **GLM secret 命名统一 `XXX_API_KEY` 格式**：原计划用 `GLM_API_VOC_PLATFORM`（与主 `GLM_API_KEY` 解耦，便于额度隔离/失败回退/配额黑洞排查），工程师要求统一 `XXX_API_KEY` 格式（与 DEEPSEEK/QWEN/STEAM 一致便于维护），故改 4 文件：①`src/analyzers/sentiment_llm.py` `glm-5.3-flash.api_key_env` 从 `GLM_API_VOC_PLATFORM` → `GLM_API_KEY`；②`.env` 把占位符替换为真实 key 8846c10...（`.gitignore` 已排除，作离线备份）；③`.env.example` BOM+CRLF → UTF-8 LF 重新写，删除独立 `GLM_API_VOC_PLATFORM` 块；④workflow env 名同步 `GLM_API_KEY: ${{ secrets.GLM_API_KEY }}`。本地验证重跑通过：`analyzer_version=llm:glm-5.3-flash@55c003a3` ✓。GH Secret 名同步从 `GLM_API_VOC_PLATFORM` 改 `GLM_API_KEY`（工程师已加）。解耦设计（额度隔离/失败回退）当前通过 `.env` 同一 key 实现，未来需要切回额度隔离时只需再改 `api_key_env` + 新 secret | 统一命名约定优先于解耦设计（工程师偏好）；`.env` 写明文作冗余备份（已 .gitignore 安全）；保留 `GLM_5_3_FLASH_BASE_URL/MODEL` 独立环境变量（端点/模型未来可能与 `glm` provider 分叉） |
 | 2026-08-31 | 同日：用户问「每天采的是昨天的数据并且尽量采集完全，也可以尝试补全前天的数据，而当天的不采集」→ 落地成「每日时间窗策略 v2」上一行（2026-08-31 第一行）。本行为同一日第二次变更记录 | 时间戳同日多变更分别记录便于回溯 |
+| 2026-09-01 | **P6 workflow 文档/代码脱节收口 + Node 20 deprecation 解锁**：当日 `daily-collect.yml` cron 跑 30m24s 被 cancel（"exceeded maximum execution time of 30m0s"），audit 发现 AGENTS.md 2026-08-27 与 2026-08-25 记录声称已改的 3 项 P6 production 修复**实际未落地到 workflow 文件**：①timeout-minutes:30（应 60）；②cron `'0 0 * * *'`（应 `'0 17 * * *'`）；③「校验今日 Release asset」步骤（`scripts/ops/verify_release_upload.py` 已写好但 yml 未调用）。`bilibili-daily.yml` 同样 cron + timeout 没改 + `ANALYZER_PROVIDER: deepseek` 未切 `glm-5.3-flash`。本次修复：①两个 workflow 的 timeout-minutes 30→60；②cron `'0 0 * * *'`/`'30 0 * * *'` → `'0 17 * * *'`/`'30 17 * * *'`（与 docs §8.5 对齐）；③`daily-collect.yml` 新增「校验今日 Release asset」步骤（`if: always()`，调用 `verify_release_upload.py` 失败 exit 1 触发 GH 邮件告警）；④`bilibili-daily.yml` 切 GLM-5.3-Flash + 注入 `GLM_API_KEY`；⑤注释/设计文档同步对齐新时间。本地 `tests/test_daily_incremental_collect.py` 10 例 + `tests/test_verify_release_upload.py` 8 例门禁。**教训沉淀**：AGENTS.md 版本记录 ≠ workflow 实际状态，下个里程碑须把「workflow yaml diff」加入 §6 健康检查 7 条清单 | 解锁 P6 真实「早完成」+ silent 失败告警链路；防止类似文档/代码脱节再次发生 |
+| 2026-09-01 | **§6 健康检查清单扩展**：原 7 条只覆盖「目录/索引/命名/数据/工作树」，未覆盖「**workflow yaml 是否与最新版本记录一致**」。本次事故根因 = AGENTS.md 写了「已改 yml」，但实际 yml 没改。新增第 8 条：**[ ] workflow yaml diff 与版本记录一致**：每次更新版本记录前先 `git diff` 两个 `.github/workflows/*.yml`，确认改动已落盘；尤其 P6 silent 失败/cron/timeout 等已知生产 bug 修完后 | 防止「AGENTS.md 自述已完成 ≠ workflow 实际已完成」的脱节再发生 |
+| 2026-09-01 | **HANDOVER 收口 · 项目状态速览落地**：README.md 顶部新增「📍 项目状态速览」段（已完成 / 接下来 / 终点 3 块），让接手者/新 Agent 30 秒内定位；统一 README/AGENTS/DEVELOPMENT_PLAN 时间戳到 2026-09-01；README 主标注器说法 DEEPSEEK → GLM-5.3-Flash；4 处索引去重（`docs/00-index.md` 重复 QUICK_START.md、`product/README.md` 重复 game-compare.html、`scripts/README.md` 合并 2 条 2026-08-27 版本记录） | 项目交接准备：让新接手者不依赖历史对话即可上手 |
+| 2026-09-01 | **scripts/dev/ 激进归档 ~35 个一次性脚本到 archive/**：按 7 个子目录分类（debug/ diag/ one_shot_backfill/ one_shot_curate/ one_shot_export/ one_shot_prototype/ one_shot_verify/ e2e/ P6_bootstrap/）；保留 ~12 个核心脚本（reanalyze_all / rematch_opinions / recompute_topics / rebuild_golden_set / l35_cluster / analyze_danmaku / mine_fallback_candidates / export_prototype_data / verify_* 3 个）；`scripts/README.md` 同步登记 archive/ 收纳规则 | 去除 dev/ 冗余，让新接手者一眼看到「真正活跃的工具集」 |
+| 2026-09-01 | **工作区瘦 · 缓存 / 测试 DB / scratch 清理**：删除 7 处 `__pycache__/`（gitignored 但污染工作树）+ 100+ `data/voc_test_*.db` + `voc_debug_*.db` + `voc_smoke_p6.db` + `data/_bili_video.json`（被 `_bili_videos.json` 取代） + `.workbuddy/scratch/`（8-28 push 排障 + 8/1 inspect 残留）；`data/voc.db` 主库与 `data/archive/online_games_2026-08-23.db` 网游归档保留（运行时数据） | git 工作树干净（`git status --short` 空）；handover 不带噪音 |

@@ -55,8 +55,9 @@
 ```yaml
 # .github/workflows/bilibili-daily.yml
 schedule:
-  - cron: '30 0 * * *'   # 每天 UTC 00:30（北京时间 08:30）
-                          # 比 Steam daily（UTC 00:00）晚 30 分钟，避免同时打 GH API
+  - cron: '30 17 * * *'  # 每天 UTC 17:30（北京次日凌晨 1:30）
+                          # 比 Steam daily（UTC 17:00）晚 30 分钟，避免同时打 GH API
+                          # 2026-08-27 改：避开 GH Actions schedule 最多 8h 延迟 → 17:00 UTC 即便延迟也只到次日上午 9 点 BJT
 ```
 
 逻辑：
@@ -69,7 +70,7 @@ schedule:
 
 | 维度 | Steam daily | B 站 daily |
 |---|---|---|
-| 触发 | cron（UTC 00:00 北京 08:00） | cron（UTC 00:30 北京 08:30） |
+| 触发 | cron（UTC 17:00 北京次日凌晨 1:00） | cron（UTC 17:30 北京次日凌晨 1:30） |
 | 采集目标来源 | `config/monitoring/targets.yaml` | `bilibili_queue` 表（动态） |
 | 数量 | 6 款 Steam（固定） | ≤ 50 视频/天（动态） |
 | 新增目标方式 | 改 yaml + commit | `python -m src.queue add BV...` |

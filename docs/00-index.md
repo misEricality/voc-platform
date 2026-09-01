@@ -17,13 +17,13 @@ docs/
 │   ├── DATA_STORAGE_DESIGN.md      数据分层架构 + 表设计（设计稿，含目标迁移路径）
 │   ├── BILIBILI_COLLECTION.md      B 站采集规格（接口/数据映射/采样策略，开发交接文档）
 │   ├── BILIBILI_AUTOMATION.md      B 站自动化采集设计（待采清单 + cron + CLI；2026-08-23 落地）
+│   ├── DESIGN_TOKENS.md            设计 Token 规范 v1.0（色彩/字体/组件/图标/图表/双主题 + 三页迁移映射，前端执行依据）
 │   └── SELF_HOSTED_VPS_DEPLOYMENT.md 形态 A 部署指南（公网可访问 / 数据全私有；Oracle Always Free + Caddy + Streamlit）
 ├── plan/                   🗺️ 计划与里程碑
 │   ├── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
 │   ├── P3_COMPARE_DESIGN.md    P3 多目标对比设计（数据/口径/图表选型/技术实现）
 │   └── next-gen-tagging/       下一代标签系统（GDT+PEDM 双轨）分阶段采纳计划 + 原稿备份 + 验证报告
 ├── guides/                 📖 操作指南（"我该怎么用"）
-│   ├── QUICK_START.md          5 分钟上手指南
 │   ├── QUICK_START.md          5 分钟上手指南
 │   ├── SETUP_ML_ENV.md         ML 环境搭建（torch + sentence-transformers）
 │   └── PUSH_TROUBLESHOOTING.md 🛠️ Push 排查指南（决策树 + 已知坑 + 验证清单，每次 push 前必读）
@@ -49,6 +49,7 @@ docs/
 | **B 站自动化怎么跑（待采清单 + cron + CLI）** | [architecture/BILIBILI_AUTOMATION.md](./architecture/BILIBILI_AUTOMATION.md) |
 | **怎么把仪表盘部署到公网，同时不让外人拿到数据** | [architecture/SELF_HOSTED_VPS_DEPLOYMENT.md](./architecture/SELF_HOSTED_VPS_DEPLOYMENT.md) |
 | **怎么把代码推送到 GitHub（sandbox 推 vs 手动 git 推的决策树）** | [guides/PUSH_TROUBLESHOOTING.md](./guides/PUSH_TROUBLESHOOTING.md) |
+| **前端页面的颜色/字体/组件/图表规范是什么** | [architecture/DESIGN_TOKENS.md](./architecture/DESIGN_TOKENS.md) |
 | **数据库有哪些字段、怎么命名的** | [architecture/DATA_FIELDS.md](./architecture/DATA_FIELDS.md) |
 | **数据是怎么分层流转的、表怎么设计** | [architecture/DATA_STORAGE_DESIGN.md](./architecture/DATA_STORAGE_DESIGN.md) |
 | **为什么选这个数据源、不选别的** | [research/VoC平台竞品调研报告.md](./research/VoC平台竞品调研报告.md) |

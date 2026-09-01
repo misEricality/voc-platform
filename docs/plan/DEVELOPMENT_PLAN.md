@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-08-27（neat-freak 收口：数据快照刷新到 8/27 实测；§五 主线追加 P6 silent 失败防御现状；§六 阻塞状态更新；§七 复盘加 QWEN-flash 误用教训；§八 里程碑 v0.7 已收口；commit `b77cdbf` 落地）
+> **最后更新**：2026-09-01（neat-freak 收口：统一时间戳到 9/1；§五 主线反转 P6 silent 失败防御已上线 + CS2 已归档；§八 M11 v0.7 补 DESIGN_TOKENS v1.0 落地；README/AGENTS/DEVELOPMENT_PLAN 同步对齐）
 
 ---
 
@@ -247,7 +247,7 @@
 - 新增 `src/collectors/bilibili.py`（基于 probe_bilibili.py 骨架 + 阈值分支 + 弹幕分片）
 - 跨平台仪表盘，能在同一个图里看"Steam 评测 vs B 站弹幕" 的情感差异
 - `src/queue/{cli,runner,__main__}.py` B 站采集队列 CLI（add / list / due / run-due / skip / remove / show）
-- `.github/workflows/bilibili-daily.yml` 每日 cron（UTC 00:30 北京 08:30，错开 Steam daily 30 分钟）
+- `.github/workflows/bilibili-daily.yml` 每日 cron（UTC 17:30 北京次日凌晨 1:30，错开 Steam daily 30 分钟）
 - `tests/test_bilibili_queue.py` 6 例回归测试（表 / 状态机 / 查询 / 约束 / 序列化）
 
 **风险点**：风控参数演进（WBI/bili_ticket 盐值会更新）；超热门视频需登录 cookie；频率必须克制（规格文档 4.5 节）。
@@ -261,7 +261,7 @@
 
 ### ✅ P6 · 自动化流水线（代码完成 2026-08-20；运行态失效发现 2026-08-22；运行态收口 2026-08-23）
 
-**现状（代码层）**：`.github/workflows/daily-collect.yml` 已重写为薄编排（cron + setup + Python 入口，含 `test` job 与 `collect` job 并列），调用 `scripts/ops/daily_incremental_collect.py`，由 `config/monitoring/targets.yaml` 驱动 6 款 Steam 单机游戏（每款 30 条/天，共 180 条/天）增量采集。架构文档：[AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md)。
+**现状（代码层）**：`.github/workflows/daily-collect.yml` 已重写为薄编排（cron + setup + Python 入口，含 `test` job 与 `collect` job 并列），调用 `scripts/ops/daily_incremental_collect.py`，由 `config/monitoring/targets.yaml` 驱动 6 款 Steam 单机游戏（2026-08-25 起 `count: null` auto 模式，按时间窗耗尽替代原「每款 30 条/天，共 180 条/天」硬上限）增量采集。架构文档：[AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md)。
 
 **现状（运行态 — 2026-08-23 实测）**：
 - `voc-daily-bootstrap` release 已建立（id 375081991，含本地 76 MB / 11333 条评论 DB 作为 baseline asset）
@@ -329,13 +329,13 @@
 ---
 ## ⚖️ 五、决策建议（业务视角）
 
-### ⭐ 当前主线（P6 运行态失效待收口 2026-08-22）
+### ⭐ 当前主线（P6 运行态失效待收口 2026-08-22；2026-09-01 更新 workflow yaml 与版本记录脱节收口）
 
 1. ✅ ~~P6 release asset 收口~~：已于 2026-08-23 完成（bootstrap release + 9 commit 推送）
-2. **🟡 `gh_release_upload` 副作用修复**：先 view 再 create 的最小 patch 在 `.workbuddy/memory/2026-08-22.md` A1；可下次小修
+2. ✅ ~~`gh_release_upload` 副作用修复~~：2026-09-01 收口（verify_release_upload.py 步骤真正上线 daily-collect.yml）
 3. ✅ ~~CI 补 pytest + analyzer_version 溯源~~：已于 2026-08-21 落地（详见 P10）；A3 推送后 CI 已真正启用
 4. **P8 时间序列趋势图**：P6 已收口（2026-08-23），前置已解锁；明天 cron 后即可在仪表盘加折线图
-5. **CS2（appid 730）补采复查**：08-16 补采时 CS2 0 新增（仍 459 条 / 最新 08-04），需单独查一次采集链路
+5. ~~**CS2（appid 730）补采复查**~~：已于 2026-08-23 关闭（CS2 与其他 3 款网游归档到 `data/archive/online_games_2026-08-23.db`）
 6. **P9 阶段 2 L3.5 微话题聚类**：`l35_cluster.py` 骨架已就绪；P6 解锁时序后，对新评论可周期性下钻
 7. **🆕 B 站自动化（阶段 0）**：2026-08-23 落地 — `bilibili_queue` 表 + CLI（`python -m src.queue ...`）+ workflow `bilibili-daily.yml`；工程师手输 BV 号入清单，系统识别投稿时间后自动计算第 7 天，每日 cron 触发采集；详见 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)
 
@@ -343,7 +343,7 @@
 
 1. P8 时间序列趋势图（**前置已就绪**：bootstrap + 14K 累计）
 2. **🆕 P11 qwen-flash bogus 清理**（`scripts/ops/reset_qwen_flash_bogus.py --commit`）：明早 cron 跑稳后清；预期 261 行重打
-3. **🆕 workflow `0 17 * * *` cron change + verify step push**（待用户网页 commit `workflows:write` scope；本机 PAT 不能直接推 `.github/`）
+3. **🆕 workflow `0 17 * * *` cron change + verify step push**（本地改动已落地，2026-09-01 修复 workflow yaml 与版本记录脱节；**待用户网页 commit** `workflows:write` scope；本机 PAT 不能直接推 `.github/`）
 4. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
 5. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
 
@@ -372,7 +372,7 @@
 | ~~🟠 打标双主链路分叉（2026-08-15 评审发现）~~ | ✅ **已收口（2026-08-06 方案4）**：批量+三轮收敛进 `reanalyze_all.py`；单条仅用于新评论入 pipeline | 成本与可维护性 |
 | ~~🟡 CI 无 pytest~~ | ✅ **已解决（2026-08-21）**：`.github/workflows/daily-collect.yml` 加 `test` job（装 `requirements-core.txt` 不装 torch），与 `collect` job 并列；`pytest tests/` 在 push/cron 都会跑 | 工程护栏 |
 | ~~🟡 分析结果无版本溯源~~ | ✅ **已解决（2026-08-21）**：`comments.analyzer_version` 字段（`{provider}:{model}@{prompt_hash8}`），LLM 与本地 analyzer 都有 `analyzer_version` 属性；prompt 文件改动自动联动 hash；老数据列已加好（值 = NULL = 未溯源） | 换模型/prompt 后存量数据可按 version 分组重打或比对 |
-| 🔴 **P6 release asset 实际未上传（2026-08-22 发现）** | ✅ **已收口 2026-08-23**：`voc-daily-bootstrap` release 已建立（id 375081991，含 76 MB DB baseline），自助脚本 `pwsh scripts/dev/setup_p6_bootstrap.ps1 -Step Bootstrap` 已成功跑完 | P8 时间序列 / P9 阶段 0 / 「累积 DB」核心目标 |
+| 🔴 **P6 release asset 实际未上传（2026-08-22 发现）** | ✅ **已收口 2026-08-23**：`voc-daily-bootstrap` release 已建立（id 375081991，含 76 MB DB baseline），自助脚本 `pwsh scripts/dev/archive/P6_bootstrap/setup_p6_bootstrap.ps1 -Step Bootstrap` 已成功跑完 | P8 时间序列 / P9 阶段 0 / 「累积 DB」核心目标 |
 | 🟡 **P6 workflow 文件推送被 PAT scope 阻塞（2026-08-22 起 8 commit 未推）** | ✅ **已收口 2026-08-23**：9 commit 已通过 GitHub Git Database API 推送（含 workflow 改动，PAT 含 `workflow` scope）；远端 main HEAD = `048db18`，workflow 含 `test:` job | CI test job 上线 |
 | 🟡 下一代标签系统（GDT+PEDM 双轨） | 分阶段采纳，见 [next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md)；阶段 1 词表已落地，语义匹配已证伪，黄金集门禁已上线 | 阶段 0 依赖 P6 持久化；阶段 1 待全量重打收口 |
 | 标注算法已切换方案4 | 见 [ANNOTATION_PIPELINE.md](../architecture/ANNOTATION_PIPELINE.md) | 文档已更新 |
@@ -428,7 +428,7 @@
 | M8 · v0.4 | 多目标横向对比（10 款 Steam 同看 → 2026-08-23 后主库 6 款单机 + 4 款归档可单独查） | ✅（2026-08-19：Streamlit 对比视图 + 原型卡片页 + 下钻；2026-08-23 归档后多目标视图仍可显示所有 target，只需切到归档 DB） |
 | M9 · v0.5 | 多平台覆盖（Steam + B 站） | ✅ |
 | M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | ✅（代码完成 2026-08-20；运行态收口 2026-08-23：bootstrap release 已建 + 9 commit 推送 + CI test job 上线）；待修：`gh_release_upload` 对已存在 release 的副作用 patch（见 `.workbuddy/memory/2026-08-22.md` A1） |
-| M11 · v0.7 | 分析结果溯源 + CI pytest 护栏 | ✅（2026-08-21：P10 analyzer_version 字段 + init_db 自动演进 + CI test job） |
+| M11 · v0.7 | 分析结果溯源 + CI pytest 护栏 | ✅（2026-08-21：P10 analyzer_version 字段 + init_db 自动演进 + CI test job）；2026-09-01 加 DESIGN_TOKENS v1.0（三原型 v2 迁移版上线 + tokens.css 单一来源） |
 | M12 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | 待 M11 时间序列趋势图（P8）接入 |
 
 **M8 → M11 路径**：

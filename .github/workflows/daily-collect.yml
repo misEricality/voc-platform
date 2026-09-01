@@ -2,8 +2,11 @@ name: Daily VoC Collection
 
 on:
   schedule:
-    # 每天 UTC 00:00（北京时间 08:00）运行
-    - cron: '0 0 * * *'
+    # 每天 UTC 17:00（北京时间次日凌晨 1:00）运行
+    # —— 选 17:00 UTC 而非 0:00 UTC：GH Actions schedule 历史上最多延迟 ~8h，
+    # 0:00 UTC + 延迟 = 北京下午 4 点才跑完，太晚；17:00 UTC 即便延迟 8h 也只到次日上午 9 点 BJT。
+    # 详见 docs/architecture/AUTOMATION_PIPELINE.md §8.5 + AGENTS.md 2026-08-27
+    - cron: '0 17 * * *'
   workflow_dispatch:  # 支持手动触发
 
 jobs:
@@ -34,7 +37,10 @@ jobs:
   # ---- 每日采集 ----
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60 分钟兜底：6 款 Steam × auto 模式翻页 + LLM 标注 GLM-5.3-Flash，正常 < 20 分钟；
+    # count=null（auto）后单 target 极端情况可达 ~30 分钟（参见 AGENTS.md 2026-08-25）；
+    # 60 分钟上限给连败补救留 2x 安全冗余。30 分钟曾在 2026-09-01 实际超时。
+    timeout-minutes: 60
 
     # 需要 contents: write 以创建/上传 GH Release asset
     permissions:
@@ -78,3 +84,12 @@ jobs:
           name: voc-db-${{ github.run_number }}
           path: data/voc.db
           retention-days: 30
+
+      - name: 校验今日 Release asset（silent 失败防御；AGENTS.md 2026-08-27 + 2026-09-01 上线）
+        # 详见 scripts/ops/verify_release_upload.py + docs/architecture/AUTOMATION_PIPELINE.md §8.3
+        # 用 if: always() 在 collect 失败时也跑；步骤失败 exit 1 → workflow 标红 → GH 邮件告警
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/ops/verify_release_upload.py

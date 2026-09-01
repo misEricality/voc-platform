@@ -201,7 +201,10 @@ ls -la data/voc.db   # 应看到文件，权限自动继承 voc:voc
 # 编辑 voc 用户的 crontab
 crontab -e
 
-# 加入以下 3 行（按本项目时间约定，UTC 00:00 = 北京 08:00）
+# 加入以下 3 行
+# 注：本项目 GH Actions 流水线已切到 UTC 17:00（北京次日凌晨 1:00）以避开 GH Actions schedule 最多 8h 延迟；
+# VPS 自托管无此延迟问题，可保留 UTC 00:00（= 北京 08:00）做「早晨第一件事前采集完成」；
+# 也可与 GH Actions 对齐改 UTC 17:00（个人偏好）。
 # 1. 每日采集 + 标注
 0 0 * * * cd /home/voc/voc-platform && /home/voc/voc-platform/.venv/bin/python scripts/ops/daily_incremental_collect.py --no-download --no-upload >> /home/voc/voc-platform/logs/cron.log 2>&1
 
@@ -338,7 +341,7 @@ ls -la data/voc.db                          # 应 -rw------- voc voc
 ### 6.1 日常（每日自动，无需人工）
 
 > **Cron 跑了什么**（无人值守）
-> - UTC 00:00：`daily_incremental_collect.py` 跑完当日 6 款 Steam 单机增量
+> - UTC 00:00（= 北京 08:00；本节以 VPS 自托管为准，GH Actions 流水线则切到 UTC 17:00 以避开 8h 延迟）：`daily_incremental_collect.py` 跑完当日 6 款 Steam 单机增量
 > - UTC 03:00（周日）：VACUUM + 滚动备份 DB（保留 5 份）
 > - 每 10 分钟：DB 健康检查（评论数能查询）
 

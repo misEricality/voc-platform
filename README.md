@@ -19,6 +19,20 @@
 
 > 📌 **项目定位**：学习大模型API集成、NLP应用、数据可视化全链路；非商业产品。
 
+## 📍 项目状态速览（接手必读）
+
+> 30 秒看完这个项目现在是什么 + 下一步是什么 + 终点是什么。
+
+| 维度 | 当前（v0.7，2026-09-01 收口） |
+|---|---|
+| **✅ 已完成** | Steam 6 单机 + B 站 3 视频采集（14K 评论）；L1-L3 三级标签标注管线（方案4）；本地 bge 语义向量化；Streamlit 仪表盘（单目标 / 多目标对比 / 明细核查）；B 站单视频看板；**P6 自动化流水线**（GH Actions daily cron + GH Release 累积 DB + CI pytest 护栏 + silent 失败防御）；**DESIGN_TOKENS v1.0**（三原型迁移版已上线） |
+| **🔜 接下来（v1.0 前主线）** | **P8 时间序列趋势图**（P6 持久化已解锁）；**P9 阶段 2 L3.5 微话题聚类**（`l35_cluster.py` 骨架就绪）；**P9 阶段 3 PEDM 负向观点试点**（黄金集一致率 ≥80% 才放量）；**P11 QWEN-flash bogus 清理**（`reset_qwen_flash_bogus.py --commit`） |
+| **🎯 最终目标（v1.0 作品集发布）** | 完整文档（README 进阶版）+ mermaid 架构图；1-2 篇复盘博客（踩坑 + 经验）；演示视频/GIF；求职作品集重点项目 |
+
+→ 详细路线 / 当前主线 / 阻塞：[docs/plan/DEVELOPMENT_PLAN.md](./docs/plan/DEVELOPMENT_PLAN.md)
+→ 主标注器：`glm-5.3-flash`（2026-08-31 切；与 DEEPSEEK/QWEN 共享 GDT v3.1.1 prompt 集合）
+→ P6 daily cron：UTC 17:00（北京次日凌晨 1:00，避开 GH Actions schedule 最多 8h 延迟）
+
 ## 🎯 当前进度（v0.7 完成，v1.0 作品化进行中）
 
 | 模块 | 状态 | 备注 |
@@ -26,7 +40,7 @@
 | Steam 评测采集 | ✅ | 官方API + 翻页去重 + 验证页防漏采（主库聚焦 6 款单机；4 款网游 2026-08-23 归档） |
 | **B站采集** | ✅ | 公开 Web 接口（免申请），7 天稳态快照 + 弹幕分片；3 视频 3030 评论已实测落库 |
 | SQLite 存储 | ✅ | SQLAlchemy 2.x，冷启动 NULL + 7 天回采机制 |
-| LLM 情感分析 | ✅ | DEEPSEEK 生产标注器（QWEN-flash 个人 token-plan 模型名 404，2026-08-25 回退） |
+| LLM 情感分析 | ✅ | **GLM-5.3-Flash 主标注器**（智谱 BigModel VLM，2026-08-31 切；与 DEEPSEEK/QWEN 共享 GDT v3.1.1 prompt 集合，不污染 `analyzer_version` 溯源；QWEN-flash 个人 token-plan 模型名 404，2026-08-25 回退） |
 | **L1-L3 三级标签标注** | ✅ | 方案4：观点短语 → 程序匹配（GDT v3.1.1，L1 10 / L2 28 / L3 111） |
 | **语义向量化** | ✅ | 本地 bge-small-zh（P2.5，零 API 成本，语义检索/聚类基建） |
 | 本地BERT情感分析 | ✅ | 零成本备选 |
@@ -37,7 +51,7 @@
 | 微博采集 | 🚧 | 下一阶段 |
 | 自动化流水线 | ✅ | P6 已落地：workflow cron + GH Release 累积 DB + CI pytest 护栏（test job）；P6 silent 失败防御上线（verify_release_upload.py）|
 
-> 📊 **当前数据**（2026-08-27 sync 后，pending qwen-flash 261 条 bogus 清理）：**14,478 条**评论（Steam 6 款单机 + 归档 4 款 + B 站 3 视频），观点级标注约 11,500 条，语义向量约 6,400 条（单模型 `bge-small-zh-v1.5`，已全量回填）。GDT v3.1.1 词典已扩充、兜底占比 topic 67.6% / opinion 67.4%，P3 多目标对比已上线，P6 自动化流水线每日增量入库（30 天回看 + bootstrap 累积），P10 analyzer_version 字段已加（老数据 NULL = 未溯源，新数据自动写入）。
+> 📊 **当前数据**（2026-09-01 收口，pending qwen-flash 261 条 bogus 清理）：**~14,478 条**评论（Steam 6 款单机 + 归档 4 款 + B 站 3 视频），观点级标注约 11,500 条，语义向量约 6,400 条（单模型 `bge-small-zh-v1.5`，已全量回填）。GDT v3.1.1 词典已扩充、兜底占比 topic 67.6% / opinion 67.4%，P3 多目标对比已上线，P6 自动化流水线每日增量入库（30 天回看 + bootstrap 累积 + 2026-08-31 smart_window v2「采昨天全天 + 前天全天」），P10 analyzer_version 字段已加（老数据 NULL = 未溯源，新数据自动写入）。DESIGN_TOKENS v1.0 已落地三原型 v2 迁移版。
 
 ## 🏷️ L1-L3 三级标签标注管线（方案4）
 
@@ -198,8 +212,8 @@ voc-platform/
 - [x] **v0.4** - 词云 + 仪表盘洞察力增强 + 多目标横向对比（P3 已上线）
 - [x] **v0.5** - B 站采集 + 多平台扩展（采集器 + 看板 v0.3）
 - [x] **v0.6** - 自动化流水线 P6（GH Actions cron + GH Release 累积 DB）
-- [x] **v0.7** - 分析结果溯源 P10（analyzer_version 字段）+ CI pytest 护栏 + P11 QWEN-flash bogus 清理工具
-- [ ] **v1.0** - P8 时间序列趋势图（解锁前置已就绪） + 完整文档 + 技术博客 + 求职作品集发布
+- [x] **v0.7** - 分析结果溯源 P10（analyzer_version 字段）+ CI pytest 护栏 + P11 QWEN-flash bogus 清理工具 + DESIGN_TOKENS v1.0（三原型 v2 迁移版上线）
+- [ ] **v1.0** - P8 时间序列趋势图（解锁前置已就绪） + P9 阶段 2/3 落地 + 完整文档 + 技术博客 + 求职作品集发布
 
 ## 📄 License
 

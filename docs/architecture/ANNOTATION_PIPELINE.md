@@ -54,8 +54,8 @@
 | `scripts/dev/mine_fallback_candidates.py` | 词典缺口挖掘：扫兜底桶，列疑似具体话题短语供人工加词 |
 | `scripts/dev/rematch_opinions.py` | 存量重匹配：用新词典重跑 match_l3，把「兜底→具体」写回 full_path |
 | `scripts/dev/recompute_topics.py` | topic 兜底下沉：把 comments.topic 从兜底锚点下沉到具体 L1 |
-| `scripts/dev/stage1_report.py` | P9 阶段1 收口报告：topic/opinion 两级兜底占比 |
-| `scripts/dev/clean_old_labels.py` | 旧标签清洗（v3.0 → v3.1.1 标签名迁移） |
+| `scripts/dev/archive/one_shot_curate/stage1_report.py` | P9 阶段1 收口报告：topic/opinion 两级兜底占比（2026-09-01 归档） |
+| `scripts/dev/archive/one_shot_backfill/clean_old_labels.py` | 旧标签清洗（v3.0 → v3.1.1 标签名迁移；2026-09-01 归档） |
 | `tests/test_golden_match.py` | 黄金集回归门禁（匹配规则改动必跑） |
 
 ## 数据模型
@@ -123,7 +123,7 @@ python scripts/dev/reanalyze_all.py --limit 200 --random
 python scripts/dev/reanalyze_all.py
 
 # 导出 xlsx 检查
-python scripts/dev/export_xlsx.py --only-with-opinions --out data/exports/先导出.xlsx
+python scripts/dev/archive/one_shot_export/export_xlsx.py --only-with-opinions --out data/exports/先导出.xlsx
 
 # 黄金集回归门禁（任何词典/匹配规则改动后必跑）
 pytest tests/test_golden_match.py
@@ -133,5 +133,5 @@ python scripts/dev/mine_fallback_candidates.py --out candidates.md   # 挖候选
 python scripts/dev/rematch_opinions.py --dry-run                     # 预览重匹配
 python scripts/dev/rematch_opinions.py                               # 存量重匹配（兜底→具体写回）
 python scripts/dev/recompute_topics.py                               # topic 下沉
-python scripts/dev/stage1_report.py                                  # 量兜底占比
+python scripts/dev/archive/one_shot_curate/stage1_report.py         # 量兜底占比
 ```
