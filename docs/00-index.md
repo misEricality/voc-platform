@@ -65,6 +65,8 @@ docs/
 | 角色 | 推荐阅读顺序 |
 |------|--------------|
 | **新加入的工程师** | 00-index → QUICK_START → DEVELOPMENT_PLAN → DATA_STORAGE_DESIGN |
+| **作者 / 维护者是谁 / 怎么联系** | [../AUTHORS.md](../AUTHORS.md) |
+| **学术 / 商业引用本项目** | [../CITATION.cff](../CITATION.cff)（GitHub 自动识别） |
 | **新加入的产品/设计** | 00-index → QUICK_START → 调研报告（业务部分） |
 | **架构评审前** | DATA_FIELDS → DATA_STORAGE_DESIGN |
 | **新版本规划前** | DEVELOPMENT_PLAN + 当前仪表盘截图 |

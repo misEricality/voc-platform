@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+message: |
+  If you use this software in your research, projects, or publications,
+  please cite it as below. See README.md for the latest version and updates.
+type: software
+title: "灵听 · Lynx · 消费者之声洞察平台 (VoC Platform)"
+abstract: |
+  灵听 · Lynx（原 VoC Platform）是一个面向个人开发者的消费者之声（Voice of Customer）
+  分析平台。支持 Steam / B 站多平台数据采集、L1-L3 三级主题标注（方案4：观点短语 + 程序匹配）、
+  本地 bge-small-zh 语义向量化、Streamlit 多视角仪表盘、GitHub Actions 自动化流水线
+  （GH Release 累积 DB + CI pytest 护栏 + silent 失败防御）。MIT License 个人学习作品集。
+authors:
+  - family-names: Chan
+    given-names: Eric
+    alias: misEricality
+    affiliation: Personal Project
+    email: misEricality@users.noreply.github.com
+    orcid: https://orcid.org/0000-0000-0000-0000
+keywords:
+  - voice-of-customer
+  - nlp
+  - sentiment-analysis
+  - topic-modeling
+  - data-pipeline
+  - streamlit
+  - llm-integration
+  - github-actions
+  - bge-embedding
+  - sqlite
+license: MIT
+license-url: https://github.com/misEricality/voc-platform/blob/main/LICENSE
+repository-code: https://github.com/misEricality/voc-platform
+url: https://github.com/misEricality/voc-platform
+repository: https://github.com/misEricality/voc-platform
+date-released: 2026-09-01
+version: 0.7.0
+references:
+  - type: software
+    title: "Streamlit"
+    url: https://streamlit.io/
+  - type: software
+    title: "bge-small-zh-v1.5 (BAAI)"
+    url: https://huggingface.co/BAAI/bge-small-zh-v1.5
+  - type: software
+    title: "GLM-5.3-Flash (智谱 BigModel)"
+    url: https://open.bigmodel.cn/

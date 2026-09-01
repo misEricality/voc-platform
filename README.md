@@ -218,6 +218,19 @@ MIT License - 详见 [LICENSE](./LICENSE)
 
 ---
 
+## 👤 作者
+
+**EricChan** · 项目设计 + 实现 + 维护
+
+- **GitHub**: [@misEricality](https://github.com/misEricality)
+- **项目主页**: [voc-platform](https://github.com/misEricality/voc-platform)
+- **问题反馈 / 商业合作**: [GitHub Issues](https://github.com/misEricality/voc-platform/issues)
+- **创作周期**: 2026-07 ~ 至今（v0.7 收口 → v1.0 作品化进行中）
+- **定位**: 个人学习作品集 / 求职展示 / 大模型 API + NLP 全链路实战
+
+> 📌 邮箱 / 微信等私下联系方式不接受直接索取（防骚扰）。如需商业合作 / 学术引用 / 投稿需求，请走 [GitHub Issues](https://github.com/misEricality/voc-platform/issues/new) 走公开流程。
+> 学术引用格式见 [`CITATION.cff`](./CITATION.cff)（GitHub 「Cite this repository」按钮自动识别）。
+
 ⭐ **如果这个项目对你有帮助，欢迎 Star！**
 
 📮 **问题反馈**：通过 GitHub Issues
