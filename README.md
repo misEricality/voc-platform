@@ -95,48 +95,59 @@
 
 ```
 voc-platform/
-├── README.md                       # 项目门面
+├── AGENTS.md                        # 工程规范（Agent 必读）
+├── README.md                       # 项目门面（本文件）
 ├── app.py                          # Streamlit 仪表盘入口
 ├── requirements.txt / .env.example
 │
-├── src/                            # 【核心代码】
-│   ├── collectors/                     数据采集器（Steam 官方 API + B站公开接口）
-│   ├── analyzers/                      分析器（LLM 打标 + 程序匹配 L3 + 向量化）
-│   │   ├── normalize.py                L3 匹配层（match_l3 / 词典索引 / 路径映射）
-│   │   └── embedder.py                 本地语义向量（bge-small-zh，语义检索/聚类）
-│   ├── storage/                        存储层（comments + comment_opinions + comment_embeddings + danmaku 四表）
-│   ├── visualizer/                     可视化图表
-│   └── pipeline.py                     主流程编排（采集→入库→向量化→打标）
+├── src/                            # 【核心代码】正式模块（5 子目录 + 1 顶层）
+│   ├── pipeline.py                     主流程编排（CLI 入口 python -m src.pipeline）
+│   ├── analyzers/                      分析器（情感 / 语义 / 标注）
+│   │   ├── sentiment_llm.py               LLM 打标（4 个 provider：deepseek/qwen/glm/glm-5.3-flash）
+│   │   ├── sentiment_local.py             本地 BERT 备选
+│   │   ├── normalize.py                  L1-L3 三级标签匹配（match_l3 + GDT v3.1.1）
+│   │   └── embedder.py                   本地 bge-small-zh 向量化
+│   ├── collectors/                     采集器（Steam Web API + B站公开接口）
+│   ├── storage/                        存储层（SQLAlchemy 2.x + SQLite 单库 4 表）
+│   ├── queue/                          B 站采集队列（P5 自动化阶段 0，CLI：python -m src.queue add BV...）
+│   └── visualizer/                     可视化图表
 │
 ├── config/                          # 【业务配置】（与代码解耦）
 │   ├── prompts/                        LLM prompt 模板（含 strict 收敛版）
-│   └── topics/                         三级标签体系 + L3 定义词典
+│   ├── topics/                         三级标签体系 + L3 定义词典
+│   └── monitoring/                     自动化采集目标清单（P6）
 │
 ├── data/                            # 【运行时数据】（gitignore，不入库）
-│   ├── voc.db                            SQLite 单库（2026-08-27 sync：14,478 条评论，已分析 ~12,170；P6 自动增量中）
-│   └── exports/                          导出产物（xlsx / csv / json）
+│   ├── voc.db                            SQLite 主库（2026-09-01 sync：~14,478 条评论）
+│   ├── archive/                          4 款网游归档（2026-08-23）
+│   └── exports/                          导出产物（gitignored）
 │
 ├── docs/                            # 【研发文档】（技术视角）
 │   ├── 00-index.md                      ⬅ 文档地图
-│   ├── architecture/                    架构设计（含 ANNOTATION_PIPELINE 标注流程 / AUTOMATION_PIPELINE 自动化流水线 / STEAM_API_FIELDS 字段权威清单 / BILIBILI_COLLECTION B 站采集规格）
-│   ├── plan/                            计划与里程碑（含 P6 自动化 / P10 analyzer_version 等）
-│   ├── guides/                          操作指南
-│   └── research/                        调研资料
+│   ├── architecture/                    架构设计（10 文档，含 ANNOTATION/AUTOMATION/STEAM_API_FIELDS/BILIBILI/DESIGN_TOKENS/SELF_HOSTED_VPS 等）
+│   ├── guides/                          操作指南（QUICK_START / SETUP_ML_ENV / PUSH_TROUBLESHOOTING）
+│   ├── plan/                            计划与里程碑（DEVELOPMENT_PLAN + next-gen-tagging/）
+│   └── research/                        调研资料（VOC_COMPETITOR_RESEARCH）
 │
 ├── product/                         # 【产品文档】（业务视角）
 │   ├── README.md                        产品文档地图
 │   ├── prototype_overview.md            界面原型交付概览
-│   ├── export_bilibili_data.py          B 站单视频原型数据导出（read DB → JSON）
+│   ├── export_bilibili_data.py          B 站单视频原型数据导出
 │   ├── build_bilibili_video.py          B 站单视频原型 HTML 组装
-│   └── prototype/                       高保真原型（voc-platform / game-compare / bilibili-video 三件单文件）
+│   └── prototype/                       高保真原型（v1 历史版 + v2 DESIGN_TOKENS 合规版 = 6 HTML）
 │
 ├── scripts/                         # 【运维/开发脚本】
+│   ├── README.md                        脚本索引
 │   ├── smoke_test.py                    冒烟测试
-│   ├── dev/                             开发期一次性脚本（采集/标注/巡检/E2E）
-│   ├── analysis/                        分析脚本（ad-hoc 探索，占位）
-│   └── ops/                             refresh_likes 回采 / backfill_embeddings 向量回填 / daily_incremental_collect P6 自动化入口 / verify_release_upload P6 silent 失败防御 / reset_qwen_flash_bogus P11 QWEN-flash 假数据清理
+│   ├── dev/                             开发期活跃脚本（11 个 + archive/ 42 个已归档）
+│   └── ops/                             长期运维脚本（12 个：daily_incremental_collect / smart_sync_release / push_via_api 等）
 │
-└── tests/                           # 【测试】pytest 38 例（黄金集回归 + bilibili_queue + analyzer_version + daily_incremental_collect + verify_release_upload；bge 用例在无 ML 环境时跳过）
+├── tests/                           # 【测试】pytest 49 例（含黄金集回归 + ML 环境依赖时 skip）
+│   ├── README.md                        测试索引
+│   └── fixtures/                        黄金集 410 条 + 校正项
+│
+└── .workbuddy/                     # 本机跨会话记忆（gitignore，不入库）
+    └── memory/                          MEMORY.md + YYYY-MM-DD.md
 ```
 
 > 📌 **目录设计原则**：研发与产品文档分离 / 代码与配置分离 / 脚本分阶段 / 数据运行时不入库（gitignore）。  
@@ -201,7 +212,8 @@ MIT License - 详见 [LICENSE](./LICENSE)
 ## 🙏 致谢
 
 - [Steam Web API](https://steamcommunity.com/dev) - 公开评测数据源
-- [DeepSeek](https://platform.deepseek.com/) - 性价比最高的大模型API
+- [智谱 BigModel](https://open.bigmodel.cn/) - **GLM-5.3-Flash（2026-08-31 起主标注器）**
+- [DeepSeek](https://platform.deepseek.com/) - 备选 LLM 标注器
 - [Streamlit](https://streamlit.io/) - 快速构建数据应用
 
 ---
