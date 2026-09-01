@@ -5,10 +5,10 @@
 > **关联文档**：
 > - 项目说明：[README.md](../../README.md)
 > - 5 分钟上手：[QUICK_START.md](../guides/QUICK_START.md)
-> - 调研报告：[VoC平台竞品调研报告.md](../research/VoC平台竞品调研报告.md)
+> - 调研报告：[VOC_COMPETITOR_RESEARCH.md](../research/VOC_COMPETITOR_RESEARCH.md)
 > - 字段字典：[DATA_FIELDS.md](../architecture/DATA_FIELDS.md)
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
-> - Steam API 字段：[STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)
+> - Steam API 字段：[STEAM_API_FIELDS.md](../architecture/STEAM_API_FIELDS.md)
 >
 > **最后更新**：2026-09-01（neat-freak 收口：统一时间戳到 9/1；§五 主线反转 P6 silent 失败防御已上线 + CS2 已归档；§八 M11 v0.7 补 DESIGN_TOKENS v1.0 落地；README/AGENTS/DEVELOPMENT_PLAN 同步对齐）
 
@@ -88,7 +88,7 @@
 - `show_refreshed_sample.py`：回采样本展示
 
 **新增文档**：
-- `docs/STEAM_API_FIELDS.md`：Steam API 字段大全（设计师对接 + 字段字典）
+- `docs/architecture/STEAM_API_FIELDS.md`：Steam API 字段大全（设计师对接 + 字段字典）
 
 **当前数据状态**：
 - 6 款游戏 × 约 100 条 = **772 条评论** 已在 `data/voc.db`（**未入库**，运行产物）

@@ -65,41 +65,21 @@
 
 ## 🚀 5分钟快速开始
 
-> 💡 本项目统一用虚拟环境 **`.venv-ml`** 运行（下方 `python` / `streamlit` 均指 `.venv-ml` 里的解释器，或先激活）。依赖清单与 ML 环境搭建见 [docs/guides/SETUP_ML_ENV.md](./docs/guides/SETUP_ML_ENV.md)。
-
-### 1. 克隆并安装依赖
-
-```bash
-git clone https://github.com/misEricality/voc-platform.git
-cd voc-platform
-pip install -r requirements.txt   # 建议在 .venv-ml 里装；用系统 python 需自行装齐依赖
-```
-
-### 2. 配置环境变量
-
-```bash
-cp .env.example .env
-# 编辑 .env，填入以下至少一个：
-# - STEAM_API_KEY（申请：https://steamcommunity.com/dev/apikey）
-# - DEEPSEEK_API_KEY（申请：https://platform.deepseek.com/）
-```
-
-### 3. 第一次采集与分析
-
-```bash
-# 采集 CS2 的中文评测（无需 API Key，仅采集）
-python -m src.pipeline --platform steam --target 730 --count 50 --skip-analysis
-
-# 启用情感分析（需要配置 DeepSeek Key）
-python -m src.pipeline --platform steam --target 730 --count 50
-```
-
-### 4. 启动可视化仪表盘
-
-```bash
-streamlit run app.py
-# 浏览器访问 http://localhost:8501
-```
+> 💡 完整步骤见 [docs/guides/QUICK_START.md](./docs/guides/QUICK_START.md)（含 API Key 申请、常见问题 Q1-Q4、调试技巧）。
+>
+> 一句话版：
+>
+> ```bash
+> git clone https://github.com/misEricality/voc-platform.git
+> cd voc-platform
+> pip install -r requirements.txt
+> cp .env.example .env
+> # 编辑 .env，填入 STEAM_API_KEY（必填）+ DEEPSEEK_API_KEY 或 GLM_API_KEY（可选）
+> python -m src.pipeline --platform steam --target 730 --count 50 --skip-analysis
+> streamlit run app.py  # 浏览器访问 http://localhost:8501
+> ```
+>
+> 主标注器：GLM-5.3-Flash（2026-08-31 切换；`.env` 改 `ANALYZER_PROVIDER=glm-5.3-flash`）
 
 ## 📸 效果预览
 
@@ -138,8 +118,7 @@ voc-platform/
 │
 ├── docs/                            # 【研发文档】（技术视角）
 │   ├── 00-index.md                      ⬅ 文档地图
-│   ├── architecture/                    架构设计（含 ANNOTATION_PIPELINE 标注流程 / AUTOMATION_PIPELINE 自动化流水线 / BILIBILI_COLLECTION B 站采集规格）
-│   ├── STEAM_API_FIELDS.md              Steam API 字段权威清单
+│   ├── architecture/                    架构设计（含 ANNOTATION_PIPELINE 标注流程 / AUTOMATION_PIPELINE 自动化流水线 / STEAM_API_FIELDS 字段权威清单 / BILIBILI_COLLECTION B 站采集规格）
 │   ├── plan/                            计划与里程碑（含 P6 自动化 / P10 analyzer_version 等）
 │   ├── guides/                          操作指南
 │   └── research/                        调研资料

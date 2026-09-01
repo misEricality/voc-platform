@@ -70,7 +70,7 @@ src/
 | `bilibili.py` | **B 站公开 Web 接口采集器**（评论 + 弹幕；buvid + 风控适配；7 天稳态快照 + 阈值分支 T=2,000 / K=1,000 + 弹幕分片 ≤3,000） | 2026-08-20 |
 
 > 📖 采集规格详见：
-> - Steam 字段字典：[docs/STEAM_API_FIELDS.md](../docs/STEAM_API_FIELDS.md)
+> - Steam 字段字典：[docs/architecture/STEAM_API_FIELDS.md](../docs/architecture/STEAM_API_FIELDS.md)（2026-09-01 移入 architecture/）
 > - B 站规格：[docs/architecture/BILIBILI_COLLECTION.md](../docs/architecture/BILIBILI_COLLECTION.md)
 
 ---

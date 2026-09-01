@@ -84,7 +84,7 @@ voc_platform/
 | 文档 `.md` | 大写蛇形或说明性短名 | `DATA_STORAGE_DESIGN.md`、`QUICK_START.md` |
 | 配置 `.yaml` | 小写下划线 | `l3_definitions.yaml` |
 
-> 文档允许用中文名（如 `新标签体系验证报告.md`），但须自解释、与目录职责一致；能英文 snake 名尽量英文。
+> 文档允许用中文名（如 `新标签体系验证报告.md` —— 2026-09-01 已规范化为 `GDT_V311_VERIFICATION_REPORT.md`），但须自解释、与目录职责一致；能英文 snake 名尽量英文。
 
 ### 2.2 脚本命名（`scripts/` 内）
 
@@ -175,3 +175,4 @@ voc_platform/
 | 2026-09-01 | **scripts/dev/ 激进归档 ~35 个一次性脚本到 archive/**：按 7 个子目录分类（debug/ diag/ one_shot_backfill/ one_shot_curate/ one_shot_export/ one_shot_prototype/ one_shot_verify/ e2e/ P6_bootstrap/）；保留 ~12 个核心脚本（reanalyze_all / rematch_opinions / recompute_topics / rebuild_golden_set / l35_cluster / analyze_danmaku / mine_fallback_candidates / export_prototype_data / verify_* 3 个）；`scripts/README.md` 同步登记 archive/ 收纳规则 | 去除 dev/ 冗余，让新接手者一眼看到「真正活跃的工具集」 |
 | 2026-09-01 | **工作区瘦 · 缓存 / 测试 DB / scratch 清理**：删除 7 处 `__pycache__/`（gitignored 但污染工作树）+ 100+ `data/voc_test_*.db` + `voc_debug_*.db` + `voc_smoke_p6.db` + `data/_bili_video.json`（被 `_bili_videos.json` 取代） + `.workbuddy/scratch/`（8-28 push 排障 + 8/1 inspect 残留）；`data/voc.db` 主库与 `data/archive/online_games_2026-08-23.db` 网游归档保留（运行时数据） | git 工作树干净（`git status --short` 空）；handover 不带噪音 |
 | 2026-09-01 | **`src/README.md` + `tests/README.md` 模块/用例索引建立**：src/ 6 子目录（analyzers / collectors / queue / storage / visualizer + 顶层 pipeline.py）每个文件标注职责 + 更新时间 + 关联文档链接；tests/ 8 个测试文件（pipeline / golden_match / analyzer_version / bilibili_queue / daily_incremental_collect / verify_release_upload / analysis_pipeline / embedding）每个用例标注覆盖范围 + 用例数 + 门禁场景 + fixtures 索引；`docs/00-index.md` 「按我想知道」表新增 2 行（src 模块结构 + tests 用例索引）；按 §4 同步登记 | 让接手者 30 秒内理解代码模块边界 + 49 例 pytest 哪几条是核心门禁 |
+| 2026-09-01 | **docs/ 命名规范化 + 路径合理性调整**：4 文件改名（`duals_2026-08-25_archive.md` → `DUAL_ANNOTATION_QWEN_FLASH_2026-08-25_ARCHIVE.md` / `VoC平台竞品调研报告.md` → `VOC_COMPETITOR_RESEARCH.md` / `新标签体系验证报告.md` → `GDT_V311_VERIFICATION_REPORT.md` / `STEAM_API_FIELDS.md` 移到 `architecture/`）+ 同步 13 处引用更新（00-index 树 + 按我想知道表 / DEVELOPMENT_PLAN / QUICK_START / BILIBILI_COLLECTION / src/README / scripts/README）+ README 5min 段合并到 QUICK_START.md（README 留指针 + 一句话命令）+ QUICK_START.md DEEPSEEK 引用更新为 GLM-5.3-Flash（默认主标注器，2026-08-31 切换） | 按 §2.1 命名规范 + §1 目录归属决策表 + §0「非必要不新增」收口；让 docs/ 命名与路径全部符合工程约定 |

@@ -2,7 +2,7 @@
 
 > **状态**：✅ 策略已定稿（2026-08-13，工程师确认）｜ **执行方**：独立开发窗口（本文件即规格说明书，自包含）
 > **前置实测**：`scripts/dev/archive/diag/probe_bilibili.py` / `probe_bili_wbi.py`（2026-08-11 沙箱实测，接口可行性已验证；2026-09-01 归档）
-> **关联文档**：[DATA_FIELDS.md](./DATA_FIELDS.md)（A/B/C/D 字段约定）· [STEAM_API_FIELDS.md](../STEAM_API_FIELDS.md)（Steam 对照）
+> **关联文档**：[DATA_FIELDS.md](./DATA_FIELDS.md)（A/B/C/D 字段约定）· [STEAM_API_FIELDS.md](./STEAM_API_FIELDS.md)（Steam 对照，2026-09-01 移入 architecture/）
 
 ---
 
