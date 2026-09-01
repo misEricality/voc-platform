@@ -54,6 +54,8 @@ docs/
 | **数据是怎么分层流转的、表怎么设计** | [architecture/DATA_STORAGE_DESIGN.md](./architecture/DATA_STORAGE_DESIGN.md) |
 | **为什么选这个数据源、不选别的** | [research/VoC平台竞品调研报告.md](./research/VoC平台竞品调研报告.md) |
 | **国内外 VoC 平台都在做什么** | [research/VoC平台竞品调研报告.md](./research/VoC平台竞品调研报告.md) |
+| **src/ 代码模块结构（pipeline / analyzers / collectors / queue / storage / visualizer 的职责）** | [../src/README.md](../src/README.md) |
+| **tests/ 测试用例索引（49 例 pytest + 黄金集门禁 + ML skip）** | [../tests/README.md](../tests/README.md) |
 
 ---
 
