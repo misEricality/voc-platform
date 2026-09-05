@@ -35,6 +35,8 @@ Thumbs.db
 # 注：data/raw|processed|cleaned|sample 文件管线占位目录已废弃（项目用 SQLite 单库，无文件管线），已删除
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 *.bak
@@ -47,6 +49,13 @@ data/_bili_video.json
 data/_bili_videos.json
 # 标注验证中间产物（运行时生成，不入库）
 data/validation/
+# 封面本地缓存 / 服务日志（2026-09-05：看板封面本地化后新增；covers 可由采集脚本重新下载）
+data/covers/
+data/uvicorn.log
+data/uvicorn.err.log
+
+# ---- CodeBuddy IDE 本机数据（不应提交；2026-09-05）----
+.codebuddy/
 
 # ---- Logs ----
 logs/

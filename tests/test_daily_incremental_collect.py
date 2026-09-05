@@ -358,6 +358,39 @@ def test_smart_window_empty_db():
     assert posted_after == datetime(2026, 8, 26, 16, 0, 0)
 
 
+# ---------- 用例 9b：lookback_days=7（本地直采多日重叠采样，2026-09-03） ----------
+
+def test_smart_window_seven_day_lookback():
+    """lookback_days=7：floor = 北京 7 天前 0:00 → 窗口覆盖近 7 个北京日历日
+
+    背景：Steam filter=recent 游标流是非确定性采样（单次漏 5-20%），
+    7 天重叠回看 + upsert 幂等 + analyzed-skip 使覆盖率随多遍采样收敛。
+    本地直采计划任务传 --lookback-days 7。
+    """
+    from scripts.ops.daily_incremental_collect import smart_window
+
+    now_utc = datetime(2026, 9, 3, 18, 0, 0)   # 北京 9/4 02:00
+    posted_after, posted_before = smart_window(
+        "steam:nonexistent", now_utc, lookback_days=7
+    )
+    # posted_before: 北京 9/4 0:00 → UTC 9/3 16:00（当天 9/4 严格不采）
+    assert posted_before == datetime(2026, 9, 3, 16, 0, 0)
+    # floor: 北京 8/28 0:00 → UTC 8/27 16:00（覆盖 8/28 ~ 9/3 共 7 个日历日）
+    assert posted_after == datetime(2026, 8, 27, 16, 0, 0)
+
+
+def test_smart_window_default_lookback_is_two():
+    """默认不传 lookback_days → 保持 2 天行为（昨天+前天，向后兼容）"""
+    from scripts.ops.daily_incremental_collect import smart_window
+
+    now_utc = datetime(2026, 9, 3, 18, 0, 0)
+    posted_after, posted_before = smart_window("steam:nonexistent", now_utc)
+    # posted_before: 北京 9/4 0:00 → UTC 9/3 16:00
+    assert posted_before == datetime(2026, 9, 3, 16, 0, 0)
+    # floor: 北京 9/2 0:00 → UTC 9/1 16:00（覆盖 9/2 + 9/3 前两天，与原行为一致）
+    assert posted_after == datetime(2026, 9, 1, 16, 0, 0)
+
+
 # ---------- 用例 9：smart_window BJT 跨 UTC 日界 ----------
 
 def test_smart_window_bjt_midnight_boundary():

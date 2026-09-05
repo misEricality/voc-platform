@@ -1,0 +1,114 @@
+/* ============================================================
+   tokens.css — 灵听 Lynx 设计 Token 单一来源
+   基于 DESIGN_TOKENS.md v1.0 (2026-08-31)
+   结构：:root { 深色全量 } + [data-theme="light"] { 浅色覆写 }
+   ============================================================ */
+
+:root {
+  /* ---- §2.1 深色主题（默认） ---- */
+  --bg:           #0e141b;
+  --bg2:          #101822;
+  --panel:        #1b2838;
+  --panel2:       #16202d;
+  --panel3:       #1f2e40;
+  --line:         #2a3f5f;
+  --line2:        #223349;
+  --line3:        #31476a;
+  --ink:          #e7ecf1;
+  --ink2:         #c7d5e0;
+  --muted:        #8f98a0;
+  --dim:          #5c7285;  /* 仅限装饰性文字，禁用于正文 */
+  --primary:      #66c0f4;
+  --primary-dark: #1a9fff;
+  --primary-deep: #417a9b;
+  --primary-hover:#8bd0f8;
+
+  /* ---- §2.2 语义色（全站唯一情感编码） ---- */
+  --pos:      #a1cd44;
+  --neu:      #d9b54e;
+  --neg:      #e05c5c;
+  --pos-bg:   rgba(161,205,68,.14);
+  --neu-bg:   rgba(217,181,78,.14);
+  --neg-bg:   rgba(224,92,92,.14);
+  --pos-line: rgba(161,205,68,.3);
+  --neu-line: rgba(217,181,78,.3);
+  --neg-line: rgba(224,92,92,.3);
+
+  /* 评级五色（语义族别名，禁裸值） */
+  --rating-best:  var(--primary);    /* 好评如潮 */
+  --rating-great: var(--pos);        /* 特别好评 */
+  --rating-good:  #9bbf55;           /* 好评 */
+  --rating-mixed: var(--neu);        /* 褒贬不一 */
+  --rating-bad:   var(--neg);        /* 差评系 */
+
+  /* B 站弹幕情绪（仅限弹幕图表） */
+  --warm: #f59e0b;
+  --cool: #3b82f6;
+
+  /* 图表系列色扩展 */
+  --sky: #4f94cd;
+
+  /* ---- §4 间距 / 圆角 / 阴影 ---- */
+  --r-sm:      6px;
+  --r-md:      9px;
+  --r-lg:      12px;
+  --r-xl:      14px;
+  --shadow:    0 8px 28px rgba(0,0,0,.45);
+  --shadow-pop:0 16px 40px rgba(0,0,0,.55);
+
+  /* ---- 字体栈（§3） ---- */
+  --font-sans: "OPPO Sans", Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: Menlo, Consolas, monospace;
+}
+
+/* ============================================================
+   §2.3 浅色主题（受限 — 仅用于导出 / 打印 / 日间分享页）
+   ============================================================ */
+[data-theme="light"] {
+  --bg:           #F2EFE7;
+  --bg2:          #ECE8DD;
+  --panel:        #FFFFFF;
+  --panel2:       #F7F4EC;
+  --panel3:       #F0EDE4;
+  --line:         rgba(51,104,160,.18);
+  --line2:        rgba(51,104,160,.12);
+  --line3:        rgba(51,104,160,.25);
+  --ink:          #1e2a38;
+  --ink2:         #33465c;
+  --muted:        #5b6b7c;
+  --dim:          #8a9aa8;
+  --primary:      #3368A0;
+  --primary-dark: #2a5787;
+  --primary-deep: #4a7fa8;
+  --primary-hover:#2a5787;
+
+  /* 语义色浅色覆写 */
+  --pos:      #3f6620;
+  --neu:      #7a6116;
+  --neg:      #a83232;
+  --pos-bg:   rgba(63,102,32,.12);
+  --neu-bg:   rgba(122,97,22,.12);
+  --neg-bg:   rgba(168,50,50,.12);
+  --pos-line: rgba(63,102,32,.3);
+  --neu-line: rgba(122,97,22,.3);
+  --neg-line: rgba(168,50,50,.3);
+
+  /* 评级浅色 */
+  --rating-best:  var(--primary);
+  --rating-great: var(--pos);
+  --rating-good:  #5a7a30;
+  --rating-mixed: var(--neu);
+  --rating-bad:   var(--neg);
+
+  --warm: #d97706;
+  --cool: #2563eb;
+  --sky:  #4a8bc2;
+
+  /* 浅色阴影弱化 */
+  --shadow:    0 2px 10px rgba(30,42,56,.08);
+  --shadow-pop:0 8px 24px rgba(30,42,56,.12);
+
+  /* 装饰面（降级，禁作主面板） */
+  --accent-surface: #C8DFDB;
+  --secondary: #66A3BF;
+}

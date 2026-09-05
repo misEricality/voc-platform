@@ -289,10 +289,12 @@
 
 ---
 
-### ⏸️ P8 · 时间序列趋势图
+### ✅ P8 · 时间序列趋势图（2026-09-02 · Web 看板一并交付）
 
-- 当前评论量 9308 条已超门槛，但 `posted_at` 仍是快照式分布，缺少跨日持续累积；依赖 P6 / P9 阶段 0 的持久化落地
-- 工具：`streamlit` 自带折线图即可
+- **业务目标**：按日看评论量与情感构成，回答「口碑随时间怎么变」
+- **✅ 已交付**：`GET /api/trends?target=&days=`（`posted_at` 日级 GROUP BY + 情感构成）+ Web 看板「时间序列」页（近 14/30/90 天，折线总量 + 情感堆叠条 + 日明细表，全部目标或单目标）
+- **前置**：P6 持久化（bootstrap + 每日累积 DB）2026-08-23 已解锁；本项在 WEB_DASHBOARD 项目（阶段 4）内完成
+- **实现位置**：`src/api/service.py::trends_payload` + `product/web/src/pages/trends.js`；详见 `docs/architecture/WEB_DASHBOARD.md §4.1`
 
 ---
 
@@ -334,18 +336,21 @@
 1. ✅ ~~P6 release asset 收口~~：已于 2026-08-23 完成（bootstrap release + 9 commit 推送）
 2. ✅ ~~`gh_release_upload` 副作用修复~~：2026-09-01 收口（verify_release_upload.py 步骤真正上线 daily-collect.yml）
 3. ✅ ~~CI 补 pytest + analyzer_version 溯源~~：已于 2026-08-21 落地（详见 P10）；A3 推送后 CI 已真正启用
-4. **P8 时间序列趋势图**：P6 已收口（2026-08-23），前置已解锁；明天 cron 后即可在仪表盘加折线图
-5. ~~**CS2（appid 730）补采复查**~~：已于 2026-08-23 关闭（CS2 与其他 3 款网游归档到 `data/archive/online_games_2026-08-23.db`）
+4. ✅ ~~**P8 时间序列趋势图**~~：已于 2026-09-02 在 Web 看板一并交付（`/api/trends` + 时间序列页）
+5. **🆕 Web 实时看板（WEB_DASHBOARD，2026-09-02 阶段 1-5 完成 + 对抗审查修复）**：`src/api/` FastAPI（7 公开端点 + 管理员鉴权 + 任务 CRUD）+ `product/web/` 原生 SPA（主看板/游戏对比/B站视频/时间序列/系统管理 5 页）+ `collect_tasks` 表（Steam 目标迁入 DB）+ SQLite WAL + `bilibili_queue` paused 状态；Streamlit 并存不动。阶段 5 收口已完成（VPS 文档 + 登记四件套 + AGENTS.md 版本记录）；对抗审查 P1×4 + P2×3 已修（resume 守卫 / lifespan 无导入副作用 / 异步外部调用 / fail-closed secret / API no-store / backfill 可观测 / 前端容错 / 登录限流）。✅ **前端融合已完成（2026-09-03~05）**：三看板按用户线框图重写（单游戏看板/游戏对比看板/B站视频看板）+ 系统管理子模块化（采集任务/数据管理），原「功能版 vs 原型」两份设计已合并为现役 `product/web/`。详见 [architecture/WEB_DASHBOARD.md](../architecture/WEB_DASHBOARD.md)
 6. **P9 阶段 2 L3.5 微话题聚类**：`l35_cluster.py` 骨架已就绪；P6 解锁时序后，对新评论可周期性下钻
-7. **🆕 B 站自动化（阶段 0）**：2026-08-23 落地 — `bilibili_queue` 表 + CLI（`python -m src.queue ...`）+ workflow `bilibili-daily.yml`；工程师手输 BV 号入清单，系统识别投稿时间后自动计算第 7 天，每日 cron 触发采集；详见 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)
+7. ~~**CS2（appid 730）补采复查**~~：已于 2026-08-23 关闭（CS2 与其他 3 款网游归档到 `data/archive/online_games_2026-08-23.db`）
+8. **🆕 B 站自动化（阶段 0）**：2026-08-23 落地 — `bilibili_queue` 表 + CLI（`python -m src.queue ...`）+ workflow `bilibili-daily.yml`；工程师手输 BV 号入清单，系统识别投稿时间后自动计算第 7 天，每日 cron 触发采集；Web 看板「系统管理」已可网页增删改（2026-09-02）；详见 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)
 
-### 🚦 中期主线（P8 + L3.5 + PEDM + P11 清理 + workflow push）
+### 🚦 中期主线（Web 看板收口 + L3.5 + PEDM + P11 清理 + workflow push）
 
-1. P8 时间序列趋势图（**前置已就绪**：bootstrap + 14K 累计）
-2. **🆕 P11 qwen-flash bogus 清理**（`scripts/ops/reset_qwen_flash_bogus.py --commit`）：明早 cron 跑稳后清；预期 261 行重打
-3. **🆕 workflow `0 17 * * *` cron change + verify step push**（本地改动已落地，2026-09-01 修复 workflow yaml 与版本记录脱节；**待用户网页 commit** `workflows:write` scope；本机 PAT 不能直接推 `.github/`）
-4. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
-5. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
+1. ✅ ~~**P8 时间序列趋势图**~~：2026-09-02 已随 Web 看板交付
+2. **Web 实时看板阶段 5 收口**：VPS 部署文档更新（鉴权/WAL/8000 端口）+ AGENTS.md 版本记录 + §6 健康检查 8 条
+3. **P11 qwen-flash bogus 清理**（`scripts/ops/reset_qwen_flash_bogus.py --commit`）：cron 跑稳后清；预期 261 行重打
+4. ✅ ~~**workflow cron change + verify step push**~~：已随 a17a5c2 推送（2026-09-01）；2026-09-02 起 workflow `collect` job 置 `if: false` 停用（数据链路切**本地直采**：Task Scheduler `VOC-Local-Daily-Collect` 北京 02:00 直写 voc.db，前端零延迟；`test` job 保留作 CI 门禁）——详见 [AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md) §0
+5. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
+6. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
+7. **公网部署（暂缓，选型已完成）**：[DEPLOYMENT_OPTIONS.md](../architecture/DEPLOYMENT_OPTIONS.md) 已评估 5 方案（VPS 全栈 / PaaS 容器 / 静态快照 / Workers+D1 / CDN+VPS），结论为「方案 ③ 静态快照做作品集门面 + 方案 ① VPS 全栈做真实系统」两步走；**等 P9 阶段 2/3 落地后再启动**，避免与主线抢时间
 
 ### 🌅 长期作品化（v1.0）
 
@@ -429,12 +434,12 @@
 | M9 · v0.5 | 多平台覆盖（Steam + B 站） | ✅ |
 | M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | ✅（代码完成 2026-08-20；运行态收口 2026-08-23：bootstrap release 已建 + 9 commit 推送 + CI test job 上线）；待修：`gh_release_upload` 对已存在 release 的副作用 patch（见 `.workbuddy/memory/2026-08-22.md` A1） |
 | M11 · v0.7 | 分析结果溯源 + CI pytest 护栏 | ✅（2026-08-21：P10 analyzer_version 字段 + init_db 自动演进 + CI test job）；2026-09-01 加 DESIGN_TOKENS v1.0（三原型 v2 迁移版上线 + tokens.css 单一来源） |
-| M12 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | 待 M11 时间序列趋势图（P8）接入 |
+| M12 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | P8 时间序列已于 2026-09-02 随 Web 看板交付，前置全部解锁；剩 P9 阶段2/3 + P11 清理 + 作品化 |
 
 **M8 → M11 路径**：
 1. M8：✅ P3 多目标对比已完成（2026-08-19）
 2. M9：✅ B 站采集器已落地（跨平台对比视图为可选增强，归 P5）
-3. M10：✅ P6 自动化流水线已收口（2026-08-23：bootstrap release + 9 commit 推送 + CI test job 上线）；P8 时间序列趋势图前置**已解锁**（bootstrap DB 已就位，明天 cron 后即可用）
+3. M10：✅ P6 自动化流水线已收口（2026-08-23：bootstrap release + 9 commit 推送 + CI test job 上线）；✅ P8 时间序列趋势图已于 2026-09-02 随 Web 看板交付（前置全部解锁）
 4. M11：✅ P10 分析溯源 + CI pytest 已完成（2026-08-21）
 
 ---

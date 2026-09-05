@@ -3,7 +3,7 @@
 > **这份文件是代理（Agent）与工程师共同遵守的唯一工程规范来源。**
 > 每次新会话开始时，代理必须先读完本文件再动手，无需工程师重复强调。
 >
-> **最后更新**：2026-09-01
+> **最后更新**：2026-09-02
 
 ---
 
@@ -32,8 +32,10 @@ voc_platform/
 ├── requirements.txt          依赖清单
 ├── src/                      📦 可复用代码库（正式模块，不是脚本）
 │   ├── pipeline.py
+│   ├── api/                  Web 数据服务层（FastAPI：公开只读端点 + admin 任务 CRUD + 鉴权）
 │   ├── analyzers/            分析器（情感 / 语义 / 标注）
 │   ├── collectors/           采集器（steam / bilibili ...）
+│   ├── queue/                B 站采集队列（CLI + runner）
 │   ├── storage/              存储（db）
 │   └── visualizer/           可视化
 ├── scripts/                  🛠️ 一次性/运维脚本（不放正式模块）
@@ -146,6 +148,15 @@ voc_platform/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-05 | **系统管理子模块化 + 采集管理增强**：nav「系统管理」改 hover 下拉（采集任务 `#/admin` / 数据管理 `#/data`），原「时间序列」页迁入 `pages/data.js`（标题「系统管理 - 数据管理」、副标题「每日评论量与情感构成」、公开无需登录、目标下拉改 monitored 白名单=6 款单机+fetched B站视频，`#/trends` 301 兼容跳转）；admin 新增 `GET /api/admin/tasks/lookup`（Steam：name+发行日期 / B站：title+投稿，新增/编辑弹窗「查找」按钮即时回显并自动填名称）；B站列表「采截至」→「采集时间」（采集日−投稿日间隔天数，title 悬停完整日期）；测试 39 → 40 例全绿 | 工程师确认的 5 项当前页修改 + 平台架构调整；「数据管理」下拉收窄到白名单避免归档网游混入 |
+| 2026-09-04 | 新增 `docs/architecture/DEPLOYMENT_OPTIONS.md`（公网部署选型：5 方案对比 + 3 条硬约束 + 7 条决策记录 + 落地前置检查）；登记 `docs/00-index.md`（文档地图 + 「我想知道」表新增「部署到公网有哪几种走法」一行）；`README.md` 架构文档计数 10 → 12 | 工程师提出「部署到公网」需求；先落选型评估、**暂不开发**，避免与 P9 主线抢时间 |
+| 2026-09-04 | **B站视频看板重设计**（线框图）：`bilibili_queue` 新增快照列（aid/pic/owner/view/三连/reply_total/danmaku_total/duration/tags_json/highlights_json/stats_fetched_at，init_db 自动演进）；`fetch_video_info` 补 pic/duration；pipeline 挂两个钩子（`_snapshot_bili_queue` 采集时快照落库 + `_generate_danmaku_highlights` 30s 桶 top3 LLM 总结 → highlights_json，均不阻塞主流程）；新增 `src/analyzers/danmaku_summary.py`（复用 PROVIDER_CONFIG，prompt `config/prompts/danmaku_summary.txt`）+ `db.bucket_danmaku_rows`（30s 固定桶，API/采集共用）+ `scripts/ops/backfill_bili_highlights.py`（存量回填，已登记 scripts/README）；API：新端点 `/api/bilibili/videos`（快照+采集量+性别分布 json_extract+高光解析）、`/api/danmaku` 重做（30s 固定桶+每桶 10 条随机样本 ≤15 字）、`/api/comments` 加 `sort=likes`（点赞降序→时间降序）；`bilibili.js` 按线框图重写（视频单选看板：封面+信息卡（标题/UP主/投稿日/标签前8/播放/评论/弹幕/三连率）+ 采集评论量卡（占比副指标）+ 性别环形（男蓝/保密灰/女紫）+ 情感环形 + L1 主题分布（原声粒度零填充固定顺序，**点击标签联动筛选右侧原声列表**，再点取消/点其他切换）+ 可折叠原声列表 + 弹幕时间轴（悬停浮层）+ 高光时刻三卡）；测试 36 → 39 例全绿 | 对齐新线框图；「高光 LLM 总结放采集时完成」经工程师确认（成本一次性/页面零延迟/API 无需 Key）；存量 3 视频需手动跑回填脚本一次 |
+| 2026-09-04 | **游戏对比看板重设计**（线框图 `product/prototype-design/`）：新增 `game_meta` 表（发行日期/Steam 评级/评测数/本地封面）+ `steam.py::fetch_review_summary`（appreviews 全量评测摘要）+ `/api/games/meta`（懒加载刷新，24h TTL，全败回拨 1h 防重试风暴）+ `/covers` 静态托管（封面本地化到 `data/covers/`，随 data/ 目录同步公网部署）；overview 补 `recommend_count`；`compare.js` 按线框图重写 —— 封面卡片多选筛选（发行日倒序、默认前 3、至少保留 2、未选遮罩）、情感对比（横向 100% 堆叠，无网格线）、口碑对比（评论量×推荐率散点）、Top 主题对比（L2 观点粒度每游戏一图，负向/正向切换默认负向）、指标对比表（库内口径 + Steam 推荐评级列）、同期/累计切换（同期 = 发行日对齐，D = 库内最新评论日 − 选中最晚发行日，发行日缺失回退累计）；测试 32 → 35 例全绿 | 对比页对齐新线框图与单游戏看板视觉；发行日期/评级数据从旧原型硬编码 mock 改为 API 采集入库（用户确认「需要 API 就采集」） |
+| 2026-09-03 | **回看窗 2 天 → 7 天**：`smart_window` 参数化 `lookback_days`（默认 2 向后兼容）+ `daily_incremental_collect.py` 新增 `--lookback-days`；计划任务 `VOC-Local-Daily-Collect` 已重注册传 `--lookback-days 7`（命令已验证落盘）；新增 2 例回归（7 天 floor / 默认 2 天兼容）。注意：明晚 02:00 起窗口自动覆盖近 7 天，**底特律 8/31 缺口将自愈** | Steam recent 流非确定性采样（单次漏 5-20%，实测 6 游戏 123 条）无法根治，7 天重叠回看 + upsert 幂等 + analyzed-skip 使覆盖率随多遍采样收敛，增量成本仅分页加深 |
+| 2026-09-03 | **Steam 采集器空响应静默丢数据修复**：`src/collectors/steam.py` 空页不再直接 break，改同 cursor 退避重试 ×2（`time` 新增 import）；新增 `tests/test_steam_collector.py` 2 例；本地直采任务 `ExecutionTimeLimit` 90→150 分钟（9/3 02:00 首跑实测 113 分钟超 90 上限被砍，python 孤儿进程侥幸跑完）；底特律缺失窗口已补采（43 条） | 用户报告 9/2 评论缺失排查：底特律 fetched=0 根因为 Steam 瞬时空响应 + 首页空时 `last_cursor=None` 使验证页兜底失效 → 静默 0 条且 ok=True；同窗口复现采集器实测 43 条（含目标评论）证实代码逻辑正常、属 Steam 瞬时异常 |
+| 2026-09-03 | **单游戏看板重构**（线框图 `product/prototype-design/线框图-单游戏看板.png` + 同日需求变更 10 条）：API 补统一口径 —— `start`/`end` 时间窗（posted_at）+ `grain=comment\|opinion` 双颗粒度（原声主题 = `comments.topic` 主观点 L1，观点主题 = full_path L1 段）+ `full=true` 零填充（yaml primary 固定顺序）+ trends 每日推荐率（无 rating 日 null 断裂）+ 新端点 `/api/topics/tree` 与 `/api/opinions`（观点分页列表附所属原声）+ comments 列表解析 extra_json（Steam 游玩时长）并改 posted_at 降序；前端 dashboard.js 全量重写（游戏下拉只列 Steam / 时间筛选 5 档且「近N天」**不含当天** / 内联日期面板 / 范围文本 / KPI 数值 52px 居中 / 评论趋势双 Y 轴（空态走覆盖层修图表消失 bug）/ L1 条形图去「综合与元表达」改标题备注+隐横轴 / 原声-观点可折叠列表（独立展开、每页 10 条、情感+树状筛选生效））；web.css 补 `.seg`/`.kpi-trend`/`.treedrop`/`.lcard` 体系；测试 18 → 31 例全绿。⚠️ 预存环境隐患：`test_fail_closed_when_admin_without_session_secret` 会因本地 `.env` 含 SESSION_SECRET_KEY 被 load_dotenv 绕过（非本次引入） | 看板页升级为单游戏分析视角 + 原声/观点列表落地；「主观点」无独立落盘字段，由打标 core 判定物化进 comments.topic（已核实 sentiment_llm.py core 判定链路） |
+| 2026-09-02 | **数据链路切换本地直采**：注册 Task Scheduler `VOC-Local-Daily-Collect`（北京 02:00，`daily_incremental_collect.py --no-download --no-upload`，脚本 `scripts/ops/register_local_collect_task.ps1` 已登记）；workflow `collect` job 置 `if: false`（已 `git diff` 核实落盘，`test` job 保留）；AUTOMATION_PIPELINE §0 / DEVELOPMENT_PLAN §五 / scripts/README 同步。本地 voc.db 即单一权威源，前端零延迟；GH Release 累积停更于 8/30（云备份待装 gh CLI）。⚠️ 机器关机 >2 天有数据缺口，恢复跑 `--full-replay` | Web 看板上线后需要本地数据始终最新；GH schedule 8h 抖动 + sync 未自动化造成 8/31+ 缺口 |
+| 2026-09-02 | Web 实时看板（WEB_DASHBOARD.md）阶段 1-4 完成：`src/api/`（FastAPI）+ `product/web/`（原生 SPA 5 页）+ `collect_tasks` 表 + SQLite WAL + `bilibili_queue` paused；测试 49 → 78 例全绿（`tests/test_collect_tasks.py` 15 + `tests/test_api.py` 14）；targets.yaml 降级为 DB 种子源（config/README 已登记）；P8 时间序列随 Web 看板交付（DEVELOPMENT_PLAN 已关闭）；脚本登记（`ops/hash_admin_password.py`、dev/`verify_web_spa_load_order.js`）；VPS 部署文档补 uvicorn:8000 服务 + WAL checkpoint；§1 目录树补 src/api/ + src/queue/ | 真前端立项落地：DB → API → SPA 全链路，管理员网页增删改采集任务；Streamlit 并存不动 |
 | 2026-08-19 | 初版（0-5 节：目录职责 / 命名 / 红线 / 登记 / 记忆） | 规范后续项目结构 |
 | 2026-08-19 | 补第 6 节健康检查清单 + `.workbuddy` 本机定位说明 + 中文命名补充 | 使规范可落地、可审计 |
 | 2026-08-19 | P6 自动化流水线落地后核对：新建 4 文件（targets.yaml / daily_incremental_collect.py / 测试 / 架构文档）均按 §1 归属与 §2 命名；4 处改动均登记索引；§6 健康检查 7 条全过 | 验证明文规则可执行 |

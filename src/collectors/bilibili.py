@@ -139,6 +139,8 @@ class BilibiliCollector(BaseCollector):
             "tid": view.get("tid"),
             "tname": view.get("tname"),
             "pubdate": view.get("pubdate"),
+            "pic": view.get("pic"),
+            "duration": view.get("duration"),
             "owner": view.get("owner"),
             "desc": view.get("desc"),
             "stat": view.get("stat"),

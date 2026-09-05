@@ -1,13 +1,13 @@
 # B 站自动化采集设计（Bili Automation · 2026-08-23）
 
-> **状态**：✅ 阶段 0 设计 + 落地（2026-08-23）｜ **执行方**：`python -m src.queue ...`
-> **关联**：[BILIBILI_COLLECTION.md](./BILIBILI_COLLECTION.md)（采集规格） · [AUTOMATION_PIPELINE.md](./AUTOMATION_PIPELINE.md)（P6 通用架构）
+> **状态**：✅ 阶段 0 设计 + 落地（2026-08-23）｜ **执行方**：`python -m src.queue ...` 或 Web 看板「系统管理」（2026-09-02 起可网页增删改）
+> **关联**：[BILIBILI_COLLECTION.md](./BILIBILI_COLLECTION.md)（采集规格） · [AUTOMATION_PIPELINE.md](./AUTOMATION_PIPELINE.md)（P6 通用架构） · [WEB_DASHBOARD.md](./WEB_DASHBOARD.md)（系统管理页 §4.3）
 
 ---
 
 ## 一、需求与设计
 
-工程师手动加 BV 号到「待采清单」，系统识别投稿时间后自动计算第 7 天 = 采集日，每天 cron 扫今天到期的视频触发采集。已采过的标 fetched 并记时间。
+工程师手动加 BV 号到「待采清单」，系统识别投稿时间后自动计算第 7 天 = 采集日，每天 cron 扫今天到期的视频触发采集。已采过的标 fetched 并记时间。Web 看板「系统管理」可网页增删改 + 暂停/恢复（2026-09-02）。
 
 ### 1.1 状态机
 
@@ -27,6 +27,12 @@
                               │           │ fail_count >= 3 → failed (dead-letter)
                               ▼           ▼
                           (永久)       failed (永久)
+
+   ── 人工暂停（Web 看板，2026-09-02 新增）──
+   任意非终态（pending/scheduled/fetching/failed）──pause──→ paused
+   runner 只扫 status='scheduled'，paused 天然被跳过
+   paused ──resume──→ scheduled（pubdate 已识别）/ pending（未识别）
+   （resume 仅 paused 可恢复；fetched 不可暂停也不可恢复——重采走显式 revisit）
 ```
 
 ### 1.2 表结构（`bilibili_queue`）
@@ -37,7 +43,7 @@
 | `title` | VARCHAR(512) | 视频标题（识别后填入） |
 | `pubdate` | DATETIME | 投稿时间（识别后填入） |
 | `due_date` | DATETIME | = pubdate + 7d，cron 用此判断 |
-| `status` | VARCHAR(16) | pending/scheduled/fetching/fetched/failed |
+| `status` | VARCHAR(16) | pending/scheduled/fetching/fetched/failed/**paused**（2026-09-02 新增） |
 | `added_at` | DATETIME | 加入时间 |
 | `added_by` | VARCHAR(32) | manual（未来扩展：keyword:xxx / up:xxx） |
 | `fetched_at` | DATETIME | 采集完成时间 |

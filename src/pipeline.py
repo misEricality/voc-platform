@@ -42,6 +42,155 @@ COLLECTORS = {
 }
 
 
+def _download_bili_cover(bvid: str, pic_url: str) -> bool:
+    """B 站封面本地化（2026-09-04 视频看板）：下载 pic 到 data/covers/{bvid}.jpg
+
+    与 Steam 封面同策略（预览环境 B 站 CDN 图加载失败）。失败返回 False（前端回退 CDN）。
+    """
+    import requests
+
+    covers = Path(__file__).resolve().parent.parent / "data" / "covers"
+    try:
+        covers.mkdir(parents=True, exist_ok=True)
+        dest = covers / f"{bvid}.jpg"
+        if dest.exists() and dest.stat().st_size > 0:
+            return True
+        r = requests.get(
+            pic_url, timeout=15,
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com"},
+        )
+        if r.status_code == 200 and r.content:
+            dest.write_bytes(r.content)
+            return True
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"  封面下载失败（不阻塞）: {e}")
+    return False
+
+
+def _snapshot_bili_queue(bv_id: str, info: dict) -> None:
+    """B 站视频快照落库（2026-09-04 视频看板）：view API 元数据 → bilibili_queue 快照列
+
+    队列无行时（存量数据未入队，如直接跑 pipeline / sync 来的库）**按 fetched 自动建行**，
+    并补采集量统计 —— 回填脚本依赖此行为自愈。
+    失败由调用方兜底（不阻塞采集主流程）。
+    """
+    import json as _json
+    from datetime import datetime, timezone as _tz
+
+    from sqlalchemy import func as _func
+    from sqlalchemy import select as _select
+
+    from src.storage.db import BilibiliQueue, Comment, Danmaku, _utcnow, init_db
+
+    _, S = init_db()
+    stat = info.get("stat") or {}
+    owner = info.get("owner") or {}
+    with S() as s:
+        row = s.execute(
+            _select(BilibiliQueue).where(BilibiliQueue.bv_id == bv_id)
+        ).scalar_one_or_none()
+        if row is None and info.get("aid"):
+            # 队列无行 → 按 fetched 创建（bv_id 用 view 返回的真实 bvid）
+            tid = f"bilibili:video:{info['aid']}"
+            n_c = s.execute(_select(_func.count(Comment.id)).where(
+                Comment.target_id == tid, Comment.platform == "bilibili")).scalar() or 0
+            n_d = s.execute(_select(_func.count(Danmaku.id)).where(
+                Danmaku.video_id == tid)).scalar() or 0
+            pubdate = None
+            if info.get("pubdate"):
+                pubdate = datetime.fromtimestamp(info["pubdate"], tz=_tz.utc).replace(tzinfo=None)
+            row = BilibiliQueue(
+                bv_id=info.get("bvid") or bv_id, status="fetched", pubdate=pubdate,
+                comment_count=int(n_c), danmaku_count=int(n_d), fetched_at=_utcnow(),
+            )
+            s.add(row)
+        if row is None:
+            return
+        row.aid = info.get("aid") or row.aid
+        row.title = info.get("title") or row.title
+        row.pic = info.get("pic") or row.pic
+        row.owner_name = owner.get("name") or row.owner_name
+        row.owner_mid = str(owner.get("mid")) if owner.get("mid") else row.owner_mid
+        row.view = stat.get("view") or row.view
+        row.like_count = stat.get("like") or row.like_count
+        row.coin = stat.get("coin") or row.coin
+        row.favorite = stat.get("favorite") or row.favorite
+        row.reply_total = stat.get("reply") or row.reply_total
+        row.danmaku_total = stat.get("danmaku") or row.danmaku_total
+        row.duration = info.get("duration") or row.duration
+        if info.get("tags"):
+            row.tags_json = _json.dumps(info["tags"], ensure_ascii=False)
+        row.stats_fetched_at = _utcnow()
+        saved_bv = row.bv_id
+        s.commit()
+    # 封面本地化（在 DB 会话外执行；失败不阻塞）
+    if info.get("pic") and saved_bv:
+        _download_bili_cover(saved_bv, info["pic"])
+    log.info(f"  视频快照已写入 bilibili_queue（bv={saved_bv}）")
+
+
+def _generate_danmaku_highlights(aid: int, *, top_n: int = 3, provider: str = "deepseek") -> None:
+    """弹幕高光 LLM 总结（2026-09-04 视频看板；采集时一次性完成，结果落 highlights_json）
+
+    取 30s 固定桶中弹幕量最多的 top_n 个，按时长升序逐桶调 LLM 总结。
+    """
+    import json as _json
+
+    from sqlalchemy import select as _select
+
+    from src.analyzers.danmaku_summary import summarize_bucket
+    from src.storage.db import (
+        BilibiliQueue,
+        Danmaku,
+        _utcnow,
+        bucket_danmaku_rows,
+        init_db,
+    )
+
+    video_id = f"bilibili:video:{aid}"
+    _, S = init_db()
+    with S() as s:
+        rows = list(s.execute(
+            _select(Danmaku).where(Danmaku.video_id == video_id)
+        ).scalars())
+        if not rows:
+            log.info("  高光总结跳过：该视频无弹幕")
+            return
+        buckets = bucket_danmaku_rows(rows)
+        top = sorted(buckets, key=lambda b: -b["count"])[:top_n]
+        top = sorted(top, key=lambda b: b["start_sec"])  # 左起按时长排列
+
+        import random as _random
+
+        out = []
+        for b in top:
+            texts = [r.content for r in b["rows"] if r.content]
+            # 120 条随机抽样（2026-09-04 工程师确认）：桶内弹幕多时避免只取前段
+            if len(texts) > 120:
+                texts = _random.sample(texts, 120)
+            if not texts:
+                continue
+            summary = summarize_bucket(texts, provider=provider)
+            out.append({
+                "start_sec": b["start_sec"], "end_sec": b["end_sec"],
+                "count": b["count"], "summary": summary,
+            })
+            log.info(f"  高光 {b['start_sec']}~{b['end_sec']}s（{b['count']} 条）：{summary[:36]}…")
+
+        row = s.execute(
+            _select(BilibiliQueue).where(BilibiliQueue.aid == aid)
+        ).scalar_one_or_none()
+        if row is None:
+            log.warning("  高光总结落库跳过：bilibili_queue 无 aid=%s 行", aid)
+            return
+        row.highlights_json = _json.dumps(
+            {"generated_at": _utcnow().isoformat(), "buckets": out},
+            ensure_ascii=False,
+        )
+        s.commit()
+    log.info(f"  高光总结已写入（{len(out)} 桶）")
+
+
 def run_pipeline(
     platform: str,
     target_id: str,
@@ -115,6 +264,12 @@ def run_pipeline(
                 db_lookup_target = f"video:{info['aid']}"
                 db_full_target = f"bilibili:video:{info['aid']}"
 
+            # 视频快照落库（2026-09-04 B站视频看板；失败不阻塞主流程）
+            try:
+                _snapshot_bili_queue(target_id, info)
+            except Exception as e:
+                log.warning(f"  视频快照写入失败（不阻塞主流程）: {e}")
+
     raws = collector.collect(
         target_id,
         max_count=max_count,
@@ -145,6 +300,13 @@ def run_pipeline(
             log.info(f"  [2.2] 弹幕入库 {danmaku_count} 条（分片后 {len(items)} 条）")
         except Exception as e:
             log.warning(f"  [2.2] 弹幕采集失败（不阻塞主流程）: {e}")
+
+    # 3.3 B 站弹幕高光总结（2026-09-04 视频看板；采集时一次性调 LLM，失败不阻塞主流程）
+    if platform == "bilibili" and target_meta.get("aid"):
+        try:
+            _generate_danmaku_highlights(target_meta["aid"])
+        except Exception as e:
+            log.warning(f"  [2.3] 弹幕高光总结失败（不阻塞主流程）: {e}")
 
     # 3.5 向量化（新增评论 → 语义向量，失败不阻塞；与打标解耦，skip_analysis 时也执行）
     embed_count = 0

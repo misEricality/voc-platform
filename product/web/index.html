@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灵听 · Lynx — 实时口碑看板</title>
+<link rel="stylesheet" href="src/tokens.css">
+<link rel="stylesheet" href="src/web.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">灵听 · Lynx</div>
+  <nav class="nav" id="nav">
+    <a href="#/dashboard" data-page="dashboard">单游戏看板</a>
+    <a href="#/compare" data-page="compare">游戏对比看板</a>
+    <a href="#/bilibili" data-page="bilibili">B站视频看板</a>
+    <div class="nav-drop">
+      <a href="#/admin" data-page="admin">系统管理 ▾</a>
+      <div class="nav-menu">
+        <a href="#/admin" data-page="admin">采集任务</a>
+        <a href="#/data" data-page="data">数据管理</a>
+      </div>
+    </div>
+  </nav>
+  <div class="topbar-meta" id="dbMeta"></div>
+</header>
+
+<main id="app"><div class="loading">加载中…</div></main>
+
+<div id="toast" class="toast"></div>
+<div id="modalRoot"></div>
+
+<script src="vendor/echarts.min.js"></script>
+<script src="src/api.js?v=20260905b"></script>
+<script src="src/charts.js?v=20260905b"></script>
+<script src="src/pages/dashboard.js?v=20260905b"></script>
+<script src="src/pages/compare.js?v=20260905b"></script>
+<script src="src/pages/bilibili.js?v=20260905b"></script>
+<script src="src/pages/data.js?v=20260905b"></script>
+<script src="src/pages/admin.js?v=20260905b"></script>
+<script src="src/main.js?v=20260905b"></script>
+</body>
+</html>

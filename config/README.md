@@ -84,6 +84,7 @@ config/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-02 | `monitoring/targets.yaml` **语义变更**：降级为 `collect_tasks` 表（DB）的**种子/回退源**——首次运行自动种子化到 DB，之后 Web 看板「系统管理」直接在 DB 增删改；`daily_incremental_collect.py` 优先读 DB，空表才回退 yaml（详见 `docs/architecture/WEB_DASHBOARD.md §3.4`） | Web 实时看板立项：DB 单一权威源，网页改采集目标不再写 git 跟踪文件 |
 | 2026-08-27 | P6 `targets.yaml`：cron 时间带改 `0 17 * * *` UTC（详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3`）；配置内容不变，仅 docs/scripts 同步 README + 排除说明 | 配合 P6 silent 失败防御（verify_release_upload.py + cron 防延迟） |
 | 2026-08-25 | `monitoring/targets.yaml`：count `30 → 100` → `null`（终极 auto 模式）；同步配 workflow timeout `30→60min`（用户网页 commit `a73ca33`） | P6 production bug 收口：避免单次 max_count 限制漏采 |
 | 2026-08-23 | `monitoring/targets.yaml` 新增 `excluded_targets` 段，列出 4 款已归档 Steam 网游（PUBG/Apex/Dota2/CS2），主库不再覆盖这 4 款 | 主库聚焦 6 款单机；归档数据可单独查询 |

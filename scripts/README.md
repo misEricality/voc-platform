@@ -12,13 +12,14 @@
 scripts/
 ├── README.md                       ⬅ 你在这里
 ├── smoke_test.py                   ✅ 项目骨架冒烟测试（长期保留，CI 用）
-├── dev/                            🧪 开发期活跃脚本（11 个，hander 真正会用到的工具集）
+├── dev/                            🧪 开发期活跃脚本（12 个，hander 真正会用到的工具集）
 │   ├── 标注核心                       reanalyze_all / rematch_opinions / recompute_topics
 │   │                                   rebuild_golden_set / mine_fallback_candidates（按需跑）
 │   ├── 微话题下钻                     l35_cluster（P9 阶段2 骨架）
 │   ├── 弹幕分析                       analyze_danmaku（B 站弹幕词典匹配）
 │   ├── 原型数据导出                   export_prototype_data（被 product/ 下脚本引用）
 │   └── 端到端验证（2026-08-31 新增）   verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect
+│   └── Web 前端冒烟（2026-09-02 新增）  verify_web_spa_load_order.js（node，模拟浏览器求值顺序检查 Routes 注册）
 ├── dev/archive/                    📦 已完成任务的一次性脚本（42 个，2026-09-01 归档）
 │   ├── debug/                           debug_dup_source_id / debug_pagination_loss / debug_recent_order
 │   ├── diag/                            diag_batch_vs_single / diag_prompt_a / diag_bili_412
@@ -48,6 +49,9 @@ scripts/
     ├── dual_annotate_qwen_flash.py     ✅ DEEPSEEK vs QWEN-flash 双标注对比（backup + compare 两阶段，2026-08-25；产物已归档）
     ├── archive_online_games.py         ✅ 一次性：4 款 Steam 网游数据归档 + 主库清理（2026-08-23）
     ├── push_via_api.py                 ✅ sandbox 屏蔽 git push 时走 GH REST API 兜底（2026-08-31）
+    ├── hash_admin_password.py          ✅ 生成 Web 看板 ADMIN_PASSWORD_HASH（pbkdf2，2026-09-02）
+    ├── backfill_bili_highlights.py     ✅ 一次性：存量 B 站视频快照 + 弹幕高光 LLM 总结回填（2026-09-04）
+    ├── register_local_collect_task.ps1 ✅ 注册本地直采计划任务（北京 02:00 → voc.db；2026-09-02 已注册）
     └── register_sync_tasks.ps1         ✅ Windows Task Scheduler 注册（10:00/13:00/18:00/22:00 sync）
 ```
 
@@ -66,8 +70,11 @@ scripts/
 | **ops/verify_release_upload.py** | P6 静默失败防御：daily collect 跑完后用 `gh release view` 检查 `voc.db` asset 实际状态（size > 1KB + state=uploaded），失败 exit 1 让 workflow 标红。详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3` | GH Actions workflow 自动调用；也可 `--tag voc-daily-YYYY-MM-DD` 手动验证；测试：`tests/test_verify_release_upload.py` 8 例 |
 | **ops/smart_sync_release.py** | 本地自动 sync GH Release → `data/voc.db`（幂等）：①今天 release 未上传 → 安静 exit 0（专为"10:00 早跑，workflow 还没好"场景设计）②本地比远端新 → noop exit 0 ③远端比本地新 → 下载 + 安全 rename 替换 → exit 0 ④文件锁（Streamlit 打开）→ exit 1 + 提示"关仪表盘" | `python scripts/ops/smart_sync_release.py`（默认 today UTC）或 `--date 2026-08-28` 指定日期。注册到 Windows Task Scheduler 见 `register_sync_tasks.ps1`（4 task 错开 10:00/13:00/18:00/22:00） |
 | **ops/register_sync_tasks.ps1** | 注册 Windows Task Scheduler 任务：4 个 daily VOC-Sync-Release-* 任务，分别 10:00 / 13:00 / 18:00 / 22:00，每天跑 `smart_sync_release.py` | **需以管理员身份运行 PowerShell**：`powershell -ExecutionPolicy Bypass -File scripts\ops\register_sync_tasks.ps1`。卸载：`... -Uninstall`。DSH agent 无 admin 权限，不能自动注册 |
+| **ops/register_local_collect_task.ps1** | 注册本地直采计划任务 `VOC-Local-Daily-Collect`（北京 02:00）：跑 `daily_incremental_collect.py --no-download --no-upload` 直接写 `data/voc.db`，前端直读零延迟；错过补跑（StartWhenAvailable）+ 日志落 `logs/collect.log` | `powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1`（当前用户注册，**无需管理员**）。卸载：`... -Uninstall`。⚠️ 机器关机 >2 天会有数据缺口，恢复后加 `--full-replay` 手动补 |
 | **ops/reset_qwen_flash_bogus.py** | P11 清理 8/24-25 QWEN-flash 模型 404 留下的假数据：UPDATE 261 条 `analyzer_version=llm:qwen3-flash@...` 的评论清掉分析字段，让明早 cron 重新打 | 默认 dry-run 打印预演；`--commit` 真正清；`--like` 宽松匹配（清所有 `llm:qwen%` 假数据） |
 | **ops/archive_online_games.py** | 一次性：把 4 款 Steam 网游（PUBG/Apex/Dota2/CS2）数据从主库抽到 `data/archive/online_games_YYYY-MM-DD.db`，并从主库删除（2026-08-23 已执行） | `python scripts/ops/archive_online_games.py --dry-run`（预览）；不带参数实际执行；归档后主库 VACUUM |
+| **ops/backfill_bili_highlights.py** | 一次性：存量 fetched B 站视频回填快照（封面/UP主/播放量/三连/时长/标签）+ 弹幕高光 LLM 总结（30s 桶 top3 → `bilibili_queue.highlights_json`）；此后新采集由 pipeline 自动完成 | `python scripts/ops/backfill_bili_highlights.py`（全部）或 `... BV1xxx`（指定）；依赖 .env LLM Key（默认 DEEPSEEK），每视频 1 次 view 调用 + 3 次 LLM |
+| 2026-09-05 | 删除 dev/ 13 个「临时：用完即删」脚本（9/3 底特律补采调试链：audit_dedup / audit_window_coverage / backfill_all_window / backfill_detroit_window / compare_ua / probe_steam_review / repro_detroit_collect / search_comment / simulate_collector_paging / sweep_missing_reviews / verify_backfill / wait_analysis / wait_backfill_all），用户确认后执行 | 洁癖收口：一次性调试链完成任务后按自标语义清理；正式工具 12 个保留 |
 | **ops/push_via_api.py** | sandbox 屏蔽 git 出站协议栈时走 GH REST API 推 main 的兜底工具：blob / nested tree / commit / refs 全流程，fast-forward 校验，关键 10 文件 SHA 验证。**推送前必读** `docs/guides/PUSH_TROUBLESHOOTING.md` §1 决策树（sandbox refs 限流时立即停止操作 + 提示手动 git push） | `python scripts/ops/push_via_api.py`（需 `GITHUB_TOKEN` 环境变量，fine-grained PAT `Contents: Read and write`） |
 
 ### 项目级 CLI（src/queue · B 站采集队列）
@@ -96,6 +103,7 @@ scripts/
 | `verify_smart_window_e2e.py` | `daily_incremental_collect.smart_window` v2 端到端验证（mock run_pipeline，看 posted_after/Before 传递是否正确；不联网不污染主库） |
 | `verify_glm_5_3_flash.py` | `glm-5.3-flash` provider 接通验证（用真实 key 跑一条样本评论，确认 analyzer_version=llm:glm-5.3-flash@xxx + 标注结果合法；切默认标注器后跑一次回归用） |
 | `verify_today_collect.py` | 一键验证今日 workflow 跑通后本地数据（自动 sync release + 检查 posted_at 分布/analyzer_version=v2 时间窗/6 款游戏采集率/情感分布；切默认标注器后验证端到端用） |
+| `verify_web_spa_load_order.js` | Web 前端冒烟：用 node `vm` 按 index.html 顺序模拟求值 `product/web/src/*.js`，断言 5 个页面全部注册进 `Routes`（防 TDZ / 加载顺序回归；无需浏览器） |
 | `e2e_lifecycle.py` | 首次采集 + 回采全链路 E2E（独立测试 DB，不污染主库） |
 
 ### dev/ · 数据巡检与修复
@@ -193,4 +201,5 @@ scripts/
 | 2026-08-28 | 新建 `ops/smart_sync_release.py`（智能 sync：幂等 + 文件锁处理 + 4 task 错开调度）+ `ops/register_sync_tasks.ps1`（Windows Task Scheduler 注册） | 解锁 P6 「GH Release → 本地」自动 sync（之前需手动跑 sync_local_from_release.py）；4 task 错开应对 8h 延迟；幂等设计支持任意次重跑 |
 | 2026-08-31 | 新建 `ops/push_via_api.py`（sandbox 屏蔽 git push 时走 GH REST API 兜底）+ `docs/guides/PUSH_TROUBLESHOOTING.md`（7 章节决策树 + 5 已知坑 + 验证清单，每次 push 前必读） | 解锁 sandbox 推 main 通道；沉淀本次 push 踩的 4 个新坑（REMOTE_HEAD 硬编码 / root 排序 / basename 冲突 / refs 二级限流）+ 历史 1 个（dotfile 404），避免重复踩；与 8-28 §沙箱 push 护栏配套（决策树明示「sandbox refs 限流时立即提示手动 git 推」） |
 | 2026-09-01 | **HANDOVER 收口 · dev/ 激进归档 42 个一次性脚本到 `archive/`**：按 9 个子目录分类（debug/ diag/ e2e/ one_shot_backfill/ one_shot_curate/ one_shot_export/ one_shot_prototype/ one_shot_verify/ P6_bootstrap/）；dev/ 保留 11 个核心脚本（reanalyze_all / rematch_opinions / recompute_topics / rebuild_golden_set / mine_fallback_candidates / l35_cluster / analyze_danmaku / export_prototype_data / verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect）；ops/ 补 `push_via_api.py` + `register_sync_tasks.ps1`；README 头部时间戳与目录树同步 | 项目交接准备：让新接手者一眼看到「真正活跃的工具集」；冗余一次性脚本不污染日常 dev/ 视角 |
+| 2026-09-02 | 新建 `ops/hash_admin_password.py`（生成 Web 看板 ADMIN_PASSWORD_HASH）+ dev/ 新增 `verify_web_spa_load_order.js`（SPA 加载顺序冒烟） | Web 实时看板（WEB_DASHBOARD.md）落地配套：管理员密码哈希工具 + 前端无浏览器回归防线 |
 - 不要把 prompt 模板或业务配置写死在脚本里，统一从 `config/` 加载

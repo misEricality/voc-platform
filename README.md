@@ -25,8 +25,8 @@
 
 | 维度 | 当前（v0.7，2026-09-01 收口） |
 |---|---|
-| **✅ 已完成** | Steam 6 单机 + B 站 3 视频采集（14K 评论）；L1-L3 三级标签标注管线（方案4）；本地 bge 语义向量化；Streamlit 仪表盘（单目标 / 多目标对比 / 明细核查）；B 站单视频看板；**P6 自动化流水线**（GH Actions daily cron + GH Release 累积 DB + CI pytest 护栏 + silent 失败防御）；**DESIGN_TOKENS v1.0**（三原型迁移版已上线） |
-| **🔜 接下来（v1.0 前主线）** | **P8 时间序列趋势图**（P6 持久化已解锁）；**P9 阶段 2 L3.5 微话题聚类**（`l35_cluster.py` 骨架就绪）；**P9 阶段 3 PEDM 负向观点试点**（黄金集一致率 ≥80% 才放量）；**P11 QWEN-flash bogus 清理**（`reset_qwen_flash_bogus.py --commit`） |
+| **✅ 已完成** | Steam 6 单机 + B 站 3 视频采集（14K 评论）；L1-L3 三级标签标注管线（方案4）；本地 bge 语义向量化；Streamlit 仪表盘（单目标 / 多目标对比 / 明细核查）；B 站单视频看板；**Web 实时看板**（FastAPI + 原生 SPA：主看板/游戏对比/B站视频/时间序列/系统管理 5 页，2026-09-02）；**P6 自动化流水线**（GH Actions daily cron + GH Release 累积 DB + CI pytest 护栏 + silent 失败防御）；**DESIGN_TOKENS v1.0**（三原型迁移版已上线） |
+| **🔜 接下来（v1.0 前主线）** | **P9 阶段 2 L3.5 微话题聚类**（`l35_cluster.py` 骨架就绪）；**P9 阶段 3 PEDM 负向观点试点**（黄金集一致率 ≥80% 才放量）；**P11 QWEN-flash bogus 清理**（`reset_qwen_flash_bogus.py --commit`）；Web 看板 VPS 部署落地 |
 | **🎯 最终目标（v1.0 作品集发布）** | 完整文档（README 进阶版）+ mermaid 架构图；1-2 篇复盘博客（踩坑 + 经验）；演示视频/GIF；求职作品集重点项目 |
 
 → 详细路线 / 当前主线 / 阻塞：[docs/plan/DEVELOPMENT_PLAN.md](./docs/plan/DEVELOPMENT_PLAN.md)
@@ -48,6 +48,7 @@
 | 高保真原型 v3 | ✅ | 数据看板 + 原声列表 + 游戏对比卡片页（单文件自包含：内嵌子集字体 + logo） |
 | Streamlit Dashboard | ✅ | 单目标看板（6 图）+ 多目标对比视图（散点/堆叠/热力图/痛点/下钻）+ 📋 明细核查视图（多维筛选 + CSV 导出）|
 | B 站单视频看板 | ✅ | v0.3 接 DB SPA（3 视频切换 + 4 区块：视频概览 / 评论情感与画像 / 主题情感分析 + 下钻 / 弹幕时间轴） |
+| **Web 实时看板** | ✅ | FastAPI + 原生 ECharts SPA（2026-09-02）：主看板 / 游戏对比 / B站视频 / **时间序列（P8）** / 系统管理（管理员增删改采集任务）；实时读 `data/voc.db`；详见 [WEB_DASHBOARD.md](docs/architecture/WEB_DASHBOARD.md) |
 | 微博采集 | 🚧 | 下一阶段 |
 | 自动化流水线 | ✅ | P6 已落地：workflow cron + GH Release 累积 DB + CI pytest 护栏（test job）；P6 silent 失败防御上线（verify_release_upload.py）|
 
@@ -124,7 +125,7 @@ voc-platform/
 │
 ├── docs/                            # 【研发文档】（技术视角）
 │   ├── 00-index.md                      ⬅ 文档地图
-│   ├── architecture/                    架构设计（10 文档，含 ANNOTATION/AUTOMATION/STEAM_API_FIELDS/BILIBILI/DESIGN_TOKENS/SELF_HOSTED_VPS 等）
+│   ├── architecture/                    架构设计（12 文档，含 ANNOTATION/AUTOMATION/STEAM_API_FIELDS/BILIBILI/DESIGN_TOKENS/SELF_HOSTED_VPS/DEPLOYMENT_OPTIONS 等）
 │   ├── guides/                          操作指南（QUICK_START / SETUP_ML_ENV / PUSH_TROUBLESHOOTING）
 │   ├── plan/                            计划与里程碑（DEVELOPMENT_PLAN + next-gen-tagging/）
 │   └── research/                        调研资料（VOC_COMPETITOR_RESEARCH）
@@ -203,7 +204,7 @@ voc-platform/
 - [x] **v0.5** - B 站采集 + 多平台扩展（采集器 + 看板 v0.3）
 - [x] **v0.6** - 自动化流水线 P6（GH Actions cron + GH Release 累积 DB）
 - [x] **v0.7** - 分析结果溯源 P10（analyzer_version 字段）+ CI pytest 护栏 + P11 QWEN-flash bogus 清理工具 + DESIGN_TOKENS v1.0（三原型 v2 迁移版上线）
-- [ ] **v1.0** - P8 时间序列趋势图（解锁前置已就绪） + P9 阶段 2/3 落地 + 完整文档 + 技术博客 + 求职作品集发布
+- [ ] **v1.0** - ✅ P8 时间序列已随 Web 看板交付（2026-09-02）→ P9 阶段 2/3 落地 + 完整文档 + 技术博客 + 求职作品集发布
 
 ## 📄 License
 

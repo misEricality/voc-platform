@@ -8,16 +8,22 @@
 > - 存储层：[DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
 > - P6 决策与风险历史：本文档 §8（2026-08-22 从 `plan/P6_AUTOMATION_PIPELINE.md` 合并，原文件已删）
 >
-> **最后更新**：2026-08-27
-> **状态**：✅ 已落地（2026-08-19）；2026-08-22 洁癖收口：合并 `plan/P6_AUTOMATION_PIPELINE.md` 决策与风险历史 → §8；2026-08-27 §8.3 A1 升级：silent 失败实战案例 + verify_release_upload.py 防御上线（详见版本记录）
+> **最后更新**：2026-09-02
+> **状态**：⚠️ **云端采集已停用（2026-09-02）**——数据链路切换为**本地直采**（Task Scheduler `VOC-Local-Daily-Collect`，北京 02:00，`daily_incremental_collect.py --no-download --no-upload`），本地 `data/voc.db` 即单一权威源，前端直读。workflow `collect` job 置 `if: false`（恢复：删该行），`test` job 保留作 CI 回归门禁。历史（GH Release 累积模式）见下文与版本记录；目标加载 DB 优先见 [WEB_DASHBOARD.md §3.4](./WEB_DASHBOARD.md)
 
 ---
 
 ## 0. 一句话总览
 
-GitHub Actions 每天 UTC 17:00 调 `scripts/ops/daily_incremental_collect.py`，把"前一天累积的 DB"从 GitHub Release 拉下来 → 对 6 款 Steam 单机游戏做增量采集 → 把更新后的 DB 上传回 GitHub Release。**每天的 DB 是同一份累积库**，不再每天生成新库。
+**现役（2026-09-02 起）**：本机 Task Scheduler 每天北京 02:00 跑 `daily_incremental_collect.py --no-download --no-upload --lookback-days 7`，直接把**近 7 个北京日历日**的 Steam 评论增量写进本地 `data/voc.db`（WAL 模式），Web 看板/FastAPI 直读该库。GH Release 累积库停更于 2026-08-30（云备份待装 gh CLI 后可用 `--no-download` 模式恢复）。
+
+> **回看窗 2 天 → 7 天（2026-09-03）**：Steam `filter=recent` 游标流是**非确定性采样**（同窗口每次爬取子集不同，单次漏 5-20%，实测 6 游戏 123 条）——无法根治，靠多日重叠回看 + upsert 幂等 + analyzed-skip 使覆盖率随多遍采样收敛；增量成本仅分页加深（~7 页/游戏）。附带效果：漏采缺口会在后续 7 天内自动补上（如底特律 8/31 缺口于 9/4 02:00 自愈）。
+
+**历史模式（2026-08-19 ~ 2026-09-01）**：GitHub Actions 每天 UTC 17:00 调 `scripts/ops/daily_incremental_collect.py`，把"前一天累积的 DB"从 GitHub Release 拉下来 → 对 6 款 Steam 单机游戏做增量采集 → 把更新后的 DB 上传回 GitHub Release。**每天的 DB 是同一份累积库**，不再每天生成新库。
 
 > **cron 时间变更**：2026-08-27 把 daily-collect cron 从 `0 0 * * *` UTC（= 北京 08:00）改为 `0 17 * * *` UTC（= 北京次日凌晨 1:00）—— GH Actions schedule 历史上最多延迟 ~8 小时，0:00 UTC 配延迟会让 workflow 在北京下午 4 点才跑完，太晚；17:00 UTC 即便延迟 8 小时也只到次日上午 9 点 BJT。详见 §8.5。
+
+> **目标加载变更（2026-09-02）**：`daily_incremental_collect.py` 改为**优先读 `collect_tasks` 表**（DB，由 Web 看板「系统管理」增删改）；表为空时自动从 `targets.yaml` 种子化（幂等），仍空则回退 yaml。**GH Actions 过渡期影响**：网页端改的任务只存在于本地/累积 DB，不随 git 同步到云端 workflow（云端跑的是 release 累积 DB，含 collect_tasks）；VPS 形态 A（GH Actions 关停）下无此问题。详见 [WEB_DASHBOARD.md §3.4](./WEB_DASHBOARD.md)。
 
 ---
 
@@ -41,7 +47,7 @@ GitHub Actions 每天 UTC 17:00 调 `scripts/ops/daily_incremental_collect.py`�
 │   │    └─ 找不到 → 回退 voc-daily-bootstrap（基线）               │   │
 │   │              └─ 仍找不到 → 空库起步                           │   │
 │   │                                                                 │   │
-│   │ 2. 加载 config/monitoring/targets.yaml（6 款 Steam）         │   │
+│   │ 2. 加载采集目标（DB collect_tasks 优先；空表从 targets.yaml 种子化）│   │
 │   │                                                                 │   │
 │   │ 3. 对每个 enabled=true 的目标：                                │   │
 │   │    posted_after = max(posted_at) - 1 天 滑窗                   │   │
@@ -73,11 +79,12 @@ GitHub Actions 每天 UTC 17:00 调 `scripts/ops/daily_incremental_collect.py`�
 | 推到 git | `.gitignore` 禁 DB；DB 上 git 会污染仓库 | ❌ |
 | 自托管对象存储（S3/OSS） | 个人项目过度工程化 | ❌ |
 
-### 2.2 为什么多目标用 YAML 而不是硬编码
+### 2.2 为什么多目标用 YAML（及其与 DB 的关系）
 
 - `config/monitoring/targets.yaml` 是**业务配置**（目标清单），不是代码逻辑。
 - 新增/删除监控游戏 = 改 YAML 一行，无需改 Python/workflow。
 - 与既有 `config/topics/*.yaml`（标签）、`config/prompts/*.txt`（prompt）一致。
+- **2026-09-02 起**：yaml 降级为 `collect_tasks` 表的**种子/回退源**——首次运行种子化进 DB，之后 Web 看板「系统管理」直接在 DB 增删改；`daily_incremental_collect.py` DB 优先，空表才回退 yaml（详见 [WEB_DASHBOARD.md §3.4](./WEB_DASHBOARD.md)）。
 
 ### 2.3 为什么 workflow YAML 只做环境、业务逻辑进脚本
 

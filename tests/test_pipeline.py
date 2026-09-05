@@ -164,7 +164,12 @@ def test_fetch_comments_dedup():
 
 
 def test_fetch_comments_empty_page_stop():
-    """连续两页空 → 翻页停止（不要无限循环）"""
+    """连续三次空响应 → 翻页停止（不要无限循环）
+
+    2026-09-03 契约：空响应（reviews=[]，Steam 限流/瞬时异常）先退避重试 ×2
+    （防静默丢数据，见底特律 fetched=0 事故），第 3 次仍空才终止。
+    注意：这与 streak 阈值（窗外页累加，AUTO_EMPTY_STREAK_LIMIT=8）是两条独立终止路径。
+    """
     from src.collectors.steam import SteamCollector
 
     collector = SteamCollector.__new__(SteamCollector)
@@ -177,17 +182,17 @@ def test_fetch_comments_empty_page_stop():
         "cursor": "next",
         "query_summary": {"num_reviews": 1},
     }
-    page2 = {"reviews": [], "cursor": "next", "query_summary": {"num_reviews": 0}}
-    page3 = {"reviews": [], "cursor": None, "query_summary": {"num_reviews": 0}}
+    page_empty = {"reviews": [], "cursor": "next", "query_summary": {"num_reviews": 0}}
     collector.session.get.side_effect = [
         MagicMock(json=lambda: page1),
-        MagicMock(json=lambda: page2),
-        MagicMock(json=lambda: page3),
+        MagicMock(json=lambda: page_empty),   # 重试 1
+        MagicMock(json=lambda: page_empty),   # 重试 2
+        MagicMock(json=lambda: page_empty),   # 第 3 次空 → 终止
     ]
 
     raws = list(collector.fetch_comments("730", max_count=100))
     assert len(raws) == 1, f"应 yield 1 条，实际 {len(raws)}"
-    assert collector.session.get.call_count == 2, f"应 2 次请求停止，实际 {collector.session.get.call_count}"
+    assert collector.session.get.call_count == 4, f"应 4 次请求停止（1 采集 + 3 空），实际 {collector.session.get.call_count}"
     print("✓ test_fetch_comments_empty_page_stop")
 
 

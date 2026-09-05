@@ -35,7 +35,11 @@ jobs:
           python -m pytest tests/ -v
 
   # ---- 每日采集 ----
+  # ⚠️ 2026-09-02 停用：数据链路切换为「本地直采」（Task Scheduler VOC-Local-Daily-Collect，
+  #    北京 02:00，见 scripts/ops/register_local_collect_task.ps1）——本地 voc.db 即单一权威源，
+  #    消除 GH Actions schedule 8h 抖动与 sync 延迟。恢复云端采集：删除下面的 if: false 即可。
   collect:
+    if: false
     runs-on: ubuntu-latest
     # 60 分钟兜底：6 款 Steam × auto 模式翻页 + LLM 标注 GLM-5.3-Flash，正常 < 20 分钟；
     # count=null（auto）后单 target 极端情况可达 ~30 分钟（参见 AGENTS.md 2026-08-25）；

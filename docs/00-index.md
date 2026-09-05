@@ -18,8 +18,10 @@ docs/
 │   ├── BILIBILI_COLLECTION.md      B 站采集规格（接口/数据映射/采样策略，开发交接文档）
 │   ├── BILIBILI_AUTOMATION.md      B 站自动化采集设计（待采清单 + cron + CLI；2026-08-23 落地）
 │   ├── DESIGN_TOKENS.md            设计 Token 规范 v1.0（色彩/字体/组件/图标/图表/双主题 + 三页迁移映射，前端执行依据）
+│   ├── WEB_DASHBOARD.md            Web 实时看板架构（FastAPI + 原生 SPA + collect_tasks 表 + 管理员鉴权；2026-09-01 立项）
 │   ├── DUAL_ANNOTATION_QWEN_FLASH_2026-08-25_ARCHIVE.md  P11 双标注实验产物归档（QWEN-flash 404 失败案例）
-│   └── SELF_HOSTED_VPS_DEPLOYMENT.md 形态 A 部署指南（公网可访问 / 数据全私有；Oracle Always Free + Caddy + Streamlit）
+│   ├── SELF_HOSTED_VPS_DEPLOYMENT.md 形态 A 部署指南（公网可访问 / 数据全私有；Oracle Always Free + Caddy + Streamlit）
+│   └── DEPLOYMENT_OPTIONS.md         公网部署选型（5 方案对比：VPS/PaaS/静态快照/Workers+D1/CDN+VPS；2026-09-04，暂不开发）
 ├── plan/                   🗺️ 计划与里程碑
 │   ├── DEVELOPMENT_PLAN.md     完整路线图 + 优先级 + 决策依据
 │   ├── P3_COMPARE_DESIGN.md    P3 多目标对比设计（数据/口径/图表选型/技术实现）
@@ -49,8 +51,10 @@ docs/
 | **B 站采集怎么设计（接口/采样/落库）** | [architecture/BILIBILI_COLLECTION.md](./architecture/BILIBILI_COLLECTION.md) |
 | **B 站自动化怎么跑（待采清单 + cron + CLI）** | [architecture/BILIBILI_AUTOMATION.md](./architecture/BILIBILI_AUTOMATION.md) |
 | **怎么把仪表盘部署到公网，同时不让外人拿到数据** | [architecture/SELF_HOSTED_VPS_DEPLOYMENT.md](./architecture/SELF_HOSTED_VPS_DEPLOYMENT.md) |
+| **部署到公网有哪几种走法、各自成本和稳定性如何** | [architecture/DEPLOYMENT_OPTIONS.md](./architecture/DEPLOYMENT_OPTIONS.md)（5 方案对比 + 选型结论） |
 | **怎么把代码推送到 GitHub（sandbox 推 vs 手动 git 推的决策树）** | [guides/PUSH_TROUBLESHOOTING.md](./guides/PUSH_TROUBLESHOOTING.md) |
 | **前端页面的颜色/字体/组件/图表规范是什么** | [architecture/DESIGN_TOKENS.md](./architecture/DESIGN_TOKENS.md) |
+| **Web 实时看板怎么设计（API/任务管理/鉴权/P8）** | [architecture/WEB_DASHBOARD.md](./architecture/WEB_DASHBOARD.md) |
 | **数据库有哪些字段、怎么命名的** | [architecture/DATA_FIELDS.md](./architecture/DATA_FIELDS.md) |
 | **数据是怎么分层流转的、表怎么设计** | [architecture/DATA_STORAGE_DESIGN.md](./architecture/DATA_STORAGE_DESIGN.md) |
 | **为什么选这个数据源、不选别的** | [research/VOC_COMPETITOR_RESEARCH.md](./research/VOC_COMPETITOR_RESEARCH.md) |

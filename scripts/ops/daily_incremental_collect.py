@@ -70,16 +70,79 @@ BJT_OFFSET = timedelta(hours=8)
 
 
 def load_targets(config_path: Path) -> list[dict]:
-    """加载 targets.yaml，返回启用的目标列表（保留原顺序）"""
+    """加载 targets.yaml，返回启用的目标列表（保留原顺序）
+
+    注：2026-09-01 起 DB（collect_tasks 表）为首选目标来源（Web 看板可增删改），
+    本函数降级为「空表回退」路径，见 load_targets_from_db / load_targets_any。
+    """
     if not config_path.exists():
         raise FileNotFoundError(f"监控配置不存在：{config_path}")
     with config_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
     targets = [t for t in cfg.get("targets", []) if t.get("enabled", True)]
-    log.info(f"加载监控目标 {len(targets)} 个（enabled）")
+    log.info(f"加载监控目标 {len(targets)} 个（enabled，yaml）")
     for t in targets:
         log.info(f"  · {t['platform']}:{t['id']} {t.get('name', '')} count={t.get('count')}")
     return targets
+
+
+def load_targets_from_db(db_path: Path | None = None) -> list[dict] | None:
+    """从 collect_tasks 表加载启用的 Steam 目标（Web 看板管理入口）
+
+    Returns:
+        目标 dict 列表（格式对齐 targets.yaml 条目：platform/id/name/language/count）；
+        表为空（或无 enabled 任务）返回 None —— 由调用方回退 yaml 并种子化。
+    """
+    from src.storage.db import CollectTaskRepository, init_db
+
+    db_url = f"sqlite:///{db_path}" if db_path else None
+    _, SessionLocal = init_db(db_url)
+    with SessionLocal() as s:
+        tasks = CollectTaskRepository(s).list_all(enabled_only=True, platform="steam")
+        if not tasks:
+            return None
+        targets = [
+            {
+                "platform": "steam",
+                "id": t.target_id,
+                "name": t.name or t.target_id,
+                "language": t.language or "schinese",
+                "count": t.count,
+                "task_row_id": t.id,  # 透传内部 id，采集侧可回写 last_collected_at
+            }
+            for t in tasks
+        ]
+    log.info(f"加载监控目标 {len(targets)} 个（enabled，DB collect_tasks）")
+    for t in targets:
+        log.info(f"  · steam:{t['id']} {t['name']} count={t['count']}")
+    return targets
+
+
+def load_targets_any(config_path: Path, db_path: Path | None = None) -> list[dict]:
+    """DB 优先加载目标；空表时先种子化（yaml → collect_tasks）再重试，仍空则回退 yaml
+
+    种子化幂等：已存在的 platform+target_id 跳过；excluded_targets 不迁移。
+    """
+    from src.storage.db import seed_collect_tasks_from_yaml, init_db
+
+    db_targets = load_targets_from_db(db_path)
+    if db_targets:
+        return db_targets
+
+    # 空表 → 尝试从 yaml 种子化后重试一次
+    if config_path.exists():
+        db_url = f"sqlite:///{db_path}" if db_path else None
+        _, SessionLocal = init_db(db_url)
+        with SessionLocal() as s:
+            seeded = seed_collect_tasks_from_yaml(s, config_path)
+        if seeded:
+            log.info(f"已从 targets.yaml 种子化 {seeded} 条目标到 collect_tasks")
+            db_targets = load_targets_from_db(db_path)
+            if db_targets:
+                return db_targets
+
+    log.info("collect_tasks 为空且无可种子化条目，回退 targets.yaml")
+    return load_targets(config_path)
 
 
 # ---------- 时间窗计算 ----------
@@ -109,35 +172,32 @@ def calc_posted_after(target_id_with_platform: str, *, lookback_days: int = 1) -
     return (max_ts - timedelta(days=lookback_days))
 
 
-def smart_window(target_id_with_platform: str, now_utc: datetime) -> tuple[datetime, datetime]:
+def smart_window(
+    target_id_with_platform: str,
+    now_utc: datetime,
+    lookback_days: int = 2,
+) -> tuple[datetime, datetime]:
     """智能时间窗口（以北京日历日为准）
 
-    每天采「北京昨天全天 + 北京前天全天」（auto 模式翻页到窗外，upsert 去重）。
+    每天采「北京 lookback_days 天前 0:00 → 北京今天 0:00」的 lookback_days 个日历日
+    （auto 模式翻页到窗外，upsert 去重；已分析评论自动跳过，重复采集无 LLM 成本）。
     当天（北京时间）严格不采（posted_before 卡死边界）。
+
+    2026-09-03 扩窗：默认 lookback_days 2 → 计划任务传 7。原因：Steam
+    `filter=recent` 游标流是非确定性采样（同窗口每次爬取子集不同，单次漏 5-20%），
+    多日重叠回看 + upsert 幂等使覆盖率随多遍采样收敛。成本仅分页加深（7 页/游戏）。
 
     Args:
         target_id_with_platform: 形如 "steam:2358720"
         now_utc: 当前 UTC 时间（naive 或 aware 都接受；统一转 naive UTC）
+        lookback_days: 回看天数（2 = 昨天+前天；7 = 近 7 个日历日）
 
     Returns:
         (posted_after, posted_before) 都是 naive UTC
         posted_before: 北京当天 0:00 UTC 表示（= UTC T-1 16:00），不采当天
-        posted_after: max(target_posted_after, 北京前天 0:00 UTC 表示)
+        posted_after: max(target_posted_after, 北京 lookback_days 天前 0:00 UTC 表示)
             target_posted_after = max(posted_at) - 1 day（复用 calc_posted_after 拿到的）
-            floor = 北京前天 0:00 UTC 表示（补救窗口下限）
-
-    行为矩阵：
-    ┌──────────────────────────────┬─────────────────────────────┬──────────────────────────────┐
-    │ DB max_ts（昨天 release） │ posted_after                 │ 采集范围（北京日历日）     │
-    ├──────────────────────────────┼─────────────────────────────┼──────────────────────────────┤
-    │ ≈ 北京昨天 8:00（正常）      │ 北京前天 8:00               │ 前天后半天 + 昨天全天     │
-    │ ≈ 北京前天 8:00（昨天失败）  │ 北京前天 0:00（floor 生效） │ 前天全天 + 昨天全天 ✓ │
-    │ ≈ 北京前天 8:00（前天也败）  │ 北京前天 0:00（floor 生效） │ 前天全天 + 昨天全天      │
-    │ ≈ 北京大前天 8:00（连败 3d） │ 北京前天 0:00（floor 生效） │ 前天全天 + 昨天全天      │
-    └──────────────────────────────┴─────────────────────────────┴──────────────────────────────┘
-
-    边界 8 小时漏采风险（[北京前天 0:00, 北京前天 8:00)）由「前天 workflow」负责，
-    若前天 workflow 失败由今天 floor 兜底（= 北京前天 0:00）。
+            floor = 北京 lookback_days 天前 0:00 UTC 表示（补救窗口下限）
     """
     # aware → naive（_utcnow 返回 naive，外部传入 aware 也兼容）
     if now_utc.tzinfo is not None:
@@ -149,13 +209,13 @@ def smart_window(target_id_with_platform: str, now_utc: datetime) -> tuple[datet
 
     # posted_before: 北京当天 0:00 → 转 UTC 表示
     posted_before = today_bjt_midnight - BJT_OFFSET
-    # posted_after floor: 北京前天 0:00 → 转 UTC 表示
-    posted_after_floor = posted_before - timedelta(days=2)
+    # posted_after floor: 北京 lookback_days 天前 0:00 → 转 UTC 表示
+    posted_after_floor = posted_before - timedelta(days=lookback_days)
 
     # 复用 calc_posted_after（默认 lookback_days=1，即 max_ts - 1 day）
     target_posted_after = calc_posted_after(target_id_with_platform)
     if target_posted_after is None:
-        # 空 DB：起步采前天 + 昨天（floor 起作用）
+        # 空 DB：起步采 lookback_days 天（floor 起作用）
         return (posted_after_floor, posted_before)
 
     return (max(target_posted_after, posted_after_floor), posted_before)
@@ -264,6 +324,7 @@ def run_one_target(
     *,
     now_utc: datetime,
     full_replay: bool = False,
+    lookback_days: int = 2,
 ) -> dict:
     """对单个目标运行一次 run_pipeline（增量）
 
@@ -286,7 +347,9 @@ def run_one_target(
     posted_before = None
     if not full_replay:
         target_id_with_platform = f"{platform}:{tid}"
-        posted_after, posted_before = smart_window(target_id_with_platform, now_utc)
+        posted_after, posted_before = smart_window(
+            target_id_with_platform, now_utc, lookback_days=lookback_days
+        )
 
     log.info(f"── 增量采集 {label} ──")
     log.info(
@@ -373,6 +436,9 @@ def main():
                         help="跳过上传今日 release（本地调试用）")
     parser.add_argument("--full-replay", action="store_true",
                         help="禁用 posted_after 滑窗，对每个目标做全量采集（与已有评论去重）")
+    parser.add_argument("--lookback-days", type=int, default=2,
+                        help="回看天数（北京日历日）。2=昨天+前天；本地直采计划任务传 7 "
+                             "（多日重叠采样对冲 Steam recent 流非确定性，2026-09-03）")
     args = parser.parse_args()
 
     db_path = Path(args.db_path)
@@ -390,17 +456,19 @@ def main():
     # 2. 初始化 DB（首次跑 / 下载失败时新建表结构）
     init_db(f"sqlite:///{db_path}")
 
-    # 3. 加载并执行目标清单
-    targets = load_targets(targets_cfg)
+    # 3. 加载并执行目标清单（DB collect_tasks 优先；空表自动从 yaml 种子化后重试；
+    #    仍空则回退 yaml —— 2026-09-01 Web 看板 collect_tasks 迁移，见 WEB_DASHBOARD.md §3.4）
+    targets = load_targets_any(targets_cfg, db_path)
     if not targets:
-        log.warning("targets.yaml 中无 enabled=true 目标，退出")
+        log.warning("无 enabled 目标（DB 与 targets.yaml 均为空），退出")
         return
 
     results = []
     # 整批共享同一 now_utc，保证所有 target 的窗口基准一致
     now_utc = _utcnow()
     for t in targets:
-        results.append(run_one_target(t, now_utc=now_utc, full_replay=args.full_replay))
+        results.append(run_one_target(t, now_utc=now_utc, full_replay=args.full_replay,
+                                      lookback_days=args.lookback_days))
 
     # 4. 写步骤摘要
     emit_step_summary(results)

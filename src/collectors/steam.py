@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Iterator
 
@@ -30,6 +31,11 @@ log = logging.getLogger("voc.collectors.steam")
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{app_id}"
 # Steam 应用详情 API（用于补充游戏元数据）
 STEAM_APP_DETAILS_URL = "https://store.steampowered.com/api/appdetails"
+# filter=recent 连续"无新数据"页数上限（auto 模式）。
+# 2026-09-03 实测：recent 排序并非严格创建时间倒序，窗口内评论会混序散落在
+# 停止点之后的深页（黑神话窗口内 214 条实测 vs 3 阈值只采到 203，漏 5%）。
+# 3 → 8：多花 ~5 页请求（秒级），抓回混序散落的评论。
+AUTO_EMPTY_STREAK_LIMIT = 8
 
 
 class SteamCollector(BaseCollector):
@@ -123,6 +129,7 @@ class SteamCollector(BaseCollector):
         seen_source_ids: set[str] = set()
         empty_streak = 0  # 连续"无新数据"页数（>=3 视为已到时间窗外，停）
         last_cursor: str | None = None  # 翻页停止后用于"验证页"的游标
+        empty_page_retries = 0  # 空响应重试计数（成功翻页后清零）
 
         def _passes_time_filter(ts: int | None) -> bool:
             """应用层时间过滤（posted_after / posted_before）
@@ -154,9 +161,22 @@ class SteamCollector(BaseCollector):
 
             reviews = data.get("reviews", [])
             if not reviews:
-                # 出现空页就停止（Steam 翻页协议：服务端 cursor 一旦无效，
-                # 返回的就该是空，没必要再多试一次）
+                # Steam 偶发返回空响应（限流/瞬时异常），与「翻页真正到底」无法区分。
+                # 直接 break 会静默丢数据：实测 2026-09-03 02:00 运行底特律(1222140)
+                # 首页即空 → fetched=0，且 last_cursor=None 使验证页兜底被跳过。
+                # 策略：同一 cursor 退避重试最多 2 次，仍空才视为翻页终止。
+                empty_page_retries += 1
+                if empty_page_retries <= 2:
+                    backoff = 2 * empty_page_retries
+                    log.warning(
+                        f"Steam 返回空响应（第 {empty_page_retries} 次），"
+                        f"{backoff}s 后重试同 cursor …"
+                    )
+                    time.sleep(backoff)
+                    continue
+                log.warning("Steam 连续 3 次空响应，视为翻页终止")
                 break
+            empty_page_retries = 0
 
             page_new = 0
             for r in reviews:
@@ -176,11 +196,12 @@ class SteamCollector(BaseCollector):
 
             # 翻页停止策略：
             # - filter="recent" 按时间倒序，page_new=0 说明这页都在时间窗外
-            #   连续 3 页无新数据则可确认时间窗已越界，提前停止（避免翻几千页老评论）
+            #   连续 AUTO_EMPTY_STREAK_LIMIT 页无新数据则确认时间窗已越界
+            #   （阈值 8：recent 排序混序，窗口内评论会散落在深页，见模块头注释）
             # - filter="all" 由 max_count 自然耗尽
             if page_new == 0:
                 empty_streak += 1
-                if filter == "recent" and empty_streak >= 3:
+                if filter == "recent" and empty_streak >= AUTO_EMPTY_STREAK_LIMIT:
                     break
             else:
                 empty_streak = 0
@@ -364,6 +385,35 @@ class SteamCollector(BaseCollector):
             return data.get(str(appid), {}).get("data") if data else None
         except Exception as e:
             print(f"[WARN] 获取 appid={appid} 元数据失败：{e}")
+            return None
+
+    def fetch_review_summary(self, appid: str) -> dict | None:
+        """获取 Steam 全量评测摘要（2026-09-04 · 游戏对比看板）
+
+        返回 {total_reviews, total_positive, review_score, rating_desc}；
+        失败返回 None。num_per_page=0 只取 query_summary，不带评论正文。
+        注意：review_score_desc **不随 language 参数翻译**（实测恒为英文），
+        中文描述由调用方按 review_score 数值映射（见 api/service._SCORE_CN）。
+        """
+        try:
+            resp = self.session.get(
+                STEAM_REVIEWS_URL.format(app_id=appid),
+                params={"json": 1, "num_per_page": 0, "language": "schinese",
+                        "purchase_type": "all"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            qs = (resp.json() or {}).get("query_summary") or {}
+            if not qs.get("total_reviews"):
+                return None
+            return {
+                "total_reviews": int(qs.get("total_reviews") or 0),
+                "total_positive": int(qs.get("total_positive") or 0),
+                "review_score": int(qs.get("review_score") or 0) or None,
+                "rating_desc": qs.get("review_score_desc") or None,
+            }
+        except Exception as e:
+            print(f"[WARN] 获取 appid={appid} 评测摘要失败：{e}")
             return None
 
 

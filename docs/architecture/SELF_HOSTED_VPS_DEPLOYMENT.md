@@ -3,6 +3,7 @@
 > **用途**：让团队外用户能通过公网 URL 查询仪表盘（图表 + 视图），但**采集代码 / 标注脚本 / 数据库 / API Key / 中间产物全部留在团队控制的 VPS 上**，任何人无法下载或越权访问。
 >
 > **关联文档**：
+> - 部署方案选型（为什么选形态 A / 还有哪几种走法）：[DEPLOYMENT_OPTIONS.md](./DEPLOYMENT_OPTIONS.md)
 > - 总路线图：[plan/DEVELOPMENT_PLAN.md](../plan/DEVELOPMENT_PLAN.md)
 > - 自动化采集流水线：[AUTOMATION_PIPELINE.md](./AUTOMATION_PIPELINE.md)
 > - 字段与存储设计：[DATA_FIELDS.md](./DATA_FIELDS.md) / [DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
@@ -83,12 +84,16 @@
 - **一台公网 VPS**：推荐 **Oracle Cloud Always Free ARM**（永久免费，4 核 / 24 GB / Ubuntu 22.04 / 24.04）
 - **一个域名**（可选但强烈推荐）：否则用户访问 `http://<IP>`，无 HTTPS，且 IP 暴露反代错误信息
 - **SSH 密钥对**（本机已生成 `~/.ssh/id_ed25519.pub`）
-- **5 个 secrets**（任何途径都**不要**写进 git）：
+- **7 个 secrets**（任何途径都**不要**写进 git）：
   - `STEAM_API_KEY`（[申请](https://steamcommunity.com/dev/apikey)）
   - `DEEPSEEK_API_KEY`（[申请](https://platform.deepseek.com/)）
   - `BILIBILI_SESSDATA`（可选，普通视频不配也能采）
   - **GitHub PAT**（**只读权限** `repo:read`，用于 `git clone` 私有仓库；首次 `git clone` 后可丢掉）
+  - `ADMIN_PASSWORD_HASH`（Web 看板管理员密码哈希，生成：`python scripts/ops/hash_admin_password.py <密码>`）
+  - `SESSION_SECRET_KEY`（Web 看板 session 签名密钥，生成：`python -c "import secrets;print(secrets.token_hex(32))"`）
   - 数据库密码：本方案是 SQLite 单文件，**不另设 DB 密码**——靠文件系统权限（600）保护
+
+> ⚠️ 2026-09-02 起形态 A 可启用 **Web 实时看板**（FastAPI + 原生 SPA，见 `docs/architecture/WEB_DASHBOARD.md`）：Caddy 反代 `127.0.0.1:8000`（uvicorn 服务），Streamlit（8501）可保留或停用。访客免登录看图表，管理员经 `/api/auth/login` 登录后可增删改采集任务。
 
 ### 3.2 推荐 VPS 规格
 
@@ -208,8 +213,10 @@ crontab -e
 # 1. 每日采集 + 标注
 0 0 * * * cd /home/voc/voc-platform && /home/voc/voc-platform/.venv/bin/python scripts/ops/daily_incremental_collect.py --no-download --no-upload >> /home/voc/voc-platform/logs/cron.log 2>&1
 
-# 2. 每周日 03:00 VACUUM + 备份 DB（保留最近 5 份）
-0 3 * * 0 cd /home/voc/voc-platform && cp data/voc.db backups/voc-$(date +\%Y\%m\%d).db && ls -1t backups/voc-*.db | tail -n +6 | xargs -r rm && sqlite3 data/voc.db 'VACUUM;'
+# 2. 每周日 03:00 备份 DB（保留最近 5 份）+ VACUUM（先 checkpoint WAL 再 vacuum）
+#    注：2026-09-02 起 DB 运行在 WAL 模式（Web 看板读写并发），备份前先 PRAGMA wal_checkpoint(TRUNCATE)
+#    确保 -wal 文件合并进主库再 cp，否则备份可能缺最近数据。
+0 3 * * 0 cd /home/voc/voc-platform && sqlite3 data/voc.db 'PRAGMA wal_checkpoint(TRUNCATE);' && cp data/voc.db backups/voc-$(date +\%Y\%m\%d).db && ls -1t backups/voc-*.db | tail -n +6 | xargs -r rm && sqlite3 data/voc.db 'VACUUM;'
 
 # 3. 每 10 分钟健康检查（DB 至少能被 Streamlit 打开）
 */10 * * * * /home/voc/voc-platform/.venv/bin/python -c "from src.storage.db import init_db; _, S = init_db(); s = S(); print(f'[{s.execute(\"select count(*) from comments\").scalar()}] OK')" >> /home/voc/voc-platform/logs/health.log 2>&1
@@ -262,6 +269,57 @@ sudo systemctl enable --now voc-streamlit
 sudo systemctl status voc-streamlit
 curl -I http://127.0.0.1:8501   # 应返回 200 / 303
 ```
+
+### 步骤 6.5 · Web 看板 FastAPI 服务（可选，2026-09-02）
+
+```bash
+# 6.5.1 依赖（fastapi/uvicorn 已随 requirements-dashboard.txt；如未装则）
+sudo -iu voc
+cd ~/voc-platform && source .venv/bin/activate
+pip install -r requirements-dashboard.txt
+
+# 6.5.2 .env 追加两行（生成方式见 §3.1）
+#   ADMIN_PASSWORD_HASH=pbkdf2_sha256$240000$...
+#   SESSION_SECRET_KEY=<random hex>
+#   公网 HTTPS 下建议 COOKIE_SECURE=1
+chmod 600 .env
+
+# 6.5.3 systemd unit（与 §6 Streamlit 服务并列；二选一或并存均可）
+sudo tee /etc/systemd/system/voc-web.service <<'EOF'
+[Unit]
+Description=VoC Web Dashboard (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=voc
+Group=voc
+WorkingDirectory=/home/voc/voc-platform
+Environment="PATH=/home/voc/voc-platform/.venv/bin:/usr/bin"
+ExecStart=/home/voc/voc-platform/.venv/bin/uvicorn src.api.main:app \
+    --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/voc/voc-platform/logs/web.log
+StandardError=append:/home/voc/voc-platform/logs/web.log
+
+# 安全加固（同 §6.1）
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/voc/voc-platform/data /home/voc/voc-platform/logs
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now voc-web
+curl -I http://127.0.0.1:8000/api/health   # 应 200 {"ok":true,"comments":N}
+```
+
+> Caddy 反代目标由 `8501`（Streamlit）改为 `8000`（Web 看板）即可——二选一，或继续并存各自绑端口。
 
 ### 步骤 7 · Caddy 反向代理 + 自动 HTTPS（3 分钟）
 
@@ -461,4 +519,5 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-02 | 补 Web 看板服务：步骤 6.5（uvicorn :8000 + systemd + 鉴权 env）+ secrets 清单扩到 7 项 + WAL checkpoint 备份注意事项 | Web 实时看板（WEB_DASHBOARD.md）落地，VPS 形态 A 可二选一/并存托管 |
 | 2026-08-23 | 初版 | 回应"团队外零数据访问 + 公网可访问"诉求；形态 A 落地架构稿 |

@@ -12,6 +12,12 @@ python-dotenv>=1.0.0
 pydantic>=2.5.0
 pyyaml>=6.0
 
+# --- Web API（src/api/，2026-09-01 Web 看板；CI 跑 tests/test_api.py 需要）---
+fastapi>=0.110.0
+uvicorn>=0.29.0
+itsdangerous>=2.1.0
+httpx>=0.27.0
+
 # --- 存储 ---
 sqlalchemy>=2.0.25
 pandas>=2.1.0

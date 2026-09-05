@@ -20,6 +20,9 @@ tests/
 ├── test_bilibili_queue.py           📋 B 站采集队列（状态机 / 约束）
 ├── test_daily_incremental_collect.py ⏰ P6 每日采集（smart_window v2）
 ├── test_verify_release_upload.py    🛡️  P6 silent 失败防御
+├── test_collect_tasks.py            🗃️  collect_tasks 表 + 种子迁移 + WAL + B站 paused（2026-09-02）
+├── test_api.py                      🌐  Web API 端点 + 鉴权 + 任务 CRUD（2026-09-02）
+├── test_steam_collector.py          🚰  Steam 空响应重试 + 应用层时间窗（2026-09-03）
 └── fixtures/                        📦 测试夹具（不入 scripts/）
     ├── golden_match_set.json         410 条 L3 匹配真值（黄金集）
     └── golden_overrides.json         人工校正项（覆盖部分黄金集）
@@ -29,9 +32,10 @@ tests/
 
 ## 📊 当前用例统计
 
-- **共 49 例**（pytest 2026-09-01 实测 59.71s）
+- **共 97 例**（pytest 2026-09-03 实测 97 passed；上版 49 例 → 78 → 82 → 94 → 97）
 - 1 例 ML 环境依赖跳过（`test_embedding.py`，无 torch 时 skip）
 - CI 跑通门禁：`pytest tests/` 在 push / cron 都跑（workflow `test:` job）
+- `requirements-core.txt` 已含 fastapi/uvicorn/httpx/itsdangerous（`test_api.py` 依赖）
 
 ---
 
@@ -94,9 +98,36 @@ tests/
 | 项 | 值 |
 |---|---|
 | **覆盖** | `smart_window()` v2 行为矩阵：normal（正常采集）/ recovery（补救，覆盖前天全天）/ empty（空 DB 起步）/ BJT 跨 UTC 日界 |
-| **用例数** | 10 |
-| **更新** | 2026-08-31（smart_window v2 落地） |
+| **用例数** | 12 |
+| **更新** | 2026-09-03（smart_window lookback_days 参数化 + 7 天回看回归） |
 | **关联** | `scripts/ops/daily_incremental_collect.py`（GitHub Actions daily cron 入口） |
+
+### `test_collect_tasks.py` · collect_tasks 表 + 种子迁移 + WAL + paused ⭐（2026-09-02）
+
+| 项 | 值 |
+|---|---|
+| **覆盖** | `src/storage/db.py`：`CollectTaskRepository` CRUD（创建/重复拒绝/暂停恢复/编辑/删除）/ `seed_collect_tasks_from_yaml` 幂等与 excluded 过滤 / `load_targets_from_db` + `load_targets_any` 回退链 / SQLite WAL 模式 / `bilibili_queue` paused 被 runner 跳过 |
+| **用例数** | 15 |
+| **更新** | 2026-09-02（WEB_DASHBOARD.md 阶段 2 存储层验收） |
+| **门禁** | Web 看板「系统管理」改采集任务后，`daily_incremental_collect.py` 仍能正确加载目标 |
+
+### `test_api.py` · Web API 端点 + 鉴权 + 任务 CRUD ⭐（2026-09-02）
+
+| 项 | 值 |
+|---|---|
+| **覆盖** | `src/api/` 全部端点：health/targets/overview/topics/comments/trends/compare + 管理员登录（正确/错误密码）+ 未登录 401 + Steam 任务新增(URL 解析/重复 409/暂停恢复/删除) + B 站任务（识别 pubdate/due 计算/pause/resume/reidentify/fetched 禁删 409/无效 BV 422） |
+| **用例数** | 28（14 原始 + 9/2 对抗审查 4 例 + 9/3 限流/守卫等增补） |
+| **更新** | 2026-09-02/03（WEB_DASHBOARD.md 阶段 3 验收 + 对抗审查修复回归） |
+| **外部依赖** | fastapi + httpx（`requirements-core.txt` 已加）；Steam appdetails / B 站 view / backfill 线程全部 mock，不出网 |
+
+### `test_steam_collector.py` · Steam 采集器（空响应重试 + 时间窗）⭐（2026-09-03）
+
+| 项 | 值 |
+|---|---|
+| **覆盖** | `src/collectors/steam.py`：①Steam 瞬时空响应 → 同 cursor 退避重试 ×2 后恢复采集（修复前首页即空直接 break = 静默丢一整天数据）；②应用层时间窗（posted_before 之后排除）；③连续 3 次空响应终止（防死循环） |
+| **用例数** | 2（fake session，不出网） |
+| **更新** | 2026-09-03（底特律 9/3 02:00 fetched=0 事故的根因修复） |
+| **门禁** | 任何采集器分页/终止逻辑改动后必跑 |
 
 ### `test_verify_release_upload.py` · P6 silent 失败防御 ⭐
 

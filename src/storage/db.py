@@ -13,6 +13,7 @@ from pathlib import Path
 
 from sqlalchemy import (
     Column,
+    Date,
     DateTime,
     Integer,
     String,
@@ -225,6 +226,25 @@ class Danmaku(Base):
         Index("ux_danmaku_dedup", "video_id", "progress", "content", "user_hash"),
     )
 
+
+# 弹幕分桶宽度（秒）：30s 固定桶（2026-09-04 B站视频看板，工程师确认）
+DANMAKU_BUCKET_WIDTH_SEC = 30
+
+
+def bucket_danmaku_rows(rows: list, *, width: int = DANMAKU_BUCKET_WIDTH_SEC) -> list[dict]:
+    """弹幕 ORM 行 → 30s 固定桶列表（pipeline 高光总结与 API 时间轴共用）
+
+    Returns: [{start_sec, end_sec, count, rows}]，按 start_sec 升序
+    """
+    grouped: dict[int, list] = {}
+    for r in rows:
+        idx = (r.progress or 0) // width
+        grouped.setdefault(idx, []).append(r)
+    return [
+        {"start_sec": idx * width, "end_sec": (idx + 1) * width, "count": len(rs), "rows": rs}
+        for idx, rs in sorted(grouped.items())
+    ]
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -254,6 +274,9 @@ class BilibiliQueue(Base):
         fetching   → 今日 cron 已取，正在采
         fetched    → 成功
         failed     → 失败重试耗尽（dead-letter）
+        paused     → 人工暂停（2026-09-01 Web 看板新增；任意非终态可暂停）
+                     runner 只扫 scheduled，paused 天然被跳过；
+                     恢复：pubdate 已识别 → scheduled / 未识别 → pending
 
     注意：status='due' 不存（=scheduled AND due_date <= today，查询时计算）
     """
@@ -277,6 +300,22 @@ class BilibiliQueue(Base):
     revisit = Column(Boolean, default=False, nullable=False)  # high-value 重采标记
     note = Column(Text)  # 工程师备注
 
+    # ---- 视频快照（2026-09-04 · B站视频看板；采集/识别时从 view API 一次性快照） ----
+    aid = Column(Integer)  # AV 号（评论/弹幕 target_id = "bilibili:video:{aid}" 的映射键）
+    pic = Column(String(512))  # 封面 URL（B 站 CDN，前端直连）
+    owner_name = Column(String(128))  # UP 主昵称
+    owner_mid = Column(String(64))  # UP 主 uid（主页链接）
+    view = Column(Integer)  # 播放量
+    like_count = Column(Integer)  # 点赞（三连之一）
+    coin = Column(Integer)  # 投币（三连之一）
+    favorite = Column(Integer)  # 收藏（三连之一）
+    reply_total = Column(Integer)  # 原视频评论总量（stat.reply）
+    danmaku_total = Column(Integer)  # 原视频弹幕总量（stat.danmaku）
+    duration = Column(Integer)  # 视频时长（秒）
+    tags_json = Column(Text)  # 视频标签 JSON list
+    highlights_json = Column(Text)  # 高光时刻 JSON：{generated_at, buckets:[{start_sec,end_sec,count,summary}]}
+    stats_fetched_at = Column(DateTime)  # 快照时间
+
     __table_args__ = (
         Index("ix_biliq_status_due", "status", "due_date"),
     )
@@ -298,6 +337,62 @@ class BilibiliQueue(Base):
             "fail_reason": self.fail_reason,
             "revisit": self.revisit,
             "note": self.note,
+            "aid": self.aid,
+            "pic": self.pic,
+            "owner_name": self.owner_name,
+            "owner_mid": self.owner_mid,
+            "view": self.view,
+            "like_count": self.like_count,
+            "coin": self.coin,
+            "favorite": self.favorite,
+            "reply_total": self.reply_total,
+            "danmaku_total": self.danmaku_total,
+            "duration": self.duration,
+            "stats_fetched_at": self.stats_fetched_at.isoformat() if self.stats_fetched_at else None,
+        }
+
+
+class CollectTask(Base):
+    """采集任务表（2026-09-01 · Web 看板「系统管理」立项，见 docs/architecture/WEB_DASHBOARD.md）
+
+    设计：
+    - 目前仅承载 Steam 每日增量目标（从 config/monitoring/targets.yaml 迁入 DB）；
+      B 站任务复用 bilibili_queue（队列语义更丰富），API 层做统一视图
+    - daily_incremental_collect.py 优先读本表 enabled=1 的任务；表为空时
+      回退读 targets.yaml（并自动种子化，幂等）
+    - enabled=False = 「已暂停」（表格显示态），与 targets.yaml 的 enabled 同语义
+    - count=None = auto 模式（按时间窗耗尽翻页，2026-08-25 语义）
+    """
+
+    __tablename__ = "collect_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    platform = Column(String(16), nullable=False, default="steam")  # 预留多平台
+    target_id = Column(String(64), nullable=False)  # appid（steam 为纯数字字符串）
+    name = Column(String(255))  # 游戏名（Steam appdetails 回填，可改）
+    language = Column(String(16), default="schinese")
+    count = Column(Integer, nullable=True)  # None = auto
+    source_url = Column(String(255))  # store 页 URL（表格显示用）
+    enabled = Column(Integer, nullable=False, default=1)  # 1=采集中 0=已暂停（SQLite bool）
+    created_at = Column(DateTime, default=_utcnow)
+    last_collected_at = Column(DateTime)  # 采集侧回写（预留）
+
+    __table_args__ = (
+        Index("ux_collect_task", "platform", "target_id", unique=True),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "platform": self.platform,
+            "target_id": self.target_id,
+            "name": self.name,
+            "language": self.language,
+            "count": self.count,
+            "source_url": self.source_url,
+            "enabled": bool(self.enabled),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_collected_at": self.last_collected_at.isoformat() if self.last_collected_at else None,
         }
 
 
@@ -326,6 +421,20 @@ def init_db(db_url: str | None = None) -> tuple:
         echo=False,
         connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},
     )
+
+    # SQLite 并发加固（2026-09-01 · Web 看板：前端服务随时读 × cron 每日写）：
+    # - journal_mode=WAL：读写不互斥（读者不再阻塞写者，根治 Streamlit 时代文件锁坑）
+    # - busy_timeout=5000：写锁冲突时等 5s 而非立刻抛 database is locked
+    if db_url.startswith("sqlite"):
+        from sqlalchemy import event
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragma(dbapi_conn, _record):  # pragma: no cover - 简单 pragma
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=5000")
+            cur.close()
+
     Base.metadata.create_all(engine)
 
     # 轻量 schema 演进：检测已存在但缺列的表 → 自动 ADD COLUMN
@@ -355,6 +464,41 @@ def init_db(db_url: str | None = None) -> tuple:
 
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     return engine, SessionLocal
+
+
+class GameMeta(Base):
+    """游戏元数据表（2026-09-04 · 游戏对比看板，见 docs/architecture/WEB_DASHBOARD.md）
+
+    来源：Steam appdetails（发行日期）+ appreviews（全量评测数/评级描述），
+    由 /api/games/meta 懒加载刷新（缺行或 fetched_at 超 TTL 时拉取，失败不阻塞）。
+    封面图下载到 data/covers/{appid}.jpg（library_600x900 竖版，随 data/ 目录同步部署）。
+    """
+
+    __tablename__ = "game_meta"
+
+    target_id = Column(String(64), primary_key=True)  # 形如 "steam:2358720"
+    release_date = Column(Date)  # Steam 发售日（解析失败为 NULL）
+    rating_desc = Column(String(32))  # 评测描述（中文）：好评如潮/特别好评/褒贬不一/…
+    review_score = Column(Integer)  # Steam review_score 1~9（appreviews 不随 language 翻译描述，2026-09-04 补）
+    total_reviews = Column(Integer)  # Steam 全量评测数
+    total_positive = Column(Integer)  # Steam 全量好评数
+    cover_file = Column(String(255))  # 封面文件名（data/covers/ 下相对路径），NULL=未下载
+    fetched_at = Column(DateTime, default=_utcnow)
+
+    # 刷新 TTL：/api/games/meta 超过该时长重新拉取（Steam 评级/评测数每日量级变化小）
+    REFRESH_TTL_HOURS = 24
+
+    def to_dict(self) -> dict:
+        return {
+            "target_id": self.target_id,
+            "release_date": self.release_date.isoformat() if self.release_date else None,
+            "rating_desc": self.rating_desc,
+            "review_score": self.review_score,
+            "total_reviews": self.total_reviews,
+            "total_positive": self.total_positive,
+            "cover_file": self.cover_file,
+            "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
+        }
 
 
 def _topic_segment(full_path: str, level: str) -> str:
@@ -906,3 +1050,140 @@ class CommentRepository:
             return []
         stmt = select(Comment).where(Comment.id.in_(ids))
         return list(self.session.execute(stmt).scalars())
+
+
+class CollectTaskRepository:
+    """采集任务仓储（collect_tasks 表 CRUD；2026-09-01 Web 看板）"""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def list_all(self, enabled_only: bool = False, platform: str | None = None) -> list[CollectTask]:
+        stmt = select(CollectTask).order_by(CollectTask.id)
+        if enabled_only:
+            stmt = stmt.where(CollectTask.enabled == 1)
+        if platform:
+            stmt = stmt.where(CollectTask.platform == platform)
+        return list(self.session.execute(stmt).scalars())
+
+    def get(self, task_id: int) -> CollectTask | None:
+        stmt = select(CollectTask).where(CollectTask.id == task_id)
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def get_by_target(self, platform: str, target_id: str) -> CollectTask | None:
+        stmt = select(CollectTask).where(
+            CollectTask.platform == platform,
+            CollectTask.target_id == str(target_id),
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def create(
+        self,
+        platform: str,
+        target_id: str,
+        *,
+        name: str | None = None,
+        language: str | None = "schinese",
+        count: int | None = None,
+        source_url: str | None = None,
+    ) -> CollectTask:
+        """新增任务；同 platform+target_id 已存在则抛 ValueError"""
+        if self.get_by_target(platform, target_id) is not None:
+            raise ValueError(f"任务已存在：{platform}:{target_id}")
+        task = CollectTask(
+            platform=platform,
+            target_id=str(target_id),
+            name=name,
+            language=language,
+            count=count,
+            source_url=source_url,
+            enabled=1,
+        )
+        self.session.add(task)
+        self.session.commit()
+        return task
+
+    def set_enabled(self, task_id: int, enabled: bool) -> CollectTask | None:
+        task = self.get(task_id)
+        if task is not None:
+            task.enabled = 1 if enabled else 0
+            self.session.commit()
+        return task
+
+    def update(
+        self,
+        task_id: int,
+        *,
+        name: str | None = None,
+        language: str | None = None,
+        count: int | None = None,
+        clear_count: bool = False,
+    ) -> CollectTask | None:
+        """编辑任务（target_id/platform 不可改）；clear_count=True 把 count 置回 auto(None)"""
+        task = self.get(task_id)
+        if task is not None:
+            if name is not None:
+                task.name = name
+            if language is not None:
+                task.language = language
+            if clear_count:
+                task.count = None
+            elif count is not None:
+                task.count = count
+            self.session.commit()
+        return task
+
+    def delete(self, task_id: int) -> bool:
+        task = self.get(task_id)
+        if task is None:
+            return False
+        self.session.delete(task)
+        self.session.commit()
+        return True
+
+    def count(self) -> int:
+        from sqlalchemy import func
+
+        return (
+            self.session.execute(select(func.count(CollectTask.id))).scalar() or 0
+        )
+
+
+def seed_collect_tasks_from_yaml(session: Session, yaml_path) -> int:
+    """把 config/monitoring/targets.yaml 的 targets 段种子化进 collect_tasks（幂等）
+
+    - 已存在（platform+target_id 相同）的跳过
+    - excluded_targets 段不迁移（已归档目标保持排除）
+    - 仅迁移 Steam 条目（B 站走 bilibili_queue）
+
+    Returns:
+        新增条数
+    """
+    import yaml as _yaml
+
+    path = Path(yaml_path)
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8") as f:
+        cfg = _yaml.safe_load(f) or {}
+
+    repo = CollectTaskRepository(session)
+    added = 0
+    for t in cfg.get("targets", []) or []:
+        if t.get("platform") != "steam":
+            continue
+        tid = str(t.get("id", "")).strip()
+        if not tid or repo.get_by_target("steam", tid) is not None:
+            continue
+        session.add(CollectTask(
+            platform="steam",
+            target_id=tid,
+            name=t.get("name"),
+            language=t.get("language", "schinese"),
+            count=t.get("count"),
+            enabled=1 if t.get("enabled", True) else 0,
+        ))
+        added += 1
+    if added:
+        session.commit()
+    return added
