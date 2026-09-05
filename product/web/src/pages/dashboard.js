@@ -7,11 +7,28 @@ Routes.dashboard = async function (app) {
   const targets = await API.get('/api/targets?platform=steam&monitored=true');
   if (!targets.length) { app.innerHTML = '<div class="empty">库中暂无 Steam 游戏数据，请先在「系统管理」添加采集任务</div>'; return; }
 
+  // 游戏下拉顺序与 compare 左起顺序一致（发行日期倒序，数据来自 /api/games/meta；失败回落名称序）
+  let ordered = targets.slice();
+  try {
+    const d = await API.get(`/api/games/meta?targets=${encodeURIComponent(targets.map(t => t.target_id).join(','))}`);
+    const rd = {};
+    d.items.forEach(m => { rd[m.target_id] = m.release_date || ''; });
+    ordered.sort((a, b) =>
+      (rd[b.target_id] || '').localeCompare(rd[a.target_id] || '') ||
+      a.name.localeCompare(b.name));
+  } catch (e) {
+    ordered.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // URL 参数（compare 指标表跳入）：#/dashboard?target=<target_id>&range=30d
+  const urlq = new URLSearchParams(location.hash.split('?')[1] || '');
+  const urlTarget = ordered.some(t => t.target_id === urlq.get('target')) ? urlq.get('target') : null;
+
   /* ---- 单一状态源 ---- */
   const PAGE_SIZE = 10;
   const state = {
-    target: targets[0].target_id,   // Steam appid
-    range: 'all',                   // all | 30d | 7d | 1d | custom
+    target: urlTarget || ordered[0].target_id,   // Steam appid
+    range: urlq.get('range') === '30d' ? '30d' : 'all',  // all | 30d | 7d | 1d | custom
     start: '', end: '',             // range=custom 时生效（YYYY-MM-DD 闭区间）
     grain: 'comment',               // comment(原声) | opinion(观点)
     senti: '', topic: '',           // 仅作用于下方列表
@@ -20,14 +37,15 @@ Routes.dashboard = async function (app) {
   let reqSeq = 0;                   // 竞态守卫：快速切换时丢弃过期响应
 
   app.innerHTML = `
+    <div class="pg-dashboard">
     <div class="page-head">
-      <h1>单游戏看板</h1>
+      <h1>Steam游戏看板 - 单游戏</h1>
       <span class="head-actions"><button class="btn sm" id="btnBack">返回</button></span>
     </div>
 
     <div class="range-wrap">
       <select id="selGame">
-        ${targets.map(t => `<option value="${esc(t.target_id)}">${esc(t.name)}</option>`).join('')}
+        ${ordered.map(t => `<option value="${esc(t.target_id)}"${t.target_id === state.target ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}
       </select>
       <div class="range-right">
         <div class="seg" id="segRange">
@@ -81,18 +99,21 @@ Routes.dashboard = async function (app) {
     </div>
 
     <div class="card section-gap">
-      <div class="toolbar">
-        <select id="selSenti">
-          <option value="">全部情感</option>
-          <option value="positive">正向</option>
-          <option value="neutral">中性</option>
-          <option value="negative">负向</option>
-        </select>
-        <div class="treedrop" id="tdTopic">
-          <button class="btn sm" id="tdTrigger">全部主题</button>
-          <div class="treedrop-panel" id="tdPanel"></div>
+      <div class="card-head">
+        <h3 id="listTitle">原声列表</h3>
+        <div class="toolbar head-tools">
+          <select id="selSenti">
+            <option value="">全部情感</option>
+            <option value="positive">正向</option>
+            <option value="neutral">中性</option>
+            <option value="negative">负向</option>
+          </select>
+          <div class="treedrop" id="tdTopic">
+            <button class="btn sm" id="tdTrigger">全部主题</button>
+            <div class="treedrop-panel" id="tdPanel"></div>
+          </div>
+          <span class="sub" id="listTotal" style="color:var(--muted);font-size:12px"></span>
         </div>
-        <span class="sub" id="listTotal" style="color:var(--muted);font-size:12px"></span>
       </div>
       <div id="listBody"></div>
       <div class="pager">
@@ -100,6 +121,7 @@ Routes.dashboard = async function (app) {
         <span id="pgInfo"></span>
         <button class="btn sm" id="pgNext">下一页</button>
       </div>
+    </div>
     </div>`;
 
   /* ---- 小工具 ---- */
@@ -186,9 +208,9 @@ Routes.dashboard = async function (app) {
     refreshGlobal();
   });
 
-  /* ---- 返回按钮：暂不设具体链接 ---- */
+  /* ---- 返回按钮：回游戏对比看板（compare 默认选中发行日倒序前 3 款） ---- */
   $('btnBack').addEventListener('click', () => {
-    if (history.length > 1) history.back(); else location.hash = '#/';
+    location.hash = '#/compare';
   });
 
   /* ---- 指标卡 + 评论趋势 + 看板（overview 一次喂 KPI 与情感饼图） ---- */
@@ -251,7 +273,8 @@ Routes.dashboard = async function (app) {
           lineStyle: { color: p.primary, width: 2.5 }, itemStyle: { color: p.primary } },
         { name: '推荐率', type: 'line', smooth: true, symbol: 'none', yAxisIndex: 1,
           data: items.map(i => i.recommend_rate), connectNulls: false,  // null 断裂防误导
-          lineStyle: { color: p.pos, width: 2, type: 'dashed' } },
+          lineStyle: { color: p.pos, width: 2, type: 'dashed' },
+          itemStyle: { color: p.pos } },  // 图例图标用绿（缺省会继承全局 color[0] 蓝）
       ],
     });
   }
@@ -289,6 +312,7 @@ Routes.dashboard = async function (app) {
   /* ---- 颗粒度切换：标题 + 饼图 + 条形图 + 列表 ---- */
   function applyGrainUI() {
     $('boardTitle').textContent = state.grain === 'comment' ? '原声看板' : '观点看板';
+    $('listTitle').textContent = state.grain === 'comment' ? '原声列表' : '观点列表';
     renderTreedrop();
   }
   $('segGrain').addEventListener('click', e => {
@@ -418,7 +442,6 @@ Routes.dashboard = async function (app) {
         ${c ? `
         <div class="op-item">
           <div class="op-tags">
-            <span class="lc-lbl">评论原文</span>
             <span class="badge ${SENTI_BADGE[c.sentiment] || 'dim'}">${SENTI_LABEL[c.sentiment] || '未标注'}</span>
             <span class="badge dim">${esc(c.topic || '无主题')}</span>
           </div>
@@ -427,6 +450,16 @@ Routes.dashboard = async function (app) {
       </div>
     </div>`;
   }
+  /* 溢出文本悬停显示全文；未溢出时不设置 title（避免无意义浮窗） */
+  function setTextOverflowTooltips(root, selector = '.lc-text,.op-text') {
+    root.querySelectorAll(selector).forEach(el => {
+      el.title = '';
+      if (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) {
+        el.title = el.textContent.trim();
+      }
+    });
+  }
+
   function renderPager(total) {
     const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
     $('pgInfo').textContent = `${state.page} / ${maxPage}`;
@@ -455,6 +488,7 @@ Routes.dashboard = async function (app) {
           : '<div class="empty">当前筛选下无观点</div>';
       }
       if (seq !== reqSeq) return;
+      setTextOverflowTooltips($('listBody'));
       $('listTotal').textContent = `共 ${fmtNum(d.total)} 条`;
       renderPager(d.total);
     } catch (e) {

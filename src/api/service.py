@@ -616,6 +616,8 @@ def trends_payload(
     （向后兼容 pages/trends.js 的 `?days=`）。
     每日追加 `rating_sum` / `rating_cnt` / `recommend_rate`；
     `recommend_rate` 在当天无 rating 数据时为 **null**（前端折线断裂，不用 0 造成误导）。
+    2026-09-05 数据管理页追加：`analyzed`（已标注量，sentiment 非空）与
+    `fallback_pct`（主题兜底桶占比，comments.topic = yaml fallback 的条数 / 当日总量）。
     """
     dt_start = _parse_date(start, field="start")
     dt_end = _parse_date(end, field="end")
@@ -635,6 +637,7 @@ def trends_payload(
     if target_id:
         conditions.append(Comment.target_id == target_id)
 
+    fallback_topic = _load_topic_config().get("fallback") or "其他"
     stmt = (
         select(
             func.date(Comment.posted_at).label("day"),
@@ -644,23 +647,28 @@ def trends_payload(
             func.sum(case((Comment.sentiment == "neutral", 1), else_=0)).label("neu"),
             func.sum(Comment.rating).label("rating_sum"),
             func.count(Comment.rating).label("rating_cnt"),
+            func.sum(case((Comment.sentiment.is_not(None), 1), else_=0)).label("analyzed"),
+            func.sum(case((Comment.topic == fallback_topic, 1), else_=0)).label("fbk"),
         )
         .where(*conditions)
         .group_by(func.date(Comment.posted_at))
         .order_by(func.date(Comment.posted_at))
     )
     items = []
-    for day, total, pos, neg, neu, r_sum, r_cnt in session.execute(stmt):
+    for day, total, pos, neg, neu, r_sum, r_cnt, analyzed, fbk in session.execute(stmt):
         r_cnt = int(r_cnt or 0)
+        day_total = int(total or 0)
         items.append({
             "day": str(day),
-            "total": int(total or 0),
+            "total": day_total,
             "positive": int(pos or 0),
             "negative": int(neg or 0),
             "neutral": int(neu or 0),
             "rating_sum": int(r_sum or 0),
             "rating_cnt": r_cnt,
             "recommend_rate": round((r_sum or 0) / r_cnt * 100, 1) if r_cnt else None,
+            "analyzed": int(analyzed or 0),
+            "fallback_pct": round(int(fbk or 0) / day_total * 100, 1) if day_total else 0.0,
         })
     return {
         "target_id": target_id,

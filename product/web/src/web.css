@@ -10,6 +10,18 @@ body {
 }
 a { color: var(--primary); text-decoration: none; }
 
+/* ---------- 滚动条（轻量隐式：默认低对比，悬停容器时提亮） ---------- */
+* { scrollbar-width: thin; scrollbar-color: var(--line3) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(143, 152, 160, .18); border-radius: 99px; border: 2px solid transparent;
+  background-clip: content-box;
+}
+:hover::-webkit-scrollbar-thumb, ::-webkit-scrollbar-thumb:hover {
+  background: rgba(143, 152, 160, .38); background-clip: content-box;
+}
+
 /* ---------- 顶栏 ---------- */
 .topbar {
   display: flex; align-items: center; gap: 24px;
@@ -184,12 +196,12 @@ input[type="date"] { color-scheme: dark; }
 /* 胶囊分段控件（时间筛选器 / 颗粒度 toggle 共用） */
 .seg { display: inline-flex; gap: 4px; background: var(--panel2); border: 1px solid var(--line2); border-radius: 99px; padding: 3px; }
 .seg button {
-  background: none; border: none; border-radius: 99px; color: var(--muted);
+  background: none; border: 1px solid transparent; border-radius: 99px; color: var(--ink2);
   padding: 6px 14px; font-size: 12.5px; cursor: pointer; font-family: var(--font-sans);
-  transition: color .15s, background .15s;
+  transition: color .15s, background .15s, border-color .15s;
 }
 .seg button:hover { color: var(--ink); }
-.seg button.active { background: var(--panel3); color: var(--primary); border: 1px solid var(--primary); font-weight: 600; padding: 5px 13px; }
+.seg button.active { background: var(--primary); border-color: var(--primary); color: #0e141b; font-weight: 700; }
 .seg.sm button { padding: 3px 10px; font-size: 11.5px; }
 .seg.sm button.active { padding: 2px 9px; }
 
@@ -199,7 +211,7 @@ input[type="date"] { color-scheme: dark; }
 .range-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .range-label { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .daterange-panel {
-  display: none; position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
+  display: none; position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
   background: var(--panel); border: 1px solid var(--line3); border-radius: var(--r-md);
   box-shadow: var(--shadow-pop); padding: 12px 14px; min-width: 320px;
 }
@@ -214,9 +226,9 @@ input[type="date"] { color-scheme: dark; }
 .dr-hint { color: var(--neg); font-size: 11px; min-height: 15px; margin-top: 6px; }
 .dr-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* 指标卡（本页两张）：label 与图表标题对齐（13.5px/600），数值居中 52px */
+/* 指标卡（本页两张）：label 与图表标题对齐（13.5px/600，左上角），数值居中 52px */
 .kpi-trend .kpi-label { font-size: 13.5px; font-weight: 600; color: var(--ink2); }
-.kpi-trend .kpi-value { font-size: 52px; font-weight: 700; text-align: center; line-height: 1.25; margin: 10px 0 4px; }
+.kpi-trend .kpi-value { font-size: 52px; font-weight: 700; text-align: center; line-height: 1.25; margin: auto 0; }
 
 /* 指标列（左 2 行）+ 趋势卡（右跨 2 行，与左列等高） */
 .kpi-trend {
@@ -224,7 +236,7 @@ input[type="date"] { color-scheme: dark; }
   grid-template-columns: 260px 1fr;
   grid-template-rows: auto auto;
 }
-.kpi-trend .kpi-card { margin: 0; display: flex; flex-direction: column; justify-content: center; }
+.kpi-trend .kpi-card { margin: 0; display: flex; flex-direction: column; }
 .kpi-trend .kpi-card:nth-child(1) { grid-column: 1; grid-row: 1; }
 .kpi-trend .kpi-card:nth-child(2) { grid-column: 1; grid-row: 2; }
 .kpi-trend .trend-card { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-direction: column; }
@@ -233,6 +245,7 @@ input[type="date"] { color-scheme: dark; }
 /* 卡片头：标题 + 右侧控件 */
 .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .card-head h3 { margin-bottom: 0; }
+.card-head .toolbar { margin-bottom: 0; }
 
 /* 图表空态覆盖层：绝不改写图表容器 DOM（防 ECharts 实例失效） */
 .chart-wrap { position: relative; flex: 1; min-height: 300px; display: flex; flex-direction: column; }
@@ -244,7 +257,7 @@ input[type="date"] { color-scheme: dark; }
 .chart-overlay[hidden] { display: none; }
 
 /* 图表标题下备注（L1 主题分布的「综合与元表达」） */
-.chart-note { font-size: 11.5px; color: var(--muted); margin: -6px 0 6px; }
+.chart-note { font-size: 11.5px; color: var(--muted); margin: 0 0 8px; }
 
 /* 看板标题栏：左标题（随颗粒度切换）+ 右 toggle */
 .board-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
@@ -270,9 +283,11 @@ input[type="date"] { color-scheme: dark; }
 .td-l3 { padding-left: 46px; color: var(--muted); font-size: 12px; }
 .td-hint { padding: 10px 14px; font-size: 12px; color: var(--muted); }
 
-/* ---------- 可折叠列表（原声 / 观点卡片，2026-09-03） ---------- */
-.lcard { border-bottom: 1px solid var(--line2); }
-.lcard:last-child { border-bottom: none; }
+/* ---------- 可折叠列表（原声 / 观点卡片，2026-09-03；2026-09-05 主卡片描边化） ---------- */
+.lcard {
+  border: 1px solid var(--line2); border-radius: var(--r-md);
+  background: var(--panel2); padding: 1px 10px 2px; margin-bottom: 10px;
+}
 .lcard-head {
   display: flex; gap: 14px; padding: 13px 6px; cursor: pointer;
   transition: background .12s;
@@ -303,7 +318,7 @@ input[type="date"] { color-scheme: dark; }
 /* 子卡（展开区）：指标行 + 观点列表 / 评论原文 */
 .lcard-detail {
   display: none; padding: 4px 14px 16px; margin: 0 0 6px;
-  background: var(--panel2); border-radius: var(--r-md);
+  background: var(--panel); border-radius: var(--r-md);
 }
 .lcard.expanded .lcard-detail { display: block; }
 .vd-cells { display: flex; gap: 28px; padding: 10px 2px 12px; border-bottom: 1px solid var(--line2); flex-wrap: wrap; }
@@ -316,6 +331,11 @@ input[type="date"] { color-scheme: dark; }
 .op-item:last-child { margin-bottom: 0; }
 .op-text { font-size: 13px; line-height: 1.6; color: var(--ink2); margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
 .op-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* 单游戏看板文本放大（仅本页；bilibili 窄栏共享 .lc-text 不受影响） */
+.pg-dashboard .lc-text { font-size: 16px; }
+.pg-dashboard .lc-play { font-size: 14px; }
+.pg-dashboard .lc-play small { font-size: 12px; }
 
 /* 窄屏降级：单列堆叠，趋势卡取消跨行 */
 @media (max-width: 1100px) {
@@ -370,20 +390,51 @@ input[type="date"] { color-scheme: dark; }
 .r-mixed { color: #b9a470; }
 .r-bad { color: #a34c25; }
 
-/* Top 主题对比小图：高度较旧版 +50% */
+/* Top 主题对比小图：条距收紧（2026-09-05） */
 .mini-topic { min-width: 0; }
 .mini-topic h3 {
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.mini-chart { height: 320px; }
+.mini-chart { height: 200px; }
 .mini-chart .empty { padding: 20px 0; font-size: 12px; }
+
+/* 游戏名吸顶条：只要卡片顶部被遮挡即浮现，过渡丝滑（2026-09-05） */
+.game-sticky {
+  display: flex; position: sticky; top: 60px; z-index: 49;
+  align-items: center; gap: 8px;
+  background: var(--bg);
+  max-height: 0; opacity: 0; overflow: hidden; transform: translateY(-6px);
+  transition: max-height .28s, opacity .22s, transform .22s, padding .28s, margin .28s;
+}
+.game-sticky.show {
+  max-height: 60px; opacity: 1; transform: translateY(0);
+  padding: 8px 0; margin-bottom: 4px;
+}
+.gs-chip {
+  flex: none; max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+  padding: 4px 12px; font-size: 12.5px; cursor: pointer; user-select: none;
+  background: var(--panel2); border: 1px solid var(--line2); border-radius: 99px;
+  color: var(--muted); transition: border-color .15s, color .15s;
+}
+.gs-chip:hover { color: var(--ink); border-color: var(--line3); }
+.gs-chip.selected {
+  border-color: var(--primary); color: var(--primary);
+  background: var(--panel3); font-weight: 600;
+}
+.gs-more { flex: none; color: var(--muted); font-size: 12.5px; }
+
+/* 表格固定布局：各列间距一致（指标对比 / 每日明细 / 采集任务共用） */
+table.tbl.fixed { table-layout: fixed; }
+table.tbl.fixed th, table.tbl.fixed td { padding: 8px 12px; word-break: break-word; }
+.tbl .th-c, .tbl .td-c { text-align: center; }
+.tbl .th-end, .tbl .td-end { text-align: right; }
 
 /* ============================================================
    B站视频看板（2026-09-04 · 线框图重设计）
    ============================================================ */
 
 /* 视频信息区：封面左（点击弹窗播放）+ 信息右 */
-.video-hero { display: flex; gap: 18px; }
+.video-hero { display: flex; gap: 36px; }
 .vh-cover {
   flex: none; width: 280px; aspect-ratio: 16 / 9;
   background: var(--panel3); border-radius: var(--r-md); overflow: hidden;
@@ -421,17 +472,18 @@ input[type="date"] { color-scheme: dark; }
 /* 第四行：L1 图（左，正/负拆分固定高，顶对齐防拉伸留白）+ 原声列表（右，等高内部滚动） */
 .cmp-grid { grid-template-columns: 3fr 2fr; align-items: start; }
 .cmp-grid > .card { display: flex; flex-direction: column; }
-.l1-sub { font-size: 12px; font-weight: 600; color: var(--muted); margin: 6px 0 2px; }
+.l1-sub { font-size: 12px; font-weight: 600; color: var(--muted); margin: 14px 0 4px; }
+.l1-sub:first-of-type { margin-top: 6px; }
 .l1-chart { height: 195px; }
 .voice-card { min-height: 0; overflow: hidden; }
 .voice-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 @media (max-width: 1100px) { .cmp-grid { grid-template-columns: 1fr; } }
 
-/* 采集评论量指标卡：对齐 dashboard（标题字号与图表标题一致），数字更大且横向居中 */
-.kpi-xl { display: flex; flex-direction: column; justify-content: center; }
-.kpi-xl .kpi-label { font-size: 13.5px; font-weight: 600; color: var(--ink2); }
-.kpi-xl .kpi-value { font-size: 64px; text-align: center; }
-.kpi-xl .kpi-sub { text-align: center; }
+/* 采集评论量指标卡：标题用 h3 与其他图表一致（左上角），数值与副指标在卡内垂直+水平居中（2026-09-05） */
+.card.kpi-xl { display: flex; flex-direction: column; }
+.card.kpi-xl .kpi-xl-body { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.card.kpi-xl .kpi-value { font-size: 64px; text-align: center; margin: 4px 0 2px; }
+.card.kpi-xl .kpi-sub { text-align: center; }
 
 /* 环形图容器（缩小环径防标签截断） */
 .ring-chart { height: 280px; }
@@ -456,8 +508,10 @@ input[type="date"] { color-scheme: dark; }
 .dm-pop-item:last-child { border-bottom: none; }
 .dm-pop-item.dim { color: var(--muted); }
 
-/* 高光时刻卡片：三段排版 */
-.hl-card { min-width: 0; }
+/* 高光时刻：间隔放大一倍，竖向分隔线使边界更清晰（2026-09-05） */
+#hlGrid { gap: 32px; }
+.hl-card { min-width: 0; background: none; border: none; border-left: 1px solid var(--line2); border-radius: 0; padding: 0 0 0 20px; }
+.hl-card:first-child { border-left: none; padding-left: 0; }
 .hl-time { font-size: 12.5px; font-weight: 600; color: var(--primary); margin-bottom: 8px; font-variant-numeric: tabular-nums; }
 .hl-summary { font-size: 13px; line-height: 1.7; color: var(--ink2); }
 .hl-summary .hl-sec { margin: 0 0 6px; }

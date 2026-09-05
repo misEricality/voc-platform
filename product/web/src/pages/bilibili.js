@@ -43,7 +43,7 @@ Routes.bilibili = async function (app) {
     </div>
 
     <div class="grid three section-gap">
-      <div class="kpi-card kpi-xl" id="kpiCollected"></div>
+      <div class="card kpi-xl" id="kpiCollected"></div>
       <div class="card"><h3>评论性别分布</h3><div class="chart ring-chart" id="chSex"></div></div>
       <div class="card"><h3>评论情感分布</h3><div class="chart ring-chart" id="chSentiB"></div></div>
     </div>
@@ -78,8 +78,8 @@ Routes.bilibili = async function (app) {
       </div>
     </div>
 
-    <div class="section-gap">
-      <h3 style="font-size:13.5px;font-weight:600;color:var(--ink2);margin-bottom:12px">高光时刻</h3>
+    <div class="card section-gap">
+      <h3>高光时刻</h3>
       <div class="grid three" id="hlGrid"></div>
     </div>`;
 
@@ -141,9 +141,11 @@ Routes.bilibili = async function (app) {
     const collected = v.collected ? v.collected.comments : 0;
     const pctText = v.reply_total ? (collected / v.reply_total * 100).toFixed(1) + '%' : '-';
     $('kpiCollected').innerHTML = `
-      <div class="kpi-label">采集评论量</div>
-      <div class="kpi-value">${fmtNum(collected)}</div>
-      <div class="kpi-sub">占原视频评论量 ${pctText}</div>`;
+      <h3>采集评论量</h3>
+      <div class="kpi-xl-body">
+        <div class="kpi-value">${fmtNum(collected)}</div>
+        <div class="kpi-sub">占原视频评论量 ${pctText}</div>
+      </div>`;
   }
   function ringChart(containerId, data) {
     const p = Charts.palette();
@@ -180,11 +182,29 @@ Routes.bilibili = async function (app) {
   /* ---- 第四行左：L1 主题分布（正向/负向拆分，原声粒度，零填充固定顺序） ---- */
   // 交互：点击条形/标签 → 高亮（描边，不变色）并联动筛选原声列表（携带情感条件）；
   //       点同一个取消，点另一个（含跨图）切换。
+  //       悬停条形/标签 → 两张图中同名 L1 全部高亮（blur 压暗其余项），方便对比。
+  const l1Maps = { positive: null, negative: null };  // topic → dataIndex（悬停联动用）
+  function hlL1(name) {
+    for (const senti of ['positive', 'negative']) {
+      const ch = Charts.get(senti === 'positive' ? 'chL1Pos' : 'chL1Neg');
+      if (!ch || !l1Maps[senti]) continue;
+      ch.dispatchAction({ type: 'downplay' });
+      const idx = l1Maps[senti].get(name);
+      if (idx != null) ch.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: idx });
+    }
+  }
+  function unhlL1() {
+    for (const id of ['chL1Pos', 'chL1Neg']) {
+      const ch = Charts.get(id);
+      if (ch) ch.dispatchAction({ type: 'downplay' });
+    }
+  }
   function drawL1Chart(containerId, senti, topics) {
     const p = Charts.palette();
     const color = senti === 'positive' ? p.pos : p.neg;
     // 「综合与元表达」已移到副标题备注（2026-09-05），条形只显示其余 9 个主题
     const bars = topics.filter(t => t.topic !== FB);
+    l1Maps[senti] = new Map(bars.map(t => t.topic).reverse().map((name, j) => [name, j]));
     Charts.render(containerId, {
       tooltip: { trigger: 'item', formatter: '{b}：{c}' },
       grid: { left: 12, right: 34, top: 4, bottom: 4, containLabel: true },
@@ -203,11 +223,20 @@ Routes.bilibili = async function (app) {
             ? { color, borderRadius: [0, 4, 4, 0], borderColor: p.primary, borderWidth: 2 }  // 高亮=描边，不变色
             : { color, borderRadius: [0, 4, 4, 0] },
         })).reverse(),
+        emphasis: { focus: 'self', itemStyle: { borderColor: p.primary, borderWidth: 2 } },
+        blur: { itemStyle: { opacity: .3 } },
         label: { show: true, position: 'right', color: p.muted, fontSize: 11 },
       }],
     });
     const chart = Charts.get(containerId);
     if (!chart) return;
+    chart.off('mouseover').off('mouseout');
+    chart.on('mouseover', params => {
+      const name = params.componentType === 'series' ? params.name
+        : (params.targetType === 'axisLabel' && params.value != null ? String(params.value) : null);
+      if (name) hlL1(name);
+    });
+    chart.on('mouseout', unhlL1);
     chart.off('click');
     chart.on('click', params => {
       let name = null;
@@ -248,6 +277,16 @@ Routes.bilibili = async function (app) {
     // 右侧原声列表高度与左卡对齐（左卡内容定高，右侧超出部分内部滚动）
     const l1 = document.querySelector('.l1-card'), vc = document.querySelector('.voice-card');
     if (l1 && vc) vc.style.height = l1.offsetHeight + 'px';
+  }
+
+  /* 溢出文本悬停显示全文；未溢出时不设置 title */
+  function setTextOverflowTooltips(root, selector = '.lc-text,.op-text') {
+    root.querySelectorAll(selector).forEach(el => {
+      el.title = '';
+      if (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) {
+        el.title = el.textContent.trim();
+      }
+    });
   }
 
   /* ---- 第四行右：原声列表（likes 降序 → 评论时间降序；联动筛选携带情感；等高滚动） ---- */
@@ -300,6 +339,7 @@ Routes.bilibili = async function (app) {
       $('voiceList').innerHTML = d.items.length
         ? d.items.map(voiceCardHTML).join('')
         : `<div class="empty">${state.filterTopic ? `「${esc(state.filterTopic)}」下无原声` : '当前筛选下无原声'}</div>`;
+      setTextOverflowTooltips($('voiceList'));
       const f = [state.filterSenti && SENTI_LABEL[state.filterSenti], state.filterTopic]
         .filter(Boolean).join(' · ');
       $('voiceTotal').textContent = `共 ${fmtNum(d.total)} 条${f ? ` · ${f}` : ''}`;

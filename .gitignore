@@ -53,6 +53,8 @@ data/validation/
 data/covers/
 data/uvicorn.log
 data/uvicorn.err.log
+# API 服务运行时 stderr 重定向（与 uvicorn 日志同类，不入库；2026-09-05 补充）
+data/_api_server.err
 
 # ---- CodeBuddy IDE 本机数据（不应提交；2026-09-05）----
 .codebuddy/

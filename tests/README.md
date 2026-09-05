@@ -32,8 +32,8 @@ tests/
 
 ## 📊 当前用例统计
 
-- **共 97 例**（pytest 2026-09-03 实测 97 passed；上版 49 例 → 78 → 82 → 94 → 97）
-- 1 例 ML 环境依赖跳过（`test_embedding.py`，无 torch 时 skip）
+- **共 110 例**（pytest 2026-09-05 实测 110 passed；上版 49 例 → 78 → 82 → 94 → 97 → 110）
+- 1 例 ML 环境依赖跳过（`test_embedding.py`，无 torch 时 skip；本机 .venv-ml 有 torch 时全量跑）
 - CI 跑通门禁：`pytest tests/` 在 push / cron 都跑（workflow `test:` job）
 - `requirements-core.txt` 已含 fastapi/uvicorn/httpx/itsdangerous（`test_api.py` 依赖）
 
@@ -115,9 +115,9 @@ tests/
 
 | 项 | 值 |
 |---|---|
-| **覆盖** | `src/api/` 全部端点：health/targets/overview/topics/comments/trends/compare + 管理员登录（正确/错误密码）+ 未登录 401 + Steam 任务新增(URL 解析/重复 409/暂停恢复/删除) + B 站任务（识别 pubdate/due 计算/pause/resume/reidentify/fetched 禁删 409/无效 BV 422） |
-| **用例数** | 28（14 原始 + 9/2 对抗审查 4 例 + 9/3 限流/守卫等增补） |
-| **更新** | 2026-09-02/03（WEB_DASHBOARD.md 阶段 3 验收 + 对抗审查修复回归） |
+| **覆盖** | `src/api/` 全部端点：health/targets/overview/topics/comments/trends（含 analyzed + fallback_pct）/compare + 管理员登录（正确/错误密码）+ 未登录 401 + Steam 任务新增(URL 解析/重复 409/暂停恢复/删除) + B 站任务（识别 pubdate/due 计算/pause/resume/reidentify/fetched 禁删 409/无效 BV 422） |
+| **用例数** | 29（28 原始 + 9/5 trends analyzed/fallback_pct 回归） |
+| **更新** | 2026-09-05（数据管理页每日明细新字段） |
 | **外部依赖** | fastapi + httpx（`requirements-core.txt` 已加）；Steam appdetails / B 站 view / backfill 线程全部 mock，不出网 |
 
 ### `test_steam_collector.py` · Steam 采集器（空响应重试 + 时间窗）⭐（2026-09-03）

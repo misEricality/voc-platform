@@ -49,16 +49,18 @@ Routes.compare = async function (app) {
 
   app.innerHTML = `
     <div class="page-head">
-      <h1>游戏对比看板</h1>
+      <h1>Steam游戏看板 - 游戏对比</h1>
       <span class="head-actions">
         <div class="seg sm" id="segMode">
-          <button data-mode="同期">同期</button>
-          <button data-mode="累计">累计</button>
+          <button data-mode="同期" title="同期：各游戏取等长的最近 N 天窗口（N = 选中中最晚发行游戏的已发行天数，按库内最新评论日截止）">同期</button>
+          <button data-mode="累计" title="累计：不截断时间，使用库内全部数据对比">累计</button>
         </div>
       </span>
     </div>
 
+    <div id="gcSentinel" style="height:1px"></div>
     <div class="game-cards" id="gameCards"></div>
+    <div class="game-sticky" id="gameSticky"></div>
 
     <div class="grid half section-gap">
       <div class="card"><h3>情感对比</h3><div class="chart" id="chSentiCmp"></div></div>
@@ -67,7 +69,7 @@ Routes.compare = async function (app) {
 
     <div class="card section-gap">
       <div class="card-head">
-        <h3>Top 主题对比（L2 · 观点粒度）</h3>
+        <h3>Top 主题对比</h3>
         <div class="seg sm" id="segPolar">
           <button data-polar="negative">负向</button>
           <button data-polar="positive">正向</button>
@@ -78,7 +80,7 @@ Routes.compare = async function (app) {
 
     <div class="card section-gap">
       <h3>指标对比</h3>
-      <div style="overflow:auto"><table class="tbl" id="tblKpi"></table></div>
+      <div style="overflow:auto"><table class="tbl fixed" id="tblKpi"></table></div>
     </div>`;
 
   const $ = id => document.getElementById(id);
@@ -110,7 +112,33 @@ Routes.compare = async function (app) {
         </div>
       </div>`;
     }).join('');
+    renderSticky();
   }
+
+  /* ---- 吸顶筛选条：只要封面被遮挡即浮现（只显示名称，最多 10 个，超出以 … 表示） ---- */
+  const STICKY_MAX = 10;
+  function renderSticky() {
+    const sticky = $('gameSticky');
+    if (!sticky) return;
+    sticky.innerHTML = games.slice(0, STICKY_MAX).map(g =>
+      `<span class="gs-chip ${selected.has(g.target_id) ? 'selected' : ''}" data-tid="${esc(g.target_id)}" title="${esc(g.name)}">${esc(g.name)}</span>`
+    ).join('') + (games.length > STICKY_MAX ? '<span class="gs-more">…</span>' : '');
+  }
+  $('gameSticky').addEventListener('click', e => {
+    const chip = e.target.closest('.gs-chip');
+    if (!chip) return;
+    const tid = chip.dataset.tid;
+    if (selected.has(tid) && selected.size <= 2) { toast('至少保留 2 款游戏参与对比', true); return; }
+    selected.has(tid) ? selected.delete(tid) : selected.add(tid);
+    chip.classList.toggle('selected', selected.has(tid));
+    document.querySelectorAll('#gameCards .game-card').forEach(c =>
+      c.classList.toggle('selected', selected.has(c.dataset.tid)));
+    refreshData();
+  });
+  new IntersectionObserver(([e]) => {
+    const sticky = $('gameSticky');
+    if (sticky) sticky.classList.toggle('show', !e.isIntersecting);
+  }, { rootMargin: '-60px 0px 0px 0px' }).observe($('gcSentinel'));
 
   /* ---- 元数据加载（stale-while-revalidate + 轮询，不阻塞首屏） ---- */
   async function loadMeta(tries = 0) {
@@ -138,6 +166,7 @@ Routes.compare = async function (app) {
     if (selected.has(tid) && selected.size <= 2) { toast('至少保留 2 款游戏参与对比', true); return; }
     selected.has(tid) ? selected.delete(tid) : selected.add(tid);
     card.classList.toggle('selected', selected.has(tid));
+    renderSticky();
     refreshData();
   });
 
@@ -231,7 +260,7 @@ Routes.compare = async function (app) {
         formatter: p2 => `${esc(p2.name)}<br>评论量：${fmtNum(p2.value[0])}<br>推荐率：${p2.value[1]}%`,
       },
       grid: { left: 12, right: 28, top: 28, bottom: 8, containLabel: true },
-      xAxis: { type: 'value', name: '评论量', nameLocation: 'middle', nameGap: 24,
+      xAxis: { type: 'value', name: '评论量', nameLocation: 'middle', nameGap: 28,
                nameTextStyle: { color: p.muted },
                axisLabel: { color: p.muted, formatter: v => fmtNum(v) }, splitLine: { show: false } },
       yAxis: { type: 'value', name: '推荐率%', min: 0, max: 100,
@@ -254,6 +283,26 @@ Routes.compare = async function (app) {
         <h3 title="${esc(x.g.name)}">${esc(x.g.name)}</h3>
         <div class="mini-chart" id="top${i}"></div>
       </div>`).join('');
+    // 跨图联动：悬停任一条形/标签 → 所有游戏图表中同名 L2 高亮（含 blur 压暗其余项）
+    const miniCharts = [], miniMaps = [];
+    const highlight = name => {
+      miniCharts.forEach((ch, k) => {
+        ch.dispatchAction({ type: 'downplay' });
+        const idx = miniMaps[k].get(name);
+        if (idx != null) {
+          // 含该标签：高亮同名项，其余由 focus:self 压暗
+          ch.setOption({ series: [{ itemStyle: { opacity: 1 } }] }, { silent: true });
+          ch.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: idx });
+        } else {
+          // TOP5 不含该标签：不亮任何项，5 个标签全部暗淡
+          ch.setOption({ series: [{ itemStyle: { opacity: 0.3 } }] }, { silent: true });
+        }
+      });
+    };
+    const clearHl = () => miniCharts.forEach(ch => {
+      ch.dispatchAction({ type: 'downplay' });
+      ch.setOption({ series: [{ itemStyle: { opacity: 1 } }] }, { silent: true });
+    });
     list.forEach((x, i) => {
       const top5 = x.topics.slice(0, 5);
       if (!top5.length) {
@@ -267,41 +316,53 @@ Routes.compare = async function (app) {
         xAxis: { type: 'value', axisLabel: { show: false }, axisTick: { show: false },
                  axisLine: { show: false }, splitLine: { show: false } },
         yAxis: { type: 'category', data: top5.map(t => t.topic).reverse(),
-                 axisLabel: { color: p.muted, width: 110, overflow: 'break', lineHeight: 13 },
+                 axisLabel: { color: p.muted, width: 110, overflow: 'break', lineHeight: 13, triggerEvent: true },
                  axisTick: { show: false }, axisLine: { lineStyle: { color: p.line } } },
         series: [{
           type: 'bar', barMaxWidth: 14, data: top5.map(t => t.total).reverse(),
           itemStyle: { color, borderRadius: [0, 4, 4, 0] },
+          emphasis: { focus: 'self', itemStyle: { borderColor: p.primary, borderWidth: 2 } },
+          blur: { itemStyle: { opacity: .3 } },
           label: { show: true, position: 'right', color: p.muted, fontSize: 11 },
         }],
       });
+      const ch = Charts.get(`top${i}`);
+      if (!ch) return;
+      miniCharts.push(ch);
+      miniMaps.push(new Map(top5.map(t => t.topic).reverse().map((name, j) => [name, j])));
+      ch.on('mouseover', params => {
+        const name = params.componentType === 'series' ? params.name
+          : (params.targetType === 'axisLabel' && params.value != null ? String(params.value) : null);
+        if (name) highlight(name);
+      });
+      ch.on('mouseout', clearHl);
     });
   }
 
-  function renderKpiTable(list, win) {
-    const note = state.mode === '同期' && win
-      ? `<tr><td colspan="7" class="empty" style="padding:8px 0;font-size:11.5px">同期口径：各游戏取等长的最近 ${win.days} 天窗口（N = 选中中最晚发行游戏的已发行天数；库内数据自 2026-07-31 起采集，「发行后前 N 天」历史窗口不可用，2026-09-04 调整）。</td></tr>`
-      : (state.mode === '同期'
-        ? '<tr><td colspan="7" class="empty" style="padding:8px 0;font-size:11.5px">同期窗口不可用（缺发行日期或库内数据），已回退累计口径。</td></tr>'
-        : '');
+  function renderKpiTable(list) {
     $('tblKpi').innerHTML = `
       <thead><tr>
-        <th>游戏</th><th class="num">评论量</th><th class="num">推荐量</th><th class="num">推荐率</th>
-        <th class="num">观点好评率</th><th class="num">发行天数</th><th>推荐评级（所有评测）</th>
+        <th style="width:17%">游戏</th>
+        <th class="num" style="width:12%">评论量</th>
+        <th class="num" style="width:12%">推荐量</th>
+        <th class="num" style="width:11%">推荐率</th>
+        <th class="num" style="width:13%">观点好评率</th>
+        <th class="num" style="width:13%">发行天数</th>
+        <th class="th-c" style="width:22%">推荐评级（所有评测）</th>
       </tr></thead>
       <tbody>${list.map(x => {
         const rd = (metaMap[x.g.target_id] || {}).release_date;
         return `<tr>
-          <td>${esc(x.g.name)}</td>
+          <td><a href="#/dashboard?target=${encodeURIComponent(x.g.target_id)}&range=30d"
+                 title="查看「${esc(x.g.name)}」单游戏看板（近30天）">${esc(x.g.name)}</a></td>
           <td class="num">${fmtNum(x.oc.total)}</td>
           <td class="num">${fmtNum(x.oc.recommend_count)}</td>
           <td class="num">${x.oc.recommend_rate ?? '-'}%</td>
           <td class="num">${x.oo.sentiment.positive_pct ?? '-'}%</td>
           <td class="num">${rd ? fmtNum(daysSince(rd)) : '-'}</td>
-          <td><span class="gc-rating ${x.g.meta && x.g.meta.rating_desc ? ratingClass(x.g.meta.rating_desc) : ''}">${esc((metaMap[x.g.target_id] || {}).rating_desc || '-')}</span></td>
+          <td class="td-c"><span class="gc-rating ${x.g.meta && x.g.meta.rating_desc ? ratingClass(x.g.meta.rating_desc) : ''}">${esc((metaMap[x.g.target_id] || {}).rating_desc || '-')}</span></td>
         </tr>`;
-      }).join('')}</tbody>
-      <tfoot>${note}</tfoot>`;
+      }).join('')}</tbody>`;
   }
 
   async function refreshData() {
@@ -309,8 +370,14 @@ Routes.compare = async function (app) {
     const sel = games.filter(g => selected.has(g.target_id));  // 卡片序
     if (!sel.length) return;
     try {
-      const win = state.mode === '同期' ? await computeWindow(sel) : null;
+      let win = state.mode === '同期' ? await computeWindow(sel) : null;
       if (seq !== reqSeq) return;
+      if (state.mode === '同期' && !win) {
+        // 同期窗口不可用（缺发行日期或库内数据）→ 红色告警 5s + 口径弹回累计
+        toast('同期窗口不可用（缺发行日期或库内数据），已切换为累计口径', true, 5000);
+        state.mode = '累计';
+        paintSeg($('segMode'), 'mode', state.mode);
+      }
       const list = await Promise.all(sel.map(g => fetchGame(g, win)));
       if (seq !== reqSeq) return;
       // 附 meta 供表格用
@@ -318,7 +385,7 @@ Routes.compare = async function (app) {
       renderSentiCmp(list);
       renderWordCmp(list);
       renderTopGrid(list);
-      renderKpiTable(list, win);
+      renderKpiTable(list);
     } catch (e) {
       if (seq === reqSeq) toast(e.message, true);
     }

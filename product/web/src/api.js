@@ -41,13 +41,13 @@ function fmtNum(v) { return (v === null || v === undefined) ? '-' : Number(v).to
 function fmtDate(t) { return t ? String(t).slice(0, 10) : '-'; }
 function pct(a, b) { return b ? (a / b * 100).toFixed(1) + '%' : '0%'; }
 
-function toast(msg, isErr) {
+function toast(msg, isErr, dur = 2200) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.toggle('err', !!isErr);
   t.classList.add('show');
   clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+  t._timer = setTimeout(() => t.classList.remove('show'), dur);
 }
 
 /* 模态框 */

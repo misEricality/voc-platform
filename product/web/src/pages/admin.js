@@ -74,7 +74,7 @@ async function renderAdmin(app) {
       <div class="toolbar" style="justify-content:flex-end">
         <button class="btn primary" id="btnAdd">＋ 新增任务</button>
       </div>
-      <div style="overflow:auto"><table class="tbl" id="tblTasks"></table></div>
+      <div style="overflow:auto"><table class="tbl fixed" id="tblTasks"></table></div>
     </div>`;
 
   let platform = 'steam';
@@ -104,7 +104,7 @@ async function renderAdmin(app) {
   /* ----- Steam ----- */
   function renderSteam(rows) {
     tbl.innerHTML = `
-      <thead><tr><th>游戏</th><th>AppID</th><th>URL</th><th>语言</th><th>采集上限</th><th>状态</th><th>操作</th></tr></thead>
+      <thead><tr><th>游戏名称</th><th>AppID</th><th>URL</th><th>语言</th><th>采集上限</th><th>状态</th><th>操作</th></tr></thead>
       <tbody>${rows.length ? rows.map(t => `<tr data-id="${t.id}">
         <td style="font-weight:600">${esc(t.name || '(未命名)')}</td>
         <td>${esc(t.target_id)}</td>
@@ -219,9 +219,12 @@ async function renderAdmin(app) {
         <td>${fmtNum(t.comment_count)} / ${fmtNum(t.danmaku_count)}</td>
         <td><span class="badge ${STATUS_BADGE[t.status_display] || 'dim'}" title="${esc(t.fail_reason || '')}">${t.status_display}</span></td>
         <td style="white-space:nowrap">
-          ${t.status !== 'fetched' ? `<button class="btn sm" data-act="edit">编辑</button>` : ''}
-          ${['pending', 'scheduled', 'fetching', 'failed'].includes(t.status) ? `<button class="btn sm" data-act="pause">${t.status === 'paused' ? '恢复' : '暂停'}</button>` : ''}
-          ${t.status !== 'fetched' ? `<button class="btn sm danger" data-act="del">删除</button>` : ''}
+          ${t.status !== 'fetched' ? `<button class="btn sm" data-act="edit">编辑</button>` : `<button class="btn sm" disabled title="已采集任务不可编辑">编辑</button>`}
+          ${t.status === 'fetched'
+            ? `<button class="btn sm" disabled title="已采集任务无需暂停">暂停</button>`
+            : (['pending', 'scheduled', 'fetching', 'failed'].includes(t.status)
+              ? `<button class="btn sm" data-act="pause">${t.status === 'paused' ? '恢复' : '暂停'}</button>` : '')}
+          ${t.status !== 'fetched' ? `<button class="btn sm danger" data-act="del">删除</button>` : `<button class="btn sm danger" disabled title="已采集任务不可删除">删除</button>`}
         </td></tr>`).join('') : '<tr><td colspan="8" class="empty">暂无 B 站任务</td></tr>'}</tbody>`;
 
     tbl.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async e => {

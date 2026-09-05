@@ -561,6 +561,33 @@ def test_trends_recommend_rate_and_null(ranged_db, client):
     assert by_day[c3_day]["recommend_rate"] is None  # rating_cnt=0 → null 而非 0
 
 
+def test_trends_analyzed_and_fallback(ranged_db, client):
+    """2026-09-05 数据管理页：每日 analyzed（已标注量）+ fallback_pct（主题兜底桶占比）"""
+    from src.storage.db import Comment, init_db
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    _, SessionLocal = init_db(f"sqlite:///{ranged_db}")
+    with SessionLocal() as s:
+        s.add(Comment(
+            platform="steam", source_id="rr-fb", target_id="steam:2358720",
+            content="纯梗图", author="u", rating=None,
+            posted_at=now - timedelta(days=1),
+            sentiment="neutral", sentiment_score=0.0, sentiment_confidence=0.9,
+            topic="综合与元表达", analyzed_at=now,
+        ))
+        s.commit()
+
+    r = client.get("/api/trends", params={"target": "steam:2358720", "days": 45})
+    assert r.status_code == 200
+    by_day = {i["day"]: i for i in r.json()["data"]["items"]}
+    d1 = (now - timedelta(days=1)).strftime("%Y-%m-%d")   # c3(neutral,无主题) + 兜底条
+    d3 = (now - timedelta(days=3)).strftime("%Y-%m-%d")   # c2(negative, 技术与性能)
+    d40 = (now - timedelta(days=40)).strftime("%Y-%m-%d")  # c1(positive, 机制与内容)
+    assert by_day[d1]["analyzed"] == 2 and by_day[d1]["fallback_pct"] == 50.0
+    assert by_day[d3]["analyzed"] == 1 and by_day[d3]["fallback_pct"] == 0.0
+    assert by_day[d40]["analyzed"] == 1 and by_day[d40]["fallback_pct"] == 0.0
+
+
 def test_trends_days_fallback_compatible(ranged_db, client):
     """start/end 缺省回落 days —— pages/trends.js 既有依赖不回归"""
     r = client.get("/api/trends", params={"target": "steam:2358720", "days": 2})

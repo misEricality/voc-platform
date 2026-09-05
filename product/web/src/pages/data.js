@@ -1,5 +1,6 @@
 /* 系统管理 - 数据管理（原「时间序列」页，2026-09-05 移入系统管理子模块）
-   P8 时间序列：按日评论量 + 情感构成堆叠；目标下拉 = monitored 白名单
+   P8 时间序列：按日评论量总量折线（2026-09-05 去情感堆叠）+ 每日明细
+   （总量/正/中/负/已分析/兜底占比）；目标下拉 = monitored 白名单
    （6 款单机 + fetched B 站视频），无需登录（公开只读端点） */
 Routes.data = async function (app) {
   const [steam, bili] = await Promise.all([
@@ -9,7 +10,7 @@ Routes.data = async function (app) {
   app.innerHTML = `
     <div class="page-head">
       <h1>系统管理 - 数据管理</h1>
-      <span class="sub">每日评论量与情感构成</span>
+      <span class="sub">每日评论量</span>
     </div>
     <div class="toolbar">
       <select id="selTarget">
@@ -25,9 +26,9 @@ Routes.data = async function (app) {
         <option value="90">近 90 天</option>
       </select>
     </div>
-    <div class="card tall"><h3>评论量与情感构成（按日）</h3><div class="chart" style="height:420px" id="chTrend"></div></div>
-    <div class="card section-gap"><h3>日明细</h3>
-      <div style="overflow:auto;max-height:320px"><table class="tbl" id="tblDays"></table></div>
+    <div class="card tall"><h3>每日评论量</h3><div class="chart" style="height:420px" id="chTrend"></div></div>
+    <div class="card section-gap"><h3>每日明细</h3>
+      <div style="overflow:auto;max-height:320px"><table class="tbl fixed" id="tblDays"></table></div>
     </div>`;
 
   async function render() {
@@ -41,26 +42,23 @@ Routes.data = async function (app) {
     const days = d.items.map(i => i.day);
 
     Charts.render('chTrend', {
-      legend: { data: ['总量', '正向', '中性', '负向'], textStyle: { color: p.muted } },
       xAxis: { type: 'category', data: days, axisLabel: { color: p.muted } },
       yAxis: { type: 'value', axisLabel: { color: p.muted }, splitLine: { lineStyle: { color: Charts.token('--line2') } } },
       series: [
         { name: '总量', type: 'line', smooth: true, symbol: 'none', lineStyle: { color: p.primary, width: 2.5 }, data: d.items.map(i => i.total) },
-        { name: '正向', type: 'bar', stack: 's', barMaxWidth: 18, itemStyle: { color: p.pos, opacity: .8 }, data: d.items.map(i => i.positive) },
-        { name: '中性', type: 'bar', stack: 's', barMaxWidth: 18, itemStyle: { color: p.neu, opacity: .8 }, data: d.items.map(i => i.neutral) },
-        { name: '负向', type: 'bar', stack: 's', barMaxWidth: 18, itemStyle: { color: p.neg, opacity: .8 }, data: d.items.map(i => i.negative) },
       ],
       tooltip: { trigger: 'axis' },
     });
 
     document.getElementById('tblDays').innerHTML = `
-      <thead><tr><th>日期</th><th class="num">总量</th><th class="num">正向</th><th class="num">中性</th><th class="num">负向</th><th class="num">负向占比</th></tr></thead>
+      <thead><tr><th style="width:16%">日期</th><th class="num">总量</th><th class="num">正向</th><th class="num">中性</th><th class="num">负向</th><th class="num">已分析</th><th class="num">兜底占比</th></tr></thead>
       <tbody>${d.items.slice().reverse().map(i => `<tr>
         <td>${esc(i.day)}</td><td class="num">${fmtNum(i.total)}</td>
         <td class="num" style="color:var(--pos)">${fmtNum(i.positive)}</td>
         <td class="num" style="color:var(--neu)">${fmtNum(i.neutral)}</td>
         <td class="num" style="color:var(--neg)">${fmtNum(i.negative)}</td>
-        <td class="num">${pct(i.negative, i.total)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">时间窗内无数据</td></tr>'}</tbody>`;
+        <td class="num">${fmtNum(i.analyzed)}</td>
+        <td class="num">${i.fallback_pct ?? 0}%</td></tr>`).join('') || '<tr><td colspan="7" class="empty">时间窗内无数据</td></tr>'}</tbody>`;
   }
 
   document.getElementById('selTarget').addEventListener('change', render);

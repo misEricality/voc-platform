@@ -1,6 +1,6 @@
 /* 路由 + 启动（hash 路由，零依赖；Routes 注册表声明在 api.js，先于页面脚本加载） */
 const PageTitles = {
-  dashboard: '单游戏看板', compare: '游戏对比看板', bilibili: 'B站视频看板',
+  dashboard: 'Steam游戏看板 - 单游戏', compare: 'Steam游戏看板 - 游戏对比', bilibili: 'B站视频看板',
   data: '系统管理 - 数据管理', admin: '系统管理 - 采集任务',
 };
 
@@ -22,7 +22,7 @@ async function renderRoute() {
     app.innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`;
     toast(e.message, true);
   }
-  document.title = `${PageTitles[page] || page} · 灵听 Lynx`;
+  document.title = `${PageTitles[page] || page} · Lynx`;
 }
 
 async function initMeta() {
