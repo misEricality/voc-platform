@@ -2,7 +2,7 @@
 
 > **业务知识与代码解耦** — 改业务配置不必动 Python 代码，不必重启服务。
 >
-> **最后更新**：2026-08-27
+> **最后更新**：2026-09-07
 
 ---
 
@@ -84,6 +84,8 @@ config/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-07 | `monitoring/targets.yaml` targets 条目新增可选字段 **`release_date_cn`**（北京时间发行日人工校准），已填黑神话 2024-08-20 / 巫师3 2015-05-19 / 文明6 2016-10-21；`service._refresh_game_meta` 刷新时应用覆盖 | 探测核实 Steam appdetails/商店页只提供 Valve 美西口径日期（黑神话=08-19），与北京时间差异因解锁时刻而异（+0/+1 天）无法程序换算，admin「发行时间」列与对比看板同期窗口依赖该日期 |
+| 2026-09-06 | `monitoring/targets.yaml` targets 段新增 **明末：渊虚之羽（steam:2277560）**（auto 模式、schinese）——该目标前一日已经 admin 加入 `collect_tasks`，本次同步进 yaml 使其进入 `/api/targets?monitored=true` 白名单 | 前端单游戏看板/游戏对比看板/数据管理的目标下拉都以 targets.yaml 为 monitored 白名单，不加入则新任务采到的数据前端不可见 |
 | 2026-09-02 | `monitoring/targets.yaml` **语义变更**：降级为 `collect_tasks` 表（DB）的**种子/回退源**——首次运行自动种子化到 DB，之后 Web 看板「系统管理」直接在 DB 增删改；`daily_incremental_collect.py` 优先读 DB，空表才回退 yaml（详见 `docs/architecture/WEB_DASHBOARD.md §3.4`） | Web 实时看板立项：DB 单一权威源，网页改采集目标不再写 git 跟踪文件 |
 | 2026-08-27 | P6 `targets.yaml`：cron 时间带改 `0 17 * * *` UTC（详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3`）；配置内容不变，仅 docs/scripts 同步 README + 排除说明 | 配合 P6 silent 失败防御（verify_release_upload.py + cron 防延迟） |
 | 2026-08-25 | `monitoring/targets.yaml`：count `30 → 100` → `null`（终极 auto 模式）；同步配 workflow timeout `30→60min`（用户网页 commit `a73ca33`） | P6 production bug 收口：避免单次 max_count 限制漏采 |

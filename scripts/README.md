@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-09-01（HANDOVER 收口：`scripts/dev/` 激进归档 42 个一次性脚本到 `archive/` 子目录，按 9 类分组；dev/ 保留 11 个核心脚本；`README.md` 同步登记）
+> **最后更新**：2026-09-07（新增 `ops/check_daily_collect.py` 每日采集哨兵 + `dev/verify_dsh_web_smoke.ps1` DSH web profile 冒烟；dev/ 活跃脚本 13 个）
 
 ---
 
@@ -12,14 +12,15 @@
 scripts/
 ├── README.md                       ⬅ 你在这里
 ├── smoke_test.py                   ✅ 项目骨架冒烟测试（长期保留，CI 用）
-├── dev/                            🧪 开发期活跃脚本（12 个，hander 真正会用到的工具集）
+├── dev/                            🧪 开发期活跃脚本（13 个，hander 真正会用到的工具集）
 │   ├── 标注核心                       reanalyze_all / rematch_opinions / recompute_topics
 │   │                                   rebuild_golden_set / mine_fallback_candidates（按需跑）
 │   ├── 微话题下钻                     l35_cluster（P9 阶段2 骨架）
 │   ├── 弹幕分析                       analyze_danmaku（B 站弹幕词典匹配）
 │   ├── 原型数据导出                   export_prototype_data（被 product/ 下脚本引用）
-│   └── 端到端验证（2026-08-31 新增）   verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect
-│   └── Web 前端冒烟（2026-09-02 新增）  verify_web_spa_load_order.js（node，模拟浏览器求值顺序检查 Routes 注册）
+│   ├── 端到端验证（2026-08-31 新增）   verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect
+│   ├── Web 前端冒烟（2026-09-02 新增）  verify_web_spa_load_order.js（node，模拟浏览器求值顺序检查 Routes 注册）
+│   └── DSH web profile 冒烟（2026-09-07 新增） verify_dsh_web_smoke.ps1（临时 DSH_HOME + curl 主页 + 进程清理）
 ├── dev/archive/                    📦 已完成任务的一次性脚本（42 个，2026-09-01 归档）
 │   ├── debug/                           debug_dup_source_id / debug_pagination_loss / debug_recent_order
 │   ├── diag/                            diag_batch_vs_single / diag_prompt_a / diag_bili_412
@@ -66,7 +67,8 @@ scripts/
 | **smoke_test.py** | 每次新增模块后跑一次 | 项目骨架回归测试 |
 | **ops/refresh_likes.py** | 发布满 7 天的评论回采点赞/回复/开发者回复 | `python -m scripts.refresh_likes --platform steam --target <appid>` |
 | **ops/backfill_embeddings.py** | 评论语义向量回填 / 换模型全量重算 | `python scripts/ops/backfill_embeddings.py --limit 100`（增量）；`--force`（清空重算，单事务原子切换） |
-| **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调） | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地调试） |
+| **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调用 + 本地直采计划任务）；2026-09-05 起内置 B站队列 run-due（`run_bilibili_queue`，默认跑，`--skip-bilibili` 关闭，`--bili-limit 5` 防风控） | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地直采计划任务用）；测试：`tests/test_bilibili_queue.py` run_bilibili_queue 编排 2 例 |
+| **ops/check_daily_collect.py** | 每日采集哨兵（03:00 计划任务 `VOC-Local-Daily-Collect-Check`）：读 02:00 任务的 LastTaskResult/State，失败或未跑则补采；并发安全（02:00 仍在跑/残留进程则跳过）、幂等（upsert + analyzed 跳过）；注册见 `register_local_collect_task.ps1`（同脚本一并注册/卸载） | `python scripts/ops/check_daily_collect.py`（检查+按需补采）；`--dry-run`（只判定）；`--force`（手动应急补采）；日志 `logs/collect-check.log`；测试：`tests/test_check_daily_collect.py` 5 例 |
 | **ops/verify_release_upload.py** | P6 静默失败防御：daily collect 跑完后用 `gh release view` 检查 `voc.db` asset 实际状态（size > 1KB + state=uploaded），失败 exit 1 让 workflow 标红。详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3` | GH Actions workflow 自动调用；也可 `--tag voc-daily-YYYY-MM-DD` 手动验证；测试：`tests/test_verify_release_upload.py` 8 例 |
 | **ops/smart_sync_release.py** | 本地自动 sync GH Release → `data/voc.db`（幂等）：①今天 release 未上传 → 安静 exit 0（专为"10:00 早跑，workflow 还没好"场景设计）②本地比远端新 → noop exit 0 ③远端比本地新 → 下载 + 安全 rename 替换 → exit 0 ④文件锁（Streamlit 打开）→ exit 1 + 提示"关仪表盘" | `python scripts/ops/smart_sync_release.py`（默认 today UTC）或 `--date 2026-08-28` 指定日期。注册到 Windows Task Scheduler 见 `register_sync_tasks.ps1`（4 task 错开 10:00/13:00/18:00/22:00） |
 | **ops/register_sync_tasks.ps1** | 注册 Windows Task Scheduler 任务：4 个 daily VOC-Sync-Release-* 任务，分别 10:00 / 13:00 / 18:00 / 22:00，每天跑 `smart_sync_release.py` | **需以管理员身份运行 PowerShell**：`powershell -ExecutionPolicy Bypass -File scripts\ops\register_sync_tasks.ps1`。卸载：`... -Uninstall`。DSH agent 无 admin 权限，不能自动注册 |
@@ -104,6 +106,7 @@ scripts/
 | `verify_glm_5_3_flash.py` | `glm-5.3-flash` provider 接通验证（用真实 key 跑一条样本评论，确认 analyzer_version=llm:glm-5.3-flash@xxx + 标注结果合法；切默认标注器后跑一次回归用） |
 | `verify_today_collect.py` | 一键验证今日 workflow 跑通后本地数据（自动 sync release + 检查 posted_at 分布/analyzer_version=v2 时间窗/6 款游戏采集率/情感分布；切默认标注器后验证端到端用） |
 | `verify_web_spa_load_order.js` | Web 前端冒烟：用 node `vm` 按 index.html 顺序模拟求值 `product/web/src/*.js`，断言 5 个页面全部注册进 `Routes`（防 TDZ / 加载顺序回归；无需浏览器） |
+| **`verify_dsh_web_smoke.ps1`** | **DSH web profile 冒烟**：本机起 `dsh web --port 3081 --no-open`（DSH_HOME 临时指项目内 `.dsh-home-smoke/`，避免污染 `~/.dsh`；cwd 指 `$TEMP` 避免 DSH env loader 误读项目 `.env`），解析 stdout 拿 URL → curl 主页 → 断言 HTTP 200/401 + title 含 `Harness` → 杀进程 + 清理临时目录。**目的：方案 A「DSH iframe 嵌入 dashboard」阶段 0 验证用，跑通即代表 DSH web 壳能起，可进浏览器手动看 UI 是否能接受。**退出码 0=通过；非 0=失败（带日志路径）。`-KeepHome` 保留 `.dsh-home-smoke` 便于复现 | `powershell -ExecutionPolicy Bypass -File scripts/dev/verify_dsh_web_smoke.ps1`；失败调试看 `logs/verify_dsh_web_<timestamp>.log.stderr`（常见：DSH port 被占 / Node.js 版本不匹配 / token cookie 与 loopback host 不一致） |
 | `e2e_lifecycle.py` | 首次采集 + 回采全链路 E2E（独立测试 DB，不污染主库） |
 
 ### dev/ · 数据巡检与修复
@@ -196,10 +199,14 @@ scripts/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-07 | 新建 `ops/check_daily_collect.py`（每日采集哨兵）+ 注册脚本新增哨兵任务 `VOC-Local-Daily-Collect-Check`（03:00）：读 02:00 任务的 LastTaskResult/State，失败或未跑则补采；并发安全 + 幂等；测试 +5 例（判定逻辑四分支 + 孤儿进程） | 9/5~9/7 连续三晚 02:00 因本机到 Steam 网络不通全灭，StartWhenAvailable 只补「错过」不补「失败」，工程师要求增加 03:00 检查补采 |
+| 2026-09-06 | `ops/daily_incremental_collect.py` Steam 采集成功后回写 `collect_tasks.last_collected_at`（`task_row_id` 此前透传但从未被消费） | Web 看板 admin 列表新增「采集时间」列依赖该字段 |
+| 2026-09-05 | `ops/daily_incremental_collect.py` 内置 B站队列 run-due（`run_bilibili_queue` 复用 `src/queue/runner.py`，默认跑 / `--skip-bilibili` 关闭 / `--bili-limit 5` 防风控 + 预留计划任务时长余量）；计划任务命令不变无需重注册；测试 +2 例（编排透传 / 结构性异常不阻塞） | 修复调度缺口：daily 此前只采 Steam，B站队列 due 过期任务无本地调度器负责（当日晚间 uvicorn backfill ImportError 排查时发现） |
 | 2026-08-19 | 新建 `ops/daily_incremental_collect.py`：GitHub Actions 每日调用的增量采集编排入口；同步登记 ops 章节 | P6 自动化流水线落地 |
 | 2026-08-27 | 新建 `ops/verify_release_upload.py` + 8 例 pytest：P6 release upload 静默失败防御；同步新增 workflow 步骤「校验今日 Release asset」；同周新建 `ops/reset_qwen_flash_bogus.py`：P11 清理 8/24-25 QWEN-flash 404 假数据（dry-run 默认；--commit 真正清）；归档 `_dual_annotate_*.{md,json}` 至 `docs/architecture/DUAL_ANNOTATION_QWEN_FLASH_2026-08-25_ARCHIVE.md` | 解锁 P6「silent 失败不告警」问题（assets=[] 但 workflow 仍 success）；让日常 cron / 工程师 manual dispatch 都能拿到明确 ❌ 告警；P11 收尾；产物文件原本违规命名（scripts/ops/ 不应放 `_` 开头报告）已纠正 |
 | 2026-08-28 | 新建 `ops/smart_sync_release.py`（智能 sync：幂等 + 文件锁处理 + 4 task 错开调度）+ `ops/register_sync_tasks.ps1`（Windows Task Scheduler 注册） | 解锁 P6 「GH Release → 本地」自动 sync（之前需手动跑 sync_local_from_release.py）；4 task 错开应对 8h 延迟；幂等设计支持任意次重跑 |
 | 2026-08-31 | 新建 `ops/push_via_api.py`（sandbox 屏蔽 git push 时走 GH REST API 兜底）+ `docs/guides/PUSH_TROUBLESHOOTING.md`（7 章节决策树 + 5 已知坑 + 验证清单，每次 push 前必读） | 解锁 sandbox 推 main 通道；沉淀本次 push 踩的 4 个新坑（REMOTE_HEAD 硬编码 / root 排序 / basename 冲突 / refs 二级限流）+ 历史 1 个（dotfile 404），避免重复踩；与 8-28 §沙箱 push 护栏配套（决策树明示「sandbox refs 限流时立即提示手动 git 推」） |
 | 2026-09-01 | **HANDOVER 收口 · dev/ 激进归档 42 个一次性脚本到 `archive/`**：按 9 个子目录分类（debug/ diag/ e2e/ one_shot_backfill/ one_shot_curate/ one_shot_export/ one_shot_prototype/ one_shot_verify/ P6_bootstrap/）；dev/ 保留 11 个核心脚本（reanalyze_all / rematch_opinions / recompute_topics / rebuild_golden_set / mine_fallback_candidates / l35_cluster / analyze_danmaku / export_prototype_data / verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect）；ops/ 补 `push_via_api.py` + `register_sync_tasks.ps1`；README 头部时间戳与目录树同步 | 项目交接准备：让新接手者一眼看到「真正活跃的工具集」；冗余一次性脚本不污染日常 dev/ 视角 |
 | 2026-09-02 | 新建 `ops/hash_admin_password.py`（生成 Web 看板 ADMIN_PASSWORD_HASH）+ dev/ 新增 `verify_web_spa_load_order.js`（SPA 加载顺序冒烟） | Web 实时看板（WEB_DASHBOARD.md）落地配套：管理员密码哈希工具 + 前端无浏览器回归防线 |
+| 2026-09-07 | 新建 `dev/verify_dsh_web_smoke.ps1`（DSH web profile 冒烟：临时 DSH_HOME + 临时 cwd + curl 主页 + title 断言 + 进程清理；目的：方案 A「DSH iframe 嵌入 dashboard」阶段 0 验证） | 原声分析 Agent 集成（方案 A vs B vs C）选型落地第一步：先验证 DSH web 壳能在本机起来，**看完 UI 后再决定走 iframe 嵌入 vs 自写 UI** |
 - 不要把 prompt 模板或业务配置写死在脚本里，统一从 `config/` 加载

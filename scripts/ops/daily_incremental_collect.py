@@ -9,6 +9,8 @@
 3. 对每个 enabled=true 的目标调用 run_pipeline（增量）
 4. 汇总今日新增 / 累计 / 失败清单
 5. （可选）把 DB 上传到 GitHub Release 作为长期累积载体
+6. B站采集队列 run-due（2026-09-05 接入；--skip-bilibili 关闭）——
+   此前 daily 只采 Steam，B站到期任务无本地调度器负责
 
 设计要点：
 - 单 target 失败不阻塞其他（try/except 包裹）
@@ -46,7 +48,7 @@ sys.path.insert(0, str(ROOT))
 import yaml  # noqa: E402
 
 from src.pipeline import run_pipeline  # noqa: E402
-from src.storage.db import init_db, _utcnow  # noqa: E402
+from src.storage.db import CollectTask, init_db, _utcnow  # noqa: E402
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -367,6 +369,17 @@ def run_one_target(
             posted_before=posted_before,
             skip_analysis=False,
         )
+        # 回写采集时间（2026-09-06：admin「采集时间」列依赖；此前 task_row_id 透传但从未被消费）
+        if target.get("task_row_id"):
+            try:
+                _, SessionLocal = init_db()
+                with SessionLocal() as s:
+                    row = s.get(CollectTask, target["task_row_id"])
+                    if row:
+                        row.last_collected_at = _utcnow()
+                        s.commit()
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"  回写 last_collected_at 失败（不阻塞）: {e}")
         return {
             "target": label,
             "ok": True,
@@ -385,6 +398,50 @@ def run_one_target(
             "embedded": 0,
             "error": str(e),
         }
+
+
+def run_bilibili_queue(*, limit: int = 5) -> dict:
+    """跑 B站采集队列 run-due（status=scheduled 且 due_date <= 今天的任务）
+
+    2026-09-05 接入每日计划任务：此前 daily 只采 Steam，B站队列到期任务没有任何
+    本地调度器负责（admin「立即采集」之外只能手动 run-due）。单视频失败不阻塞
+    （runner 内部 fail_count 重试，>=3 次入 dead-letter），结构性异常不中断主流程。
+
+    Args:
+        limit: 单次最多处理多少个视频（防风控；5 个最坏 ~15 分钟，
+            为计划任务 150 分钟上限内的 Steam 采集预留余量）
+
+    Returns:
+        对齐 run_one_target 的结果 dict（可混入 results 一起进摘要）
+    """
+    from src.queue.runner import run_due_collection
+
+    log.info("── B站采集队列 run-due（limit=%d）──", limit)
+    try:
+        report = run_due_collection(limit=limit)
+    except Exception as e:  # noqa: BLE001
+        log.exception("B站 run-due 结构性失败（不阻塞 Steam 结果）")
+        return {
+            "target": "bilibili:run-due",
+            "ok": False,
+            "fetched": 0,
+            "analyzed": 0,
+            "embedded": 0,
+            "error": f"{type(e).__name__}: {e}",
+        }
+    log.info(
+        "B站 run-due 完成：due=%d fetched=%d failed=%d errors=%s",
+        report["due_found"], report["fetched"], report["failed"],
+        report["errors"] or "无",
+    )
+    return {
+        "target": f"bilibili:run-due (due={report['due_found']})",
+        "ok": True,  # 单视频失败由 runner 重试/dead-letter 自治，不计为脚本失败
+        "fetched": report["fetched"],
+        "analyzed": 0,  # runner report 未含 analyzed 合计，不虚构；明细看 runner 日志
+        "embedded": 0,
+        "error": "; ".join(report["errors"]) or None,
+    }
 
 
 def emit_step_summary(results: list[dict]) -> None:
@@ -439,6 +496,11 @@ def main():
     parser.add_argument("--lookback-days", type=int, default=2,
                         help="回看天数（北京日历日）。2=昨天+前天；本地直采计划任务传 7 "
                              "（多日重叠采样对冲 Steam recent 流非确定性，2026-09-03）")
+    parser.add_argument("--skip-bilibili", action="store_true",
+                        help="跳过 B站采集队列 run-due（默认跑；GH Actions 环境如重启用此参数关闭）")
+    parser.add_argument("--bili-limit", type=int, default=5,
+                        help="B站 run-due 单次最多处理几个视频（防风控；默认 5，"
+                             "单视频 1-3 分钟，为 150 分钟计划任务上限预留余量）")
     args = parser.parse_args()
 
     db_path = Path(args.db_path)
@@ -460,15 +522,20 @@ def main():
     #    仍空则回退 yaml —— 2026-09-01 Web 看板 collect_tasks 迁移，见 WEB_DASHBOARD.md §3.4）
     targets = load_targets_any(targets_cfg, db_path)
     if not targets:
-        log.warning("无 enabled 目标（DB 与 targets.yaml 均为空），退出")
-        return
+        # 2026-09-06 对抗审查：不再提前退出——B站 run-due 独立于 Steam 目标，
+        # 空目标时也要跑（否则 B站到期任务在「无 Steam 目标」的日子里无人认领）
+        log.warning("无 enabled 目标（DB 与 targets.yaml 均为空），仅执行 B站 run-due")
 
     results = []
     # 整批共享同一 now_utc，保证所有 target 的窗口基准一致
     now_utc = _utcnow()
-    for t in targets:
+    for t in targets or []:
         results.append(run_one_target(t, now_utc=now_utc, full_replay=args.full_replay,
                                       lookback_days=args.lookback_days))
+
+    # 3.5 B站采集队列 run-due（2026-09-05 接入；--skip-bilibili 可关闭）
+    if not args.skip_bilibili:
+        results.append(run_bilibili_queue(limit=args.bili_limit))
 
     # 4. 写步骤摘要
     emit_step_summary(results)

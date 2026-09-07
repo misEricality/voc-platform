@@ -20,6 +20,8 @@ Routes.compare = async function (app) {
   // 卡片序 = 发行日期倒序（缺发行日排最后，按名称稳定排序）；meta 到位前用默认序
   let games = targets.slice().sort((a, b) => a.name.localeCompare(b.name));
   const selected = new Set(games.slice(0, 3).map(g => g.target_id));  // 默认勾选前 3
+  let userTouched = false;  // 用户手动改过选择后，meta 到位不再覆盖默认选中
+  const MAX_SELECTED = 6;   // 最多同时选 6 款参与对比
   const state = { mode: '同期', polar: 'negative' };  // 同期 | 累计；negative | positive
   let reqSeq = 0;
   let metaTimer = null;
@@ -59,8 +61,16 @@ Routes.compare = async function (app) {
     </div>
 
     <div id="gcSentinel" style="height:1px"></div>
-    <div class="game-cards" id="gameCards"></div>
-    <div class="game-sticky" id="gameSticky"></div>
+    <div class="gc-row">
+      <button class="gs-arrow" id="gcPrev" aria-label="向左滑动">‹</button>
+      <div class="game-cards" id="gameCards"></div>
+      <button class="gs-arrow" id="gcNext" aria-label="向右滑动">›</button>
+    </div>
+    <div class="game-sticky" id="gameSticky">
+      <button class="gs-arrow" id="gsPrev" aria-label="向左滑动">‹</button>
+      <div class="gs-scroll" id="gsScroll"></div>
+      <button class="gs-arrow" id="gsNext" aria-label="向右滑动">›</button>
+    </div>
 
     <div class="grid half section-gap">
       <div class="card"><h3>情感对比</h3><div class="chart" id="chSentiCmp"></div></div>
@@ -113,32 +123,76 @@ Routes.compare = async function (app) {
       </div>`;
     }).join('');
     renderSticky();
+    updateCardVis();
   }
 
-  /* ---- 吸顶筛选条：只要封面被遮挡即浮现（只显示名称，最多 10 个，超出以 … 表示） ---- */
-  const STICKY_MAX = 10;
+  /* ---- 吸顶筛选条：单行横向滚动（全量游戏，两端箭头滑动），铺满浏览器全宽 ----
+     吸顶位跟随 topbar 可见性：topbar 不在视口顶部（被隐藏/滚出）时贴 top:0，消除悬空 */
   function renderSticky() {
-    const sticky = $('gameSticky');
-    if (!sticky) return;
-    sticky.innerHTML = games.slice(0, STICKY_MAX).map(g =>
+    const scroll = $('gsScroll');
+    if (!scroll) return;
+    scroll.innerHTML = games.map(g =>
       `<span class="gs-chip ${selected.has(g.target_id) ? 'selected' : ''}" data-tid="${esc(g.target_id)}" title="${esc(g.name)}">${esc(g.name)}</span>`
-    ).join('') + (games.length > STICKY_MAX ? '<span class="gs-more">…</span>' : '');
+    ).join('');
+    updateArrows();
+  }
+  function updateArrows() {
+    const scroll = $('gsScroll');
+    if (!scroll) return;
+    $('gsPrev').disabled = scroll.scrollLeft <= 2;
+    $('gsNext').disabled = scroll.scrollLeft >= scroll.scrollWidth - scroll.clientWidth - 2;
   }
   $('gameSticky').addEventListener('click', e => {
     const chip = e.target.closest('.gs-chip');
     if (!chip) return;
     const tid = chip.dataset.tid;
     if (selected.has(tid) && selected.size <= 2) { toast('至少保留 2 款游戏参与对比', true); return; }
+    if (!selected.has(tid) && selected.size >= MAX_SELECTED) { toast(`最多同时选择 ${MAX_SELECTED} 款游戏参与对比`, true); return; }
+    userTouched = true;
     selected.has(tid) ? selected.delete(tid) : selected.add(tid);
     chip.classList.toggle('selected', selected.has(tid));
     document.querySelectorAll('#gameCards .game-card').forEach(c =>
       c.classList.toggle('selected', selected.has(c.dataset.tid)));
     refreshData();
   });
+  $('gsPrev').addEventListener('click', () => $('gsScroll').scrollBy({ left: -420, behavior: 'smooth' }));
+  $('gsNext').addEventListener('click', () => $('gsScroll').scrollBy({ left: 420, behavior: 'smooth' }));
+  $('gsScroll').addEventListener('scroll', updateArrows, { passive: true });
   new IntersectionObserver(([e]) => {
     const sticky = $('gameSticky');
     if (sticky) sticky.classList.toggle('show', !e.isIntersecting);
   }, { rootMargin: '-60px 0px 0px 0px' }).observe($('gcSentinel'));
+
+  /* ---- 封面卡横滑行：单行 6 个可视位，滑出可视区的卡片变暗（选中状态保留），箭头滑动 ---- */
+  function updateCardVis() {
+    const wrap = $('gameCards');
+    if (!wrap) return;
+    const r0 = wrap.getBoundingClientRect();
+    wrap.querySelectorAll('.game-card').forEach(c => {
+      const r = c.getBoundingClientRect();
+      c.classList.toggle('offscreen', r.right < r0.left + 2 || r.left > r0.right - 2);
+    });
+    $('gcPrev').disabled = wrap.scrollLeft <= 2;
+    $('gcNext').disabled = wrap.scrollLeft >= wrap.scrollWidth - wrap.clientWidth - 2;
+  }
+  const gcStep = () => {
+    const c = $('gameCards').querySelector('.game-card');
+    return c ? (c.getBoundingClientRect().width + 14) * 2 : 400;
+  };
+  $('gcPrev').addEventListener('click', () => $('gameCards').scrollBy({ left: -gcStep(), behavior: 'smooth' }));
+  $('gcNext').addEventListener('click', () => $('gameCards').scrollBy({ left: gcStep(), behavior: 'smooth' }));
+  $('gameCards').addEventListener('scroll', updateCardVis, { passive: true });
+
+  /* ---- gameSticky 吸顶位跟随 topbar：topbar 不在视口顶部（隐藏/滚出）时贴 top:0 ---- */
+  const topbarEl = document.querySelector('.topbar');
+  function syncStickyTop() {
+    const stickyEl = $('gameSticky');
+    if (!stickyEl || !topbarEl) return;
+    const bottom = topbarEl.getBoundingClientRect().bottom;
+    stickyEl.style.top = bottom > 1 ? '60px' : '0px';
+  }
+  window.addEventListener('scroll', syncStickyTop, { passive: true });
+  window.addEventListener('resize', () => { updateArrows(); updateCardVis(); });
 
   /* ---- 元数据加载（stale-while-revalidate + 轮询，不阻塞首屏） ---- */
   async function loadMeta(tries = 0) {
@@ -148,6 +202,12 @@ Routes.compare = async function (app) {
       metaMap = {};
       d.items.forEach(m => { metaMap[m.target_id] = m; });
       sortGames();
+      // 默认选中跟随发行日排序重算（新游戏如「明末」排到第一 → 默认选中新前 3）；
+      // 用户已手动改过选择则不覆盖
+      if (!userTouched) {
+        selected.clear();
+        games.slice(0, 3).forEach(g => selected.add(g.target_id));
+      }
       renderCards();
       if (d.refreshing && d.refreshing.length && tries < 20) {
         metaTimer = setTimeout(() => loadMeta(tries + 1), 3000);
@@ -158,12 +218,14 @@ Routes.compare = async function (app) {
     if ($('gameCards')) refreshData();
   }
 
-  /* ---- 卡片多选（至少保留 2，互不影响其他卡片） ---- */
+  /* ---- 卡片多选（至少保留 2 / 最多选 6，互不影响其他卡片） ---- */
   $('gameCards').addEventListener('click', e => {
     const card = e.target.closest('.game-card');
     if (!card) return;
     const tid = card.dataset.tid;
     if (selected.has(tid) && selected.size <= 2) { toast('至少保留 2 款游戏参与对比', true); return; }
+    if (!selected.has(tid) && selected.size >= MAX_SELECTED) { toast(`最多同时选择 ${MAX_SELECTED} 款游戏参与对比`, true); return; }
+    userTouched = true;
     selected.has(tid) ? selected.delete(tid) : selected.add(tid);
     card.classList.toggle('selected', selected.has(tid));
     renderSticky();
@@ -394,6 +456,7 @@ Routes.compare = async function (app) {
   paintSeg($('segMode'), 'mode', state.mode);
   paintSeg($('segPolar'), 'polar', state.polar);
   renderCards();
+  syncStickyTop();     // 初始吸顶位对齐 topbar 当前可见性
   loadMeta();          // 异步：不阻塞首屏；到位后重排卡片并刷新数据
   await refreshData();
 };

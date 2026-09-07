@@ -1,6 +1,11 @@
 /* 系统管理：采集任务 CRUD（WEB_DASHBOARD.md §4.3 字段约束）
    Steam：新增 = URL/AppID（回填名称）；编辑可改 name/language/count；暂停 = enabled
-   BiliBili：新增 = BV号/URL（自动识别 pubdate）；pause/resume/reidentify；fetched 禁删 */
+   BiliBili：新增 = BV号/URL（自动识别 pubdate）；pause/resume/reidentify；fetched 禁删
+   排序（2026-09-06）：Steam 按发行时间倒序、B站按投稿日期倒序（无视添加任务时间） */
+
+/* 语言值 → 显示文本（列表 + 弹窗统一「简中/繁中/英文」） */
+const LANG_CN = { schinese: '简中', tchinese: '繁中', english: '英文' };
+
 Routes.admin = async function (app) {
   const status = await API.get('/api/auth/status');
   if (!status.logged_in) { renderLogin(app); return; }
@@ -29,6 +34,30 @@ function wireLookup(modal, platform, inputSel, infoSel, nameSel) {
     } catch (e) { info.textContent = e.message; }
     btn.disabled = false; btn.textContent = '查找';
   });
+}
+
+/* ---------- 回采结果轮询（2026-09-06 对抗审查：backfill 失败此前只在服务内存里，UI 无感知） ----------
+   创建任务勾选「立即采集」后调用：每 5s 查一次 /api/admin/backfill-status，
+   直到该 job done/failed 或超时（10 分钟）。结束弹 toast，失败红色。 */
+function watchBackfill(platform, targetId) {
+  const key = `${platform}:${targetId}`;
+  let tries = 0;
+  const timer = setInterval(async () => {
+    tries += 1;
+    if (tries > 120) { clearInterval(timer); return; }  // 10 分钟放弃（长采集另行查看）
+    try {
+      const jobs = await API.get('/api/admin/backfill-status');
+      const job = (jobs || []).find(j => `${j.platform}:${j.target_id}` === key);
+      if (!job) return;  // job 记录尚未出现（极端竞态），继续等
+      if (job.status === 'done') {
+        clearInterval(timer);
+        toast(`首次采集完成：入库 ${job.fetched ?? 0} 条 / 标注 ${job.analyzed ?? 0} 条`);
+      } else if (job.status === 'failed') {
+        clearInterval(timer);
+        toast(`首次采集失败：${job.error || '未知错误'}（每日任务会自动补采）`, true);
+      }
+    } catch (e) { /* 轮询失败静默，下轮再试 */ }
+  }, 5000);
 }
 
 /* ---------- 登录 ---------- */
@@ -103,20 +132,23 @@ async function renderAdmin(app) {
 
   /* ----- Steam ----- */
   function renderSteam(rows) {
+    // 发行时间倒序（缺发行日排最后），无视添加任务时间
+    rows = rows.slice().sort((a, b) =>
+      (b.release_date || '').localeCompare(a.release_date || '') || a.id - b.id);
     tbl.innerHTML = `
-      <thead><tr><th>游戏名称</th><th>AppID</th><th>URL</th><th>语言</th><th>采集上限</th><th>状态</th><th>操作</th></tr></thead>
+      <thead><tr><th>游戏名称</th><th>AppID</th><th>URL</th><th>语言</th><th>发行时间</th><th>状态</th><th>操作</th></tr></thead>
       <tbody>${rows.length ? rows.map(t => `<tr data-id="${t.id}">
         <td style="font-weight:600">${esc(t.name || '(未命名)')}</td>
         <td>${esc(t.target_id)}</td>
         <td><a href="${esc(t.url)}" target="_blank" rel="noopener">打开</a></td>
-        <td>${esc(t.language || '-')}</td>
-        <td>${t.count ?? 'auto'}</td>
+        <td>${esc(LANG_CN[t.language] || t.language || '-')}</td>
+        <td>${t.release_date ? fmtDate(t.release_date) : '-'}</td>
         <td><span class="badge ${STATUS_BADGE[t.status_display] || 'dim'}">${t.status_display}</span></td>
         <td style="white-space:nowrap">
           <button class="btn sm" data-act="edit">编辑</button>
           <button class="btn sm" data-act="pause">${t.enabled ? '暂停' : '恢复'}</button>
           <button class="btn sm danger" data-act="del">删除</button>
-        </td></tr>`).join('') : '<tr><td colspan="7" class="empty">暂无 Steam 任务</td></tr>'}</tbody>`;
+        </td></tr>`).join('') : '<tr><td colspan="8" class="empty">暂无 Steam 任务</td></tr>'}</tbody>`;
 
     tbl.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async e => {
       const id = +e.target.closest('tr').dataset.id;
@@ -146,7 +178,7 @@ async function renderAdmin(app) {
         <div class="hint" id="fLookupInfo">支持商店链接或纯数字 AppID；「查找」返回游戏名与发行日期并自动填入名称</div></div>
       <div class="field"><label>名称（可选，留空自动获取）</label><input type="text" id="fName"></div>
       <div class="field"><label>语言</label>
-        <select id="fLang"><option value="schinese">简体中文</option><option value="tchinese">繁体中文</option><option value="english">英语</option></select></div>
+        <select id="fLang"><option value="schinese">简中</option><option value="tchinese">繁中</option><option value="english">英文</option></select></div>
       <div class="field"><label>单次采集上限</label>
         <input type="text" id="fCount" placeholder="留空 = auto（按时间窗耗尽）">
         <div class="hint">一般留空；填数字 = 每次增量最多采 N 条</div></div>
@@ -165,6 +197,7 @@ async function renderAdmin(app) {
         });
         closeModal();
         toast(r.backfill_started ? '已创建，首次采集已在后台启动' : '已创建');
+        if (r.backfill_started && r.target_id) watchBackfill('steam', r.target_id);
         load();
       } catch (e) { toast(e.message, true); }
     });
@@ -175,15 +208,12 @@ async function renderAdmin(app) {
     const m = openModal(`
       <h2>编辑任务：${esc(t.name || t.target_id)}</h2>
       <div class="field"><label>游戏商店 URL / AppID（不可修改）</label>
-        <div style="display:flex;gap:8px">
-          <input type="text" readonly value="${esc(t.target_id)}">
-          <button class="btn sm" data-lookup style="flex:none">查找</button>
-        </div>
-        <div class="hint" id="fLookupInfo">appid 是数据主键，改 = 换游戏；如需更换请删除后重新添加</div></div>
+        <input type="text" readonly value="${esc(t.target_id)}">
+        <div class="hint">appid 是数据主键，改 = 换游戏；如需更换请删除后重新添加</div></div>
       <div class="field"><label>名称</label><input type="text" id="fName" value="${esc(t.name || '')}"></div>
       <div class="field"><label>语言</label>
         <select id="fLang">
-          ${['schinese', 'tchinese', 'english'].map(l => `<option value="${l}" ${t.language === l ? 'selected' : ''}>${l}</option>`).join('')}
+          ${['schinese', 'tchinese', 'english'].map(l => `<option value="${l}" ${t.language === l ? 'selected' : ''}>${LANG_CN[l]}</option>`).join('')}
         </select></div>
       <div class="field"><label>单次采集上限（留空 = auto）</label>
         <input type="text" id="fCount" value="${t.count ?? ''}"></div>
@@ -200,15 +230,20 @@ async function renderAdmin(app) {
         closeModal(); toast('已保存'); load();
       } catch (e) { toast(e.message, true); }
     });
-    wireLookup(m, 'steam', 'input[readonly]', '#fLookupInfo', '#fName');
   }
 
   /* ----- BiliBili ----- */
   function renderBili(rows) {
+    // 投稿日期倒序（缺投稿时间排最后），无视添加任务时间
+    rows = rows.slice().sort((a, b) => {
+      const pa = a.pubdate ? new Date(a.pubdate) : 0;
+      const pb = b.pubdate ? new Date(b.pubdate) : 0;
+      return pb - pa || a.id - b.id;
+    });
     tbl.innerHTML = `
-      <thead><tr><th>视频标题</th><th>BV号</th><th>URL</th><th>投稿时间</th><th>采集时间</th><th>评论/弹幕</th><th>状态</th><th>操作</th></tr></thead>
+      <thead><tr><th>视频标题</th><th>BVID</th><th>URL</th><th>投稿时间</th><th>采集时间</th><th>评论/弹幕</th><th>状态</th><th>操作</th></tr></thead>
       <tbody>${rows.length ? rows.map(t => `<tr data-id="${t.id}">
-        <td style="font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.title || '')}">${esc(t.title || '(未识别)')}</td>
+        <td style="font-weight:600;max-width:760px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.title || '')}">${esc(t.title || '(未识别)')}</td>
         <td>${esc(t.bv_id)}</td>
         <td><a href="${esc(t.url)}" target="_blank" rel="noopener">打开</a></td>
         <td>${fmtDate(t.pubdate)}</td>
@@ -266,6 +301,7 @@ async function renderAdmin(app) {
         });
         closeModal();
         toast(r.backfill_started ? '已创建，立即采集中' : '已创建，等待投稿满 7 天后自动采集');
+        if (r.backfill_started && r.bv_id) watchBackfill('bilibili', r.bv_id);
         load();
       } catch (e) { toast(e.message, true); }
     });

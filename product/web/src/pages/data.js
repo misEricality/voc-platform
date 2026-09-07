@@ -7,6 +7,24 @@ Routes.data = async function (app) {
     API.get('/api/targets?platform=steam&monitored=true'),
     API.get('/api/bilibili/videos'),
   ]);
+  // 下拉顺序与其他页对齐（2026-09-06）：Steam 按发行日期倒序（/api/games/meta，失败回落名称序，
+  // 同 dashboard/compare 序）；B站按投稿日期倒序（同 admin 列表序）
+  const orderedSteam = steam.slice();
+  try {
+    const d = await API.get(`/api/games/meta?targets=${encodeURIComponent(steam.map(t => t.target_id).join(','))}`);
+    const rd = {};
+    d.items.forEach(m => { rd[m.target_id] = m.release_date || ''; });
+    orderedSteam.sort((a, b) =>
+      (rd[b.target_id] || '').localeCompare(rd[a.target_id] || '') ||
+      a.name.localeCompare(b.name));
+  } catch (e) {
+    orderedSteam.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  const orderedBili = bili.slice().sort((a, b) => {
+    const pa = a.pubdate ? new Date(a.pubdate) : 0;
+    const pb = b.pubdate ? new Date(b.pubdate) : 0;
+    return pb - pa;
+  });
   app.innerHTML = `
     <div class="page-head">
       <h1>系统管理 - 数据管理</h1>
@@ -15,9 +33,9 @@ Routes.data = async function (app) {
     <div class="toolbar">
       <select id="selTarget">
         <option value="">全部目标汇总</option>
-        ${steam.length ? `<optgroup label="Steam">${steam.map(t =>
+        ${orderedSteam.length ? `<optgroup label="Steam">${orderedSteam.map(t =>
           `<option value="${esc(t.target_id)}">${esc(t.name)}</option>`).join('')}</optgroup>` : ''}
-        ${bili.length ? `<optgroup label="B站">${bili.map(v =>
+        ${orderedBili.length ? `<optgroup label="B站">${orderedBili.map(v =>
           `<option value="${esc(v.target_id)}">${esc(v.title || v.bv_id)}</option>`).join('')}</optgroup>` : ''}
       </select>
       <select id="selDays">

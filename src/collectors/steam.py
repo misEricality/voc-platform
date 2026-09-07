@@ -369,23 +369,35 @@ class SteamCollector(BaseCollector):
             extra=extra,
         )
 
-    def fetch_app_info(self, appid: str) -> dict | None:
+    def fetch_app_info(self, appid: str, *, retries: int = 2, backoff: float = 1.5) -> dict | None:
         """获取游戏元数据（名称、类型、开发商等）
 
-        用于在仪表盘中展示游戏标题
+        用于在仪表盘中展示游戏标题 / admin「查找」回显名称。
+
+        2026-09-05 加重试：本机到 store.steampowered.com 的连接间歇性超时
+        （实测 4 次探测 2 超时），单次请求的调用方（admin 查找/创建回填、
+        pipeline 元数据）会随机失败。默认 1 次原始 + 2 次重试，1.5s 退避。
+
+        Returns:
+            appdetails 的 data 字段；全部重试失败返回 None
         """
-        try:
-            resp = self.session.get(
-                STEAM_APP_DETAILS_URL,
-                params={"appids": appid, "cc": "cn", "l": "schinese"},
-                timeout=15,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get(str(appid), {}).get("data") if data else None
-        except Exception as e:
-            print(f"[WARN] 获取 appid={appid} 元数据失败：{e}")
-            return None
+        last_err: Exception | None = None
+        for attempt in range(retries + 1):
+            try:
+                resp = self.session.get(
+                    STEAM_APP_DETAILS_URL,
+                    params={"appids": appid, "cc": "cn", "l": "schinese"},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get(str(appid), {}).get("data") if data else None
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if attempt < retries:
+                    time.sleep(backoff * (attempt + 1))
+        print(f"[WARN] 获取 appid={appid} 元数据失败（含 {retries} 次重试）：{last_err}")
+        return None
 
     def fetch_review_summary(self, appid: str) -> dict | None:
         """获取 Steam 全量评测摘要（2026-09-04 · 游戏对比看板）

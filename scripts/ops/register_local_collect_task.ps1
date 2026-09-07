@@ -20,15 +20,19 @@
 #   covers yesterday + the day before). Recovery:
 #   python scripts/ops/daily_incremental_collect.py --no-download --no-upload --full-replay
 #
-# Last updated: 2026-09-03 (ExecutionTimeLimit 90 -> 150 min: the 09-03 02:00 run took 113 min
-# (6 targets x auto pagination + GLM latency); the scheduler killed cmd.exe at 90 min
-# (LastTaskResult 267014) but the orphaned python finished - do not rely on that)
+# Last updated: 2026-09-07 (added sentinel task VOC-Local-Daily-Collect-Check at 03:00:
+#   checks whether the 02:00 run succeeded (LastTaskResult != 0 or missed) and re-runs
+#   daily_incremental_collect.py if needed. Covers "ran but failed" (3 nights in a row of
+#   dead Steam network at 02:00) which StartWhenAvailable cannot handle. The sentinel is
+#   concurrency-safe: skips when the 02:00 task is still Running or a collect process exists.
+#   Idempotent by design: upsert dedupe + analyzed_at skip = no duplicate LLM cost.)
 # NOTE: keep this file ASCII-only (Windows PowerShell 5.1 parses BOM-less files as ANSI;
 #       non-ASCII comments corrupt parsing - same reason register_sync_tasks.ps1 is English)
 
 param(
     [switch]$Uninstall,
-    [string]$At = "02:00"   # 02:00 BJT (machine local timezone)
+    [string]$At = "02:00",      # 02:00 BJT (machine local timezone)
+    [string]$CheckAt = "03:00"  # sentinel check time
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,12 +47,14 @@ if (-not (Test-Path $Python)) { Write-Error "python not found: $Python (check .v
 if (-not (Test-Path $Script)) { Write-Error "script not found: $Script"; exit 1 }
 
 if ($Uninstall) {
-    $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    if ($existing) {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "removed: $TaskName"
-    } else {
-        Write-Host "skip: $TaskName (not found)"
+    foreach ($name in @($TaskName, "$TaskName-Check")) {
+        $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+        if ($existing) {
+            Unregister-ScheduledTask -TaskName $name -Confirm:$false
+            Write-Host "removed: $name"
+        } else {
+            Write-Host "skip: $name (not found)"
+        }
     }
     exit 0
 }
@@ -80,8 +86,35 @@ Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
     -Force | Out-Null
 
 Write-Host "  -> $TaskName daily at $At (local collect, lookback 7d, no download/upload)"
+
+# ---- sentinel task: 03:00 re-run if the 02:00 collect failed or was missed ----
+$CheckTaskName = "$TaskName-Check"
+$CheckScript = Join-Path $ProjectRoot "scripts\ops\check_daily_collect.py"
+if (-not (Test-Path $CheckScript)) { Write-Error "sentinel script not found: $CheckScript"; exit 1 }
+$CheckLogFile = Join-Path $LogDir "collect-check.log"
+
+$checkTask = Get-ScheduledTask -TaskName $CheckTaskName -ErrorAction SilentlyContinue
+if ($checkTask) { Write-Host "updating: $CheckTaskName" } else { Write-Host "creating: $CheckTaskName" }
+
+$innerCheck = "`"$Python`" `"$CheckScript`" >> `"$CheckLogFile`" 2>&1"
+$cmdArgsCheck = "/c cd /d `"$ProjectRoot`" && $innerCheck"
+$actionCheck = New-ScheduledTaskAction -Execute "cmd.exe" -Argument $cmdArgsCheck -WorkingDirectory $ProjectRoot
+$triggerCheck = New-ScheduledTaskTrigger -Daily -At $CheckAt
+$settingsCheck = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 150)
+
+Register-ScheduledTask -TaskName $CheckTaskName -Action $actionCheck -Trigger $triggerCheck `
+    -Settings $settingsCheck -Principal $principal `
+    -Description "VoC daily collect sentinel (03:00 BJT): re-run collect if the 02:00 run failed or was missed; concurrency-safe, idempotent" `
+    -Force | Out-Null
+
+Write-Host "  -> $CheckTaskName daily at $CheckAt (sentinel: backfill if 02:00 failed/missed)"
 Write-Host ""
 Write-Host "Test run manually:"
 Write-Host "  & `"$Python`" `"$Script`" --no-download --no-upload"
+Write-Host "  & `"$Python`" `"$CheckScript`" --dry-run"
 Write-Host "Uninstall:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts/ops/register_local_collect_task.ps1 -Uninstall"

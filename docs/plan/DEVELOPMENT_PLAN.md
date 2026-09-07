@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../architecture/STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-09-01（neat-freak 收口：统一时间戳到 9/1；§五 主线反转 P6 silent 失败防御已上线 + CS2 已归档；§八 M11 v0.7 补 DESIGN_TOKENS v1.0 落地；README/AGENTS/DEVELOPMENT_PLAN 同步对齐）
+> **最后更新**：2026-09-07（洁癖收口：同步本地直采 + 03:00 补采哨兵 + Web 看板 UX 第二轮 + 测试 129 例；README/AGENTS/DEVELOPMENT_PLAN 已刷新）
 
 ---
 
@@ -120,25 +120,25 @@
 
 ---
 
-## 📊 三、当前数据快照（2026-08-27 sync 后）
+## 📊 三、当前数据快照（2026-09-07）
 
 | 指标 | 数值 | 业务解读 |
 |---|---|---|
-| 总评论数 | **14,478 条** | Steam 11,448（含归档 4 款：PUBG 2571 + Apex 1452 + Dota 433 + CS2 459）+ 单机 6 款 8,977 + B 站 3 视频 3,030 |
-| Steam 主库覆盖 | **6 款单机** | 黑神话（3,179）/ 巫师3（976）/ 文明6（595）/ 底特律（1,155）/ 33号远征队（378）/ 星际拓荒（249） |
-| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-08-23.db`** | PUBG 2571 / Apex 1452 / Dota 433 / CS2 459；8/23 从主库归档；本次 sync 后 release 资产仍含此 4 款（bootstrap+累计）；监控目标已 exclude |
-| B 站支持 | **3 个视频 / 3,030 评论 + 5,400 弹幕** | `bilibili:video:{aid}` 形态 target；从主库 ad-hoc 采集（非每日 cron），3 个视频均 1000 条级别 |
-| 情感分析覆盖 | **~83% 已分析（待精核）** | analyzer_version 溯源已上线；新数据全部 `llm:deepseek-v4-flash@...`；P11 待清 261 条 qwen-flash bogus |
-| 观点级标注 | ~11,500 条 | `comment_opinions` 表（程序匹配观点短语；归档后基线未重数，待精核） |
-| 语义向量 | ~6,400 条 | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
-| 已支持游戏/视频 | **6 单机 Steam + 4 归档网游 + 3 B 站视频** | 主库聚焦 6 单机 + 3 B 站；4 网游可单独查归档 |
-| 数据截至 | Steam 2026-08-27 / B站 2026-08-20 | Steam 最新评论 08-27（今天 cron 增量 873 条）；B站 08-20（手动 ad-hoc） |
-| 兜底占比 | topic 67.6% / opinion 67.4% | GDT v3.1.1 全量重打 + 重匹配 + 下沉（8/19 锁定）；同前 |
+| 总评论数 | **21,917 条** | Steam 单机 ~18.5K（含新加明末/鬼武者）+ 归档 4 款网游 ~4.9K + B 站 5 视频 ~3.5K |
+| Steam 主库覆盖 | **8 款单机** | 黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末：渊虚之羽 / 鬼武者 |
+| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-08-23.db`** | PUBG / Apex / Dota 2 / CS2；监控目标已 exclude |
+| B 站支持 | **5 个视频 / ~3.5K 评论 + 7.4K 弹幕** | `bilibili:video:{aid}` 形态 target；本地 `run-due` 每日调度 |
+| 情感分析覆盖 | **~80%+ 已分析** | analyzer_version 溯源已上线；新数据 `llm:glm-5.3-flash@...` |
+| 观点级标注 | ~28,579 条 | `comment_opinions` 表（程序匹配观点短语） |
+| 语义向量 | ~20,887 条 | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
+| 已支持游戏/视频 | **8 单机 Steam + 4 归档网游 + 5 B 站视频** | 主库聚焦 8 单机 + 5 B 站；4 网游可单独查归档 |
+| 数据截至 | 2026-09-07 | 本地直采 02:00 + 03:00 补采哨兵；7 天回看窗口幂等补齐 |
+| 兜底占比 | topic 67.6% / opinion 67.4% | GDT v3.1.1 锁定 |
 | 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111） |
-| 部署方式 | 本地 Streamlit + P6 GH Actions | 含「单目标看板 / 多目标对比 / 明细核查」三视图 + 「B 站单视频看板」原型（独立 HTML 作品集） |
-| 平台覆盖 | **Steam（单机 6 + 归档 4）+ B站（3 视频）+ Steam 网游（4，归档）** | 微博为下一主扩展 |
-| 数据存储 | SQLite 单文件（`data/voc.db`，**92.9 MB / 2026-08-27 sync 后**）| 增量 + 7 天回采；远端累计 DB 已生效，**P6 silent 失败防御上线**（`verify_release_upload.py` 2026-08-27）|
-| 远端 GitHub 状态 | 远端 `4f71ea1` / 本地 ahead by 1（`b77cdbf`） | 远端含 `voc-daily-bootstrap` + 后续 releases（含 2026-08-27 92.9 MB）；workflow cron 已改 `0 17 * * *` UTC（防延迟），workflow push 待用户 web commit |
+| 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）** | FastAPI + 原生 SPA 5 页；Streamlit 并存；VPS 部署选型已完成，待落地 |
+| 平台覆盖 | **Steam（单机 8 + 归档 4）+ B站（5 视频）** | 微博为下一主扩展 |
+| 数据存储 | SQLite 单文件（`data/voc.db`，**129 MB / 2026-09-07**）| WAL 模式；前端服务读 × cron 写并发；GH Actions `collect` job 已停用 |
+| 测试门禁 | **pytest 129 例** | 黄金集 + API + 队列 + 每日采集 + 哨兵 + monitored 白名单 |
 
 ---
 
@@ -337,20 +337,21 @@
 2. ✅ ~~`gh_release_upload` 副作用修复~~：2026-09-01 收口（verify_release_upload.py 步骤真正上线 daily-collect.yml）
 3. ✅ ~~CI 补 pytest + analyzer_version 溯源~~：已于 2026-08-21 落地（详见 P10）；A3 推送后 CI 已真正启用
 4. ✅ ~~**P8 时间序列趋势图**~~：已于 2026-09-02 在 Web 看板一并交付（`/api/trends` + 时间序列页）
-5. **🆕 Web 实时看板（WEB_DASHBOARD，2026-09-02 阶段 1-5 完成 + 对抗审查修复）**：`src/api/` FastAPI（7 公开端点 + 管理员鉴权 + 任务 CRUD）+ `product/web/` 原生 SPA（主看板/游戏对比/B站视频/时间序列/系统管理 5 页）+ `collect_tasks` 表（Steam 目标迁入 DB）+ SQLite WAL + `bilibili_queue` paused 状态；Streamlit 并存不动。阶段 5 收口已完成（VPS 文档 + 登记四件套 + AGENTS.md 版本记录）；对抗审查 P1×4 + P2×3 已修（resume 守卫 / lifespan 无导入副作用 / 异步外部调用 / fail-closed secret / API no-store / backfill 可观测 / 前端容错 / 登录限流）。✅ **前端融合已完成（2026-09-03~05）**：三看板按用户线框图重写（单游戏看板/游戏对比看板/B站视频看板）+ 系统管理子模块化（采集任务/数据管理），原「功能版 vs 原型」两份设计已合并为现役 `product/web/`。详见 [architecture/WEB_DASHBOARD.md](../architecture/WEB_DASHBOARD.md)
+5. **✅ Web 实时看板（WEB_DASHBOARD，2026-09-02 阶段 1-5 完成 + 2026-09-07 收尾）**：`src/api/` FastAPI（公开只读端点 + 管理员鉴权 + 任务 CRUD）+ `product/web/` 原生 SPA（主看板/游戏对比/B站视频/数据管理/系统管理 5 页）+ `collect_tasks` 表（Steam 目标迁入 DB）+ SQLite WAL + `bilibili_queue` paused 状态；Streamlit 并存不动。阶段 5 收口已完成（VPS 文档 + 登记四件套 + AGENTS.md 版本记录）；对抗审查 P1×4 + P2×3 已修（resume 守卫 / lifespan 无导入副作用 / 异步外部调用 / fail-closed secret / API no-store / backfill 可观测 / 前端容错 / 登录限流）。✅ **前端融合已完成（2026-09-03~05）**：三看板按用户线框图重写 + 系统管理子模块化。详见 [architecture/WEB_DASHBOARD.md](../architecture/WEB_DASHBOARD.md)
+6. **✅ 本地直采 + 补采哨兵（2026-09-07）**：`VOC-Local-Daily-Collect` 02:00 直写 voc.db，`VOC-Local-Daily-Collect-Check` 03:00 检查失败/未跑并补采；GH Actions `collect` job 已停用，`test` job 保留作 CI 护栏
 6. **P9 阶段 2 L3.5 微话题聚类**：`l35_cluster.py` 骨架已就绪；P6 解锁时序后，对新评论可周期性下钻
 7. ~~**CS2（appid 730）补采复查**~~：已于 2026-08-23 关闭（CS2 与其他 3 款网游归档到 `data/archive/online_games_2026-08-23.db`）
 8. **🆕 B 站自动化（阶段 0）**：2026-08-23 落地 — `bilibili_queue` 表 + CLI（`python -m src.queue ...`）+ workflow `bilibili-daily.yml`；工程师手输 BV 号入清单，系统识别投稿时间后自动计算第 7 天，每日 cron 触发采集；Web 看板「系统管理」已可网页增删改（2026-09-02）；详见 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)
 
-### 🚦 中期主线（Web 看板收口 + L3.5 + PEDM + P11 清理 + workflow push）
+### 🚦 中期主线（Web 看板已收口 + 公网部署 + L3.5 + PEDM + P11 清理）
 
 1. ✅ ~~**P8 时间序列趋势图**~~：2026-09-02 已随 Web 看板交付
-2. **Web 实时看板阶段 5 收口**：VPS 部署文档更新（鉴权/WAL/8000 端口）+ AGENTS.md 版本记录 + §6 健康检查 8 条
-3. **P11 qwen-flash bogus 清理**（`scripts/ops/reset_qwen_flash_bogus.py --commit`）：cron 跑稳后清；预期 261 行重打
-4. ✅ ~~**workflow cron change + verify step push**~~：已随 a17a5c2 推送（2026-09-01）；2026-09-02 起 workflow `collect` job 置 `if: false` 停用（数据链路切**本地直采**：Task Scheduler `VOC-Local-Daily-Collect` 北京 02:00 直写 voc.db，前端零延迟；`test` job 保留作 CI 门禁）——详见 [AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md) §0
-5. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
-6. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
-7. **公网部署（暂缓，选型已完成）**：[DEPLOYMENT_OPTIONS.md](../architecture/DEPLOYMENT_OPTIONS.md) 已评估 5 方案（VPS 全栈 / PaaS 容器 / 静态快照 / Workers+D1 / CDN+VPS），结论为「方案 ③ 静态快照做作品集门面 + 方案 ① VPS 全栈做真实系统」两步走；**等 P9 阶段 2/3 落地后再启动**，避免与主线抢时间
+2. ✅ **Web 实时看板阶段 5 收口**：VPS 部署文档更新（鉴权/WAL/8000 端口 + 03:00 补采哨兵）+ AGENTS.md 版本记录 + §6 健康检查 8 条（2026-09-07 洁癖收口）
+3. **P11 qwen-flash bogus 清理**（`scripts/ops/reset_qwen_flash_bogus.py --commit`）：本地采集跑稳后清；预期 261 行重打
+4. ✅ ~~**workflow cron change + verify step push**~~：已推送（2026-09-01）；2026-09-02 起 workflow `collect` job 置 `if: false` 停用（数据链路切**本地直采**：Task Scheduler `VOC-Local-Daily-Collect` 北京 02:00 直写 voc.db；`test` job 保留作 CI 门禁）——详见 [AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md) §0
+5. **🆕 公网部署（准备启动，选型已完成）**：[DEPLOYMENT_OPTIONS.md](../architecture/DEPLOYMENT_OPTIONS.md) 已评估 5 方案，结论为「方案 ③ 静态快照做作品集门面 + 方案 ① VPS 全栈做真实系统」两步走；洁癖收口后即可进入落地
+6. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
+7. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
 
 ### 🌅 长期作品化（v1.0）
 

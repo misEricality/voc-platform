@@ -8,7 +8,7 @@
 > - B 站队列状态机（paused 状态扩展对象）：[BILIBILI_AUTOMATION.md](./BILIBILI_AUTOMATION.md)
 > - 前端视觉规范（tokens.css 单一来源）：[DESIGN_TOKENS.md](./DESIGN_TOKENS.md)
 >
-> **最后更新**：2026-09-01 · **状态**：🟢 实施中（阶段 1/5）
+> **最后更新**：2026-09-07 · **状态**：🟢 阶段 1-5 已完成（前端三看板 UX 第二轮 + admin 排序/字段 + 数据链路修复已落地）
 
 ---
 
@@ -148,7 +148,7 @@ main():
 | GET | `/api/admin/tasks/lookup?platform=steam\|bilibili&url_or_id=` | **弹窗「查找」**：即时返回目标标题与日期（Steam：name+发行日期；B站：title+投稿），不落库 | appdetails / view 接口代理 |
 | POST | `/api/auth/login` | `{password}` → session cookie（密码哈希比对 `.env` `ADMIN_PASSWORD_HASH`） |
 | POST | `/api/auth/logout` | 清 session |
-| GET | `/api/admin/tasks?platform=steam\|bilibili` | 统一任务视图（steam → collect_tasks；bilibili → bilibili_queue） |
+| GET | `/api/admin/tasks?platform=steam\|bilibili` | 统一任务视图（steam → collect_tasks，行附 `release_date` 供前端按发行时间倒序；bilibili → bilibili_queue） |
 | POST | `/api/admin/tasks` | 新增任务（平台分派：见 §5 字段表）；可选 `backfill_days=7` 触发首次采集 |
 | PATCH | `/api/admin/tasks/{platform}/{id}` | 编辑 / 暂停(enabled=0) / 恢复 |
 | DELETE | `/api/admin/tasks/{platform}/{id}` | 删除（B 站 `fetched` 拒绝 → 409） |
@@ -227,6 +227,7 @@ product/web/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-06 | admin 列表第二轮：Steam/B站分别按发行时间/投稿日期倒序（`/api/admin/tasks` Steam 行补 `release_date`，取自 game_meta，注意 collect_tasks 存裸 AppID 需加 `steam:` 前缀查 game_meta）；Steam 列表去「采集上限」列、新增「发行时间/采集时间」（间隔天数口径同 B站，依赖 daily collect 回写 `last_collected_at`）；编辑弹窗去「查找」；语言显示 简中/繁中/英文；B站「BV号」→「BVID」、标题列宽翻倍；compare 封面/吸顶条改单行横滑 + 箭头 + 滑出变暗，多选上限 6 款，默认选中随发行日排序重算；data 页下拉排序对齐；弹幕计数归零修复（报告改库内累计量） | 用户逐项前端优化反馈 + 弹幕显 0 根因修复 |
 | 2026-09-05 | 前端 UX 大版本：①全局轻量滚动条 + seg 切换按钮实心化 + 原声/观点主卡片描边化；②导航改「Steam游戏看板」下拉（游戏对比/单游戏），标题统一 `Steam游戏看板 - *`，品牌名只留 Lynx；③compare：游戏名吸顶筛选条（≤10 个超出 …）、Top 主题去副题/条距减半/跨图 L2 悬停联动高亮、指标表 fixed 布局+评级居中+游戏名跳 dashboard 带参、同期窗口不可用红色 toast 5s 自动弹回累计、口径说明移「同期/累计」按钮 title；④dashboard：游戏下拉按 compare 同序（拉 /api/games/meta）、自选时间面板右对齐修复、推荐率图例绿色、列表卡补标题+筛选器移右上、原声文本 16px（仅本页）；⑤bilibili：指标卡标题置顶、封面间距 ×2、L1 标题备注行距+跨图 L1 悬停联动高亮、高光时刻融合整卡；⑥data：只留总量折线、每日明细（+已分析/兜底占比、-负面占比）、fixed 表头；⑦admin：Steam「游戏名称」+fixed 布局末列贴右、B站 fetched 行操作按钮置灰（暂停文案）；⑧后端 `/api/trends` 每日新增 `analyzed` + `fallback_pct`，测试 97 → 110 例全绿 | 工程师 24 项前端优化 + 同期回退告警反馈落地 |
 | 2026-09-03 | 单游戏看板重构：API 补时间窗（start/end）+ 双颗粒度（grain）+ 全量零填充（full）+ 推荐率日趋势 + 新端点 `/api/topics/tree`；前端 dashboard.js 重写（线框图 `product/prototype-design/线框图-单游戏看板.png`）；测试 18 → 28 例 | 看板页按新线框图升级为单游戏分析视角 |
 | 2026-09-01 | 初版：8 项决策 + 架构图 + 数据模型 + API 设计 + 前端结构 + 阶段拆解 | Web 实时看板立项定稿 |

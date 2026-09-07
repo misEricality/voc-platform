@@ -35,7 +35,14 @@ class LocalEmbedder:
         # 延迟导入：未安装 sentence-transformers 时在构造处抛出，由 get_embedder 捕获
         from sentence_transformers import SentenceTransformer
 
-        self.model = SentenceTransformer(model_name)
+        # 2026-09-06 离线优先：SentenceTransformer 默认每次加载都做 HuggingFace
+        # 在线 revision 检查——模型已本地缓存时纯属多余，且网络抖动（本机代理/
+        # 凌晨断网）会让加载挂死数分钟（9/6 全量 pytest 两次卡死该处的根因）。
+        # 先 local_files_only 走缓存；本地确实没有（首次部署）再回退在线下载。
+        try:
+            self.model = SentenceTransformer(model_name, local_files_only=True)
+        except Exception:
+            self.model = SentenceTransformer(model_name)
         self.model_name = model_name
         # sentence-transformers 新版本重命名了维度接口，兼容两者
         dim_getter = getattr(self.model, "get_embedding_dimension", None) or self.model.get_sentence_embedding_dimension

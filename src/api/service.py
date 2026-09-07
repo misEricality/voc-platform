@@ -35,6 +35,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from src.storage.db import (
+    CollectTask,
     Comment,
     CommentOpinion,
     Danmaku,
@@ -148,20 +149,76 @@ def _monitored_target_ids() -> frozenset[str]:
     )
 
 
+@lru_cache(maxsize=1)
+def _release_date_overrides() -> dict[str, date]:
+    """targets.yaml `release_date_cn` → {"steam:2358720": date(2024,8,20), ...}
+
+    背景（2026-09-07 探测核实）：Steam appdetails / 商店页 HTML / IStoreBrowse 全部
+    只提供 Valve 美西口径的发行日期（黑神话=2024-08-19），与北京时间（08-20）差异
+    因游戏解锁时刻而不同（+0 或 +1 天），无法程序换算。北京时间发行日人工校准：
+    在 targets.yaml targets 条目上加 `release_date_cn: YYYY-MM-DD` 即生效。
+    """
+    if not MONITORING_YAML.exists():
+        return {}
+    try:
+        cfg = yaml.safe_load(MONITORING_YAML.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return {}
+    out: dict[str, date] = {}
+    for t in cfg.get("targets") or []:
+        raw = t.get("release_date_cn")
+        if not (t.get("id") and raw):
+            continue
+        try:
+            out[f"{t.get('platform', 'steam')}:{t['id']}"] = datetime.strptime(
+                str(raw).strip(), "%Y-%m-%d"
+            ).date()
+        except ValueError:
+            continue
+    return out
+
+
 def list_targets_payload(
     session: Session, platform: str | None = None, *, monitored: bool = False
 ) -> list[dict]:
     """目标列表 + 聚合指标（直接复用 CommentRepository.list_targets 的同源查询）
 
-    monitored=True：仅返回 targets.yaml targets 段内的目标（单游戏看板用，
-    确保归档网游即便有残留数据也不会出现在筛选器与图表里）。
+    monitored=True：可见范围 = targets.yaml targets 段 ∪ collect_tasks 表（admin 增删改
+    的权威源）。2026-09-06 对抗审查修复：此前白名单只看 yaml，admin 新增任务采到数据后
+    前端仍不可见（明末：渊虚之羽 事故）；并集后新任务**免改 yaml 即可见**，归档网游
+    （只存在于 excluded_targets / 归档 DB）依旧被挡在外面。
+    另：collect_tasks 里还没有任何评论的任务也补进列表（total=0），达成「添加即可见，
+    采到数据即可看」。
     """
     from src.storage.db import CommentRepository
 
     rows = CommentRepository(session).list_targets(platform=platform)
+    task_rows = list(
+        session.execute(select(CollectTask).order_by(CollectTask.id)).scalars()
+    )
     if monitored:
         allow = _monitored_target_ids()
+        allow = allow | {f"{t.platform}:{t.target_id}" for t in task_rows}
         rows = [t for t in rows if t["target_id"] in allow]
+
+        # 零数据任务补位（total=0）：admin 刚添加、backfill 未跑完时即可在下拉中看到
+        seen = {t["target_id"] for t in rows}
+        for t in task_rows:
+            tid = f"{t.platform}:{t.target_id}"
+            if tid in seen:
+                continue
+            if platform and t.platform != platform:
+                continue
+            rows.append({
+                "target_id": tid,
+                "name": t.name or tid,
+                "appid": t.target_id,
+                "total": 0,
+                "analyzed": 0,
+                "recommend_rate": None,
+                "avg_score": None,
+                "pos": 0, "neg": 0, "neu": 0,
+            })
     return rows
 
 
@@ -764,6 +821,10 @@ def _refresh_game_meta(session: Session, target_id: str) -> None:
         session.add(row)
     # 部分成功也留盘：新值非空才覆盖（保留旧值防抖动）
     row.release_date = _parse_release_date(info.get("release_date")) or row.release_date
+    # 北京时间口径校准（Steam 只给 Valve 美西口径日期，见 _release_date_overrides）
+    override = _release_date_overrides().get(target_id)
+    if override:
+        row.release_date = override
     row.review_score = summary.get("review_score") or row.review_score
     # 评级描述：优先按 review_score 映射中文（appreviews 描述恒为英文）
     row.rating_desc = (

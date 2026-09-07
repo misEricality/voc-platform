@@ -158,5 +158,47 @@ def test_seven_streak_pages_do_not_stop(no_sleep):
     assert len(raws) == 1 and raws[0].content == "混序散落后恢复的评论"
 
 
+def test_fetch_app_info_retries_then_recovers(no_sleep):
+    """元数据请求网络超时 → 重试后成功（2026-09-05：admin「查找」间歇失败回归）"""
+    import requests as _requests
+
+    class FlakySession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, params=None, timeout=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise _requests.exceptions.ConnectTimeout("connect timeout")
+            return FakeResponse({
+                "2277560": {"success": True,
+                            "data": {"name": "明末：渊虚之羽", "type": "game"}},
+            })
+
+    c = _collector()
+    c.session = FlakySession()
+    info = c.fetch_app_info("2277560")
+    assert info is not None and info["name"] == "明末：渊虚之羽"
+    assert c.session.calls == 2  # 1 次失败 + 1 次重试成功
+
+
+def test_fetch_app_info_all_retries_exhausted(no_sleep):
+    """全部重试耗尽 → 返回 None 而非向上抛（调用方按「未获取到」处理）"""
+    import requests as _requests
+
+    class DeadSession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, params=None, timeout=None):
+            self.calls += 1
+            raise _requests.exceptions.ConnectTimeout("connect timeout")
+
+    c = _collector()
+    c.session = DeadSession()
+    assert c.fetch_app_info("2277560") is None
+    assert c.session.calls == 3  # 原始 1 次 + 重试 2 次
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

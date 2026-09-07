@@ -24,7 +24,7 @@ load_dotenv()  # 自动加载 .env
 
 from src.collectors.steam import SteamCollector
 from src.collectors.bilibili import BilibiliCollector
-from src.storage.db import init_db, CommentRepository
+from src.storage.db import Danmaku, init_db, CommentRepository
 from src.analyzers import get_analyzer
 from src.analyzers.embedder import get_embedder, MODEL_NAME
 
@@ -293,11 +293,19 @@ def run_pipeline(
     danmaku_count = 0
     if platform == "bilibili" and target_meta.get("cid"):
         try:
+            from sqlalchemy import func as _func
+            from sqlalchemy import select as _select
+
             items = collector.fetch_danmaku(target_meta["cid"])
-            danmaku_count = repo.save_danmaku(
+            inserted_d = repo.save_danmaku(
                 db_full_target, str(target_meta["cid"]), items
             )
-            log.info(f"  [2.2] 弹幕入库 {danmaku_count} 条（分片后 {len(items)} 条）")
+            # 报告库内累计而非本次新增：重采时 upsert 全部去重 → 新增 0，
+            # runner/回填会把队列行 danmaku_count 覆盖成 0（BV1x54y1e7zf 事故，2026-09-06）
+            danmaku_count = repo.session.execute(
+                _select(_func.count(Danmaku.id)).where(Danmaku.video_id == db_full_target)
+            ).scalar() or 0
+            log.info(f"  [2.2] 弹幕新增 {inserted_d} 条（库内累计 {danmaku_count}，分片后 {len(items)} 条）")
         except Exception as e:
             log.warning(f"  [2.2] 弹幕采集失败（不阻塞主流程）: {e}")
 
@@ -373,7 +381,12 @@ def run_pipeline(
                     analyzer_version=analyzer_version,
                 )
                 analyzed_count += 1
-            repo.commit()
+                # 逐条提交（2026-09-06 修复）：原「循环后一次 commit」会把 SQLite 写锁
+                # 横跨整个 LLM 分析阶段（单条 30-60s × N 条 = 锁握数小时），其他写者
+                # （每日 cron / admin backfill / run-due）在 busy_timeout 内抢不到锁 →
+                # database is locked 连锁失败（9/6 凌晨 6 游戏 daily 全挂 + B站 run-due
+                # 两次卡死 fetching 的根因）。WAL 模式下逐条 commit 开销可忽略。
+                repo.commit()
             log.info(f"  完成 {analyzed_count} 条分析")
 
     session.close()

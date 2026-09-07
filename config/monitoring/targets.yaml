@@ -8,9 +8,13 @@
 # - enabled=false：跳过该目标（无需删除配置，便于临时停采）
 # - count：单次采集上限（None = 由采集器自动模式，按时间窗耗尽）
 # - language：仅 Steam 生效；Bilibili 由采集器内部决定
+# - release_date_cn（可选）：北京时间发行日人工校准（YYYY-MM-DD）。
+#   背景：Steam appdetails / 商店页只提供 Valve 美西口径日期（黑神话=2024-08-19），
+#   与北京时间差异因解锁时刻而异（+0/+1 天），无法程序换算。未填该字段的游戏
+#   继续显示 Steam 口径。2026-09-07 仅黑神话/巫师3/文明6 可确证，其余待人工确认。
 # - 新增目标只需在本文件追加，无需改 Python/workflow
 #
-# 最后更新：2026-08-23（4 款 Steam 网游数据归档 + 显式排除）
+# 最后更新：2026-09-07（release_date_cn 北京时间校准字段）
 
 version: 1
 
@@ -49,18 +53,21 @@ targets:
     id: "2358720"
     name: 黑神话：悟空
     language: schinese
+    release_date_cn: 2024-08-20
     count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
   - platform: steam
     id: "292030"
     name: 巫师 3：狂猎
     language: schinese
+    release_date_cn: 2015-05-19
     count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
   - platform: steam
     id: "289070"
     name: 文明 6
     language: schinese
+    release_date_cn: 2016-10-21
     count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
     enabled: true
   - platform: steam
@@ -80,4 +87,10 @@ targets:
     name: 星际拓荒
     language: schinese
     count: null  # auto模式：按 posted_after 时间窗翻页直到窗外（2026-08-25；timeout 60 min 后无 cap 风险）
+    enabled: true
+  - platform: steam
+    id: "2277560"
+    name: 明末：渊虚之羽
+    language: schinese
+    count: null  # auto模式（2026-09-06 新增；经 admin 加入 collect_tasks，此处同步进白名单使前端看板可见）
     enabled: true

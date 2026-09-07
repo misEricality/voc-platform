@@ -354,14 +354,27 @@ input[type="date"] { color-scheme: dark; }
 .grid.three { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 1100px) { .grid.three { grid-template-columns: 1fr; } }
 
-/* 游戏卡片 = 多选筛选项：未选中半透明黑遮罩，选中去遮罩 + primary 描边 */
-.game-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
-@media (max-width: 1100px) { .game-cards { grid-template-columns: repeat(3, 1fr); } }
+/* 游戏封面横滑行（2026-09-06 重做）：单行 6 个可视位 + 两端箭头，铺满浏览器全宽；
+   滑出可视区的卡片变暗（.offscreen），选中状态保留 */
+.gc-row {
+  display: flex; align-items: stretch; gap: 6px;
+  margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw);
+  padding: 0 max(24px, calc(50vw - 616px));
+}
+.gc-row .gs-arrow { align-self: center; flex: none; }
+.game-cards {
+  flex: 1; min-width: 0;
+  display: flex; gap: 14px; overflow-x: auto;
+  scrollbar-width: none; padding: 4px 0;
+}
+.game-cards::-webkit-scrollbar { display: none; }
 .game-card {
+  flex: 0 0 calc((100% - 70px) / 6); min-width: 150px;
   background: var(--panel); border: 1px solid var(--line2); border-radius: var(--r-lg);
   overflow: hidden; cursor: pointer; user-select: none;
-  transition: border-color .15s, transform .12s;
+  transition: border-color .15s, transform .12s, opacity .2s;
 }
+.game-card.offscreen { opacity: .35; }
 .game-card:hover { transform: translateY(-2px); border-color: var(--line3); }
 .game-card.selected { border-color: var(--primary); }
 .gc-cover { position: relative; aspect-ratio: 2 / 3; background: var(--panel3); overflow: hidden; }
@@ -398,18 +411,35 @@ input[type="date"] { color-scheme: dark; }
 .mini-chart { height: 200px; }
 .mini-chart .empty { padding: 20px 0; font-size: 12px; }
 
-/* 游戏名吸顶条：只要卡片顶部被遮挡即浮现，过渡丝滑（2026-09-05） */
+/* 游戏名吸顶条（2026-09-06 重做）：单行横向滚动 + 两端箭头，铺满浏览器全宽。
+   全宽 = 负 margin 挣脱 #app 容器；左右 padding 与 1280px 内容区对齐 */
 .game-sticky {
   display: flex; position: sticky; top: 60px; z-index: 49;
-  align-items: center; gap: 8px;
+  align-items: center; gap: 6px;
   background: var(--bg);
+  margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw);
+  padding: 0 max(24px, calc(50vw - 616px));
   max-height: 0; opacity: 0; overflow: hidden; transform: translateY(-6px);
   transition: max-height .28s, opacity .22s, transform .22s, padding .28s, margin .28s;
 }
 .game-sticky.show {
   max-height: 60px; opacity: 1; transform: translateY(0);
-  padding: 8px 0; margin-bottom: 4px;
 }
+.gs-scroll {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 8px;
+  overflow-x: auto; padding: 8px 0;
+  scrollbar-width: none;
+}
+.gs-scroll::-webkit-scrollbar { display: none; }
+.gs-arrow {
+  flex: none; width: 26px; height: 26px; padding: 0;
+  border-radius: 50%; display: grid; place-items: center;
+  background: var(--panel2); border: 1px solid var(--line2);
+  color: var(--ink2); font-size: 15px; line-height: 1; cursor: pointer;
+}
+.gs-arrow:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
+.gs-arrow:disabled { opacity: .3; cursor: default; }
 .gs-chip {
   flex: none; max-width: 150px; overflow: hidden; text-overflow: ellipsis;
   padding: 4px 12px; font-size: 12.5px; cursor: pointer; user-select: none;
@@ -421,7 +451,6 @@ input[type="date"] { color-scheme: dark; }
   border-color: var(--primary); color: var(--primary);
   background: var(--panel3); font-weight: 600;
 }
-.gs-more { flex: none; color: var(--muted); font-size: 12.5px; }
 
 /* 表格固定布局：各列间距一致（指标对比 / 每日明细 / 采集任务共用） */
 table.tbl.fixed { table-layout: fixed; }

@@ -424,7 +424,10 @@ def init_db(db_url: str | None = None) -> tuple:
 
     # SQLite 并发加固（2026-09-01 · Web 看板：前端服务随时读 × cron 每日写）：
     # - journal_mode=WAL：读写不互斥（读者不再阻塞写者，根治 Streamlit 时代文件锁坑）
-    # - busy_timeout=5000：写锁冲突时等 5s 而非立刻抛 database is locked
+    # - busy_timeout：写锁冲突时等待而非立刻抛 database is locked。
+    #   2026-09-06 5000 → 30000：pipeline 分析已改逐条 commit（锁窗口毫秒级），
+    #   但 fetch/analyze 多进程并发（daily cron × admin backfill × run-due）时
+    #   5s 仍偶发不够；30s 给足余量。
     if db_url.startswith("sqlite"):
         from sqlalchemy import event
 
@@ -432,7 +435,7 @@ def init_db(db_url: str | None = None) -> tuple:
         def _set_sqlite_pragma(dbapi_conn, _record):  # pragma: no cover - 简单 pragma
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA journal_mode=WAL")
-            cur.execute("PRAGMA busy_timeout=5000")
+            cur.execute("PRAGMA busy_timeout=30000")
             cur.close()
 
     Base.metadata.create_all(engine)

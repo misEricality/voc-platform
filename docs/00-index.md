@@ -60,7 +60,7 @@ docs/
 | **为什么选这个数据源、不选别的** | [research/VOC_COMPETITOR_RESEARCH.md](./research/VOC_COMPETITOR_RESEARCH.md) |
 | **国内外 VoC 平台都在做什么** | [research/VOC_COMPETITOR_RESEARCH.md](./research/VOC_COMPETITOR_RESEARCH.md) |
 | **src/ 代码模块结构（pipeline / analyzers / collectors / queue / storage / visualizer 的职责）** | [../src/README.md](../src/README.md) |
-| **tests/ 测试用例索引（49 例 pytest + 黄金集门禁 + ML skip）** | [../tests/README.md](../tests/README.md) |
+| **tests/ 测试用例索引（129 例 pytest + 黄金集门禁 + ML skip）** | [../tests/README.md](../tests/README.md) |
 
 ---
 

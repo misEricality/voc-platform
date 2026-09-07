@@ -34,6 +34,7 @@ from src.storage.db import (
     BilibiliQueue,
     CollectTask,
     CollectTaskRepository,
+    GameMeta,
     _utcnow,
 )
 
@@ -286,10 +287,11 @@ def _bili_url(bv: str) -> str:
     return f"https://www.bilibili.com/video/{bv}/"
 
 
-def _steam_task_view(t: CollectTask) -> dict:
+def _steam_task_view(t: CollectTask, release_date=None) -> dict:
     return {
         **t.to_dict(),
         "url": t.source_url or _steam_url(t.target_id),
+        "release_date": release_date,  # ISO 日期串（game_meta），供前端按发行时间排序
         "status_display": STEAM_STATUS.get(bool(t.enabled), "已暂停"),
     }
 
@@ -314,22 +316,19 @@ def _parse_steam_appid(raw: str) -> str:
 
 
 def _fetch_steam_game_name(appid: str) -> str | None:
-    """Steam appdetails 回填名称（尽力而为，失败返回 None）"""
-    try:
-        import requests
+    """Steam appdetails 回填名称（尽力而为，失败返回 None）
 
-        r = requests.get(
-            "https://store.steampowered.com/api/appdetails",
-            params={"appids": appid, "l": "schinese"},
-            timeout=10,
-        )
-        if r.status_code == 200:
-            d = r.json().get(appid) or {}
-            if d.get("success") and d.get("data"):
-                return d["data"].get("name")
+    2026-09-05 改走 SteamCollector().fetch_app_info（自带 2 次重试）——
+    原先手搓单次 requests 在网络波动时会随机失败（与「查找」按钮同病灶）。
+    """
+    try:
+        from src.collectors.steam import SteamCollector
+
+        info = SteamCollector().fetch_app_info(appid)
+        return (info or {}).get("name")
     except Exception as e:  # noqa: BLE001
         log.warning("appdetails 回填失败 appid=%s: %s", appid, e)
-    return None
+        return None
 
 
 def _bili_lookup(bv: str) -> tuple:
@@ -382,6 +381,10 @@ def _spawn_backfill(platform: str, target_id: str, days: int = 7) -> None:
             )
             fetched = report.get("fetched", 0)
             analyzed = report.get("analyzed", 0)
+            # 2026-09-07 对抗审查：B站 0 条评论 = 异常（代理 TUN 下 reply 从海外出口
+            # 返回空数据）→ 判失败，让 watchBackfill toast 可见，而非静默标 done
+            if platform == "bilibili" and fetched == 0:
+                raise RuntimeError("采集 0 条评论（疑似风控/地区限制/代理分流，或视频无评论）")
             _backfill_status(platform, target_id, status="done", finished_at=_utcnow().isoformat(),
                              fetched=fetched, analyzed=analyzed, error=None)
             # 回写 DB（开独立 session，不依赖请求 session）
@@ -467,7 +470,21 @@ def api_lookup_task(platform: str, url_or_id: str):
 def api_list_tasks(platform: str | None = None, s: Session = Depends(get_session)):
     out: dict = {}
     if platform in (None, "steam"):
-        out["steam"] = [_steam_task_view(t) for t in CollectTaskRepository(s).list_all(platform="steam")]
+        steam_tasks = CollectTaskRepository(s).list_all(platform="steam")
+        rd_map: dict = {}
+        if steam_tasks:
+            # collect_tasks.target_id 存裸 AppID；game_meta.target_id 带 "steam:" 前缀
+            ids = [f"steam:{t.target_id}" for t in steam_tasks]
+            rd_map = dict(s.execute(
+                select(GameMeta.target_id, GameMeta.release_date).where(GameMeta.target_id.in_(ids))
+            ).all())
+        out["steam"] = [
+            _steam_task_view(
+                t,
+                rd_map.get(f"steam:{t.target_id}").isoformat() if rd_map.get(f"steam:{t.target_id}") else None,
+            )
+            for t in steam_tasks
+        ]
     if platform in (None, "bilibili"):
         rows = list(s.execute(select(BilibiliQueue).order_by(BilibiliQueue.id.desc())).scalars())
         out["bilibili"] = [_bili_task_view(q) for q in rows]

@@ -15,7 +15,7 @@
     python -m src.queue due
     python -m src.queue run-due --limit 10 --dry-run
 
-最后更新：2026-08-23
+最后更新：2026-09-05
 """
 from __future__ import annotations
 
@@ -61,52 +61,31 @@ def _normalize_bvid(s: str) -> str:
 def _lookup_pubdate(bv_id: str) -> tuple[datetime | None, str | None]:
     """通过 B 站 view 接口识别 pubdate + title
 
+    2026-09-05 根治：改走 BilibiliCollector 的会话链路（buvid3/4 + SESSDATA +
+    完整浏览器头 + ≥1.2s 节流）。此前用裸 requests（无指纹 cookie），被 B 站
+    风控 412 拦截，且多次裸请求会连累同 IP 的规范采集会话一起被软封禁。
+    只打 view 接口，不取 tags（lookup 只需要 pubdate + title，省一次请求）。
+
     Returns:
         (pubdate_naive_utc, title) — 失败时返回 (None, None)
     """
-    try:
-        import requests
-    except ImportError:
-        log.warning("requests 未安装，跳过 pubdate 识别")
-        return None, None
-
-    sessdata = os.getenv("BILIBILI_SESSDATA")
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-        ),
-        "Referer": "https://www.bilibili.com/",
-    }
-    cookies = {}
-    if sessdata:
-        cookies["SESSDATA"] = sessdata
+    from src.collectors.bilibili import BilibiliCollector
 
     try:
-        r = requests.get(
-            f"https://api.bilibili.com/x/web-interface/view?bvid={bv_id}",
-            headers=headers,
-            cookies=cookies,
-            timeout=15,
+        data = BilibiliCollector()._get_json(
+            "https://api.bilibili.com/x/web-interface/view", {"bvid": bv_id}
         )
-        if r.status_code != 200:
-            log.warning(f"  {bv_id}: HTTP {r.status_code}")
-            return None, None
-        d = r.json()
-        if d.get("code") != 0:
-            log.warning(f"  {bv_id}: API code={d.get('code')} message={d.get('message')}")
-            return None, None
-        data = d.get("data") or {}
-        pubdate_unix = data.get("pubdate")
-        title = data.get("title")
-        if pubdate_unix is None:
-            return None, title
-        # unix → naive UTC
-        pubdate_utc = datetime.fromtimestamp(int(pubdate_unix), tz=timezone.utc).replace(tzinfo=None)
-        return pubdate_utc, title
     except Exception as e:  # noqa: BLE001
         log.warning(f"  {bv_id}: 识别失败 {type(e).__name__}: {e}")
         return None, None
+
+    pubdate_unix = data.get("pubdate")
+    title = data.get("title")
+    if pubdate_unix is None:
+        return None, title
+    # unix → naive UTC
+    pubdate_utc = datetime.fromtimestamp(int(pubdate_unix), tz=timezone.utc).replace(tzinfo=None)
+    return pubdate_utc, title
 
 
 # ==================== 子命令 ====================

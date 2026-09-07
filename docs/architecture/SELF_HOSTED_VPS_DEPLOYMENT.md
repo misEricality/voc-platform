@@ -9,8 +9,8 @@
 > - 字段与存储设计：[DATA_FIELDS.md](./DATA_FIELDS.md) / [DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
 > - 安全与隐私声明：[SECURITY.md](../SECURITY.md)（如存在）
 >
-> **最后更新**：2026-08-23
-> **状态**：🟡 设计稿（待首次落地后补验收清单）
+> **最后更新**：2026-09-07
+> **状态**：🟡 设计稿（待首次落地后补验收清单；已按当前本地直采 + 补采哨兵刷新 cron 示例）
 
 ---
 
@@ -207,11 +207,13 @@ ls -la data/voc.db   # 应看到文件，权限自动继承 voc:voc
 crontab -e
 
 # 加入以下 3 行
-# 注：本项目 GH Actions 流水线已切到 UTC 17:00（北京次日凌晨 1:00）以避开 GH Actions schedule 最多 8h 延迟；
-# VPS 自托管无此延迟问题，可保留 UTC 00:00（= 北京 08:00）做「早晨第一件事前采集完成」；
-# 也可与 GH Actions 对齐改 UTC 17:00（个人偏好）。
-# 1. 每日采集 + 标注
-0 0 * * * cd /home/voc/voc-platform && /home/voc/voc-platform/.venv/bin/python scripts/ops/daily_incremental_collect.py --no-download --no-upload >> /home/voc/voc-platform/logs/cron.log 2>&1
+# 注：本项目 GH Actions `collect` job 已停用（数据链路切本地直采），仅保留 `test` job 作 CI 护栏；
+# VPS 自托管每日 02:00（北京时间）跑采集，03:00 跑补采哨兵检查 02:00 是否成功。
+# 1. 每日采集 + 标注（北京时间 02:00）
+0 18 * * * cd /home/voc/voc-platform && /home/voc/voc-platform/.venv/bin/python scripts/ops/daily_incremental_collect.py --no-download --no-upload >> /home/voc/voc-platform/logs/cron.log 2>&1
+
+# 1.5 每日采集哨兵（北京时间 03:00）：检查 02:00 任务是否失败/未跑，是则补采
+0 19 * * * cd /home/voc/voc-platform && /home/voc/voc-platform/.venv/bin/python scripts/ops/check_daily_collect.py >> /home/voc/voc-platform/logs/collect-check.log 2>&1
 
 # 2. 每周日 03:00 备份 DB（保留最近 5 份）+ VACUUM（先 checkpoint WAL 再 vacuum）
 #    注：2026-09-02 起 DB 运行在 WAL 模式（Web 看板读写并发），备份前先 PRAGMA wal_checkpoint(TRUNCATE)
@@ -399,7 +401,8 @@ ls -la data/voc.db                          # 应 -rw------- voc voc
 ### 6.1 日常（每日自动，无需人工）
 
 > **Cron 跑了什么**（无人值守）
-> - UTC 00:00（= 北京 08:00；本节以 VPS 自托管为准，GH Actions 流水线则切到 UTC 17:00 以避开 8h 延迟）：`daily_incremental_collect.py` 跑完当日 6 款 Steam 单机增量
+> - UTC 18:00（= 北京时间 02:00）：`daily_incremental_collect.py` 跑完当日 Steam 单机增量 + B站 run-due
+> - UTC 19:00（= 北京时间 03:00）：`check_daily_collect.py` 检查 02:00 是否成功/未跑，失败则补采
 > - UTC 03:00（周日）：VACUUM + 滚动备份 DB（保留 5 份）
 > - 每 10 分钟：DB 健康检查（评论数能查询）
 

@@ -23,15 +23,15 @@
 
 > 30 秒看完这个项目现在是什么 + 下一步是什么 + 终点是什么。
 
-| 维度 | 当前（v0.7，2026-09-01 收口） |
+| 维度 | 当前（v0.7，2026-09-07 收口） |
 |---|---|
-| **✅ 已完成** | Steam 6 单机 + B 站 3 视频采集（14K 评论）；L1-L3 三级标签标注管线（方案4）；本地 bge 语义向量化；Streamlit 仪表盘（单目标 / 多目标对比 / 明细核查）；B 站单视频看板；**Web 实时看板**（FastAPI + 原生 SPA：主看板/游戏对比/B站视频/时间序列/系统管理 5 页，2026-09-02）；**P6 自动化流水线**（GH Actions daily cron + GH Release 累积 DB + CI pytest 护栏 + silent 失败防御）；**DESIGN_TOKENS v1.0**（三原型迁移版已上线） |
+| **✅ 已完成** | Steam 8 单机（含新加明末/鬼武者）+ B 站 5 视频采集（~22K 评论）；L1-L3 三级标签标注管线（方案4）；本地 bge 语义向量化；Streamlit 仪表盘（单目标 / 多目标对比 / 明细核查）；B 站单视频看板；**Web 实时看板**（FastAPI + 原生 SPA：主看板/游戏对比/B站视频/数据管理/系统管理 5 页，2026-09-02~07）；**本地直采计划任务**（`VOC-Local-Daily-Collect` 02:00 直写 voc.db）+ **03:00 补采哨兵**（`check_daily_collect.py`）；**P6 自动化流水线**（GH Actions `test` job CI 护栏保留，`collect` job 已停用）；**DESIGN_TOKENS v1.0**（三原型迁移版已上线）；**129 例 pytest** 全绿 |
 | **🔜 接下来（v1.0 前主线）** | **P9 阶段 2 L3.5 微话题聚类**（`l35_cluster.py` 骨架就绪）；**P9 阶段 3 PEDM 负向观点试点**（黄金集一致率 ≥80% 才放量）；**P11 QWEN-flash bogus 清理**（`reset_qwen_flash_bogus.py --commit`）；Web 看板 VPS 部署落地 |
 | **🎯 最终目标（v1.0 作品集发布）** | 完整文档（README 进阶版）+ mermaid 架构图；1-2 篇复盘博客（踩坑 + 经验）；演示视频/GIF；求职作品集重点项目 |
 
 → 详细路线 / 当前主线 / 阻塞：[docs/plan/DEVELOPMENT_PLAN.md](./docs/plan/DEVELOPMENT_PLAN.md)
 → 主标注器：`glm-5.3-flash`（2026-08-31 切；与 DEEPSEEK/QWEN 共享 GDT v3.1.1 prompt 集合）
-→ P6 daily cron：UTC 17:00（北京次日凌晨 1:00，避开 GH Actions schedule 最多 8h 延迟）
+→ 本地采集：`VOC-Local-Daily-Collect` 北京时间 02:00 + `VOC-Local-Daily-Collect-Check` 03:00 补采哨兵（GH Actions `collect` job 已停用）
 
 ## 🎯 当前进度（v0.7 完成，v1.0 作品化进行中）
 
@@ -52,7 +52,7 @@
 | 微博采集 | 🚧 | 下一阶段 |
 | 自动化流水线 | ✅ | P6 已落地：workflow cron + GH Release 累积 DB + CI pytest 护栏（test job）；P6 silent 失败防御上线（verify_release_upload.py）|
 
-> 📊 **当前数据**（2026-09-01 收口，pending qwen-flash 261 条 bogus 清理）：**~14,478 条**评论（Steam 6 款单机 + 归档 4 款 + B 站 3 视频），观点级标注约 11,500 条，语义向量约 6,400 条（单模型 `bge-small-zh-v1.5`，已全量回填）。GDT v3.1.1 词典已扩充、兜底占比 topic 67.6% / opinion 67.4%，P3 多目标对比已上线，P6 自动化流水线每日增量入库（30 天回看 + bootstrap 累积 + 2026-08-31 smart_window v2「采昨天全天 + 前天全天」），P10 analyzer_version 字段已加（老数据 NULL = 未溯源，新数据自动写入）。DESIGN_TOKENS v1.0 已落地三原型 v2 迁移版。
+> 📊 **当前数据**（2026-09-07 收口）：**~21,917 条**评论（Steam 8 款单机 + 归档 4 款 + B 站 5 视频），观点级标注约 28,579 条，语义向量约 20,887 条（单模型 `bge-small-zh-v1.5`，已全量回填）。GDT v3.1.1 词典已扩充、兜底占比 topic 67.6% / opinion 67.4%，P3 多目标对比已上线，P6 自动化流水线每日增量入库（7 天回看 + 2026-08-31 smart_window v2「采昨天全天 + 前天全天」），P10 analyzer_version 字段已加（老数据 NULL = 未溯源，新数据自动写入）。DESIGN_TOKENS v1.0 已落地三原型 v2 迁移版。
 
 ## 🏷️ L1-L3 三级标签标注管线（方案4）
 
@@ -119,7 +119,7 @@ voc-platform/
 │   └── monitoring/                     自动化采集目标清单（P6）
 │
 ├── data/                            # 【运行时数据】（gitignore，不入库）
-│   ├── voc.db                            SQLite 主库（2026-09-01 sync：~14,478 条评论）
+│   ├── voc.db                            SQLite 主库（2026-09-07：~21,917 条评论 / 129 MB）
 │   ├── archive/                          4 款网游归档（2026-08-23）
 │   └── exports/                          导出产物（gitignored）
 │
@@ -140,10 +140,10 @@ voc-platform/
 ├── scripts/                         # 【运维/开发脚本】
 │   ├── README.md                        脚本索引
 │   ├── smoke_test.py                    冒烟测试
-│   ├── dev/                             开发期活跃脚本（11 个 + archive/ 42 个已归档）
-│   └── ops/                             长期运维脚本（12 个：daily_incremental_collect / smart_sync_release / push_via_api 等）
+│   ├── dev/                             开发期活跃脚本（13 个 + archive/ 43 个已归档）
+│   └── ops/                             长期运维脚本（13 个：daily_incremental_collect / check_daily_collect / smart_sync_release / push_via_api 等）
 │
-├── tests/                           # 【测试】pytest 49 例（含黄金集回归 + ML 环境依赖时 skip）
+├── tests/                           # 【测试】pytest 129 例（含黄金集回归 + ML 环境依赖时 skip）
 │   ├── README.md                        测试索引
 │   └── fixtures/                        黄金集 410 条 + 校正项
 │
@@ -204,7 +204,7 @@ voc-platform/
 - [x] **v0.5** - B 站采集 + 多平台扩展（采集器 + 看板 v0.3）
 - [x] **v0.6** - 自动化流水线 P6（GH Actions cron + GH Release 累积 DB）
 - [x] **v0.7** - 分析结果溯源 P10（analyzer_version 字段）+ CI pytest 护栏 + P11 QWEN-flash bogus 清理工具 + DESIGN_TOKENS v1.0（三原型 v2 迁移版上线）
-- [ ] **v1.0** - ✅ P8 时间序列已随 Web 看板交付（2026-09-02）→ P9 阶段 2/3 落地 + 完整文档 + 技术博客 + 求职作品集发布
+- [ ] **v1.0** - ✅ P8 时间序列已随 Web 看板交付（2026-09-02）；本地直采 + 补采哨兵已落地（2026-09-07）→ P9 阶段 2/3 落地 + 公网部署 + 完整文档 + 技术博客 + 求职作品集发布
 
 ## 📄 License
 
