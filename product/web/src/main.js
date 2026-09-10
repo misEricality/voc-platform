@@ -47,7 +47,7 @@ async function initMeta() {
     return;
   }
   try {
-    const h = await API.get('/api/health');
+    const h = await (await fetch('/api/health', { cache: 'no-store' })).json();
     document.getElementById('dbMeta').textContent = `库内评论 ${fmtNum(h.comments)} 条 · 实时读取`;
   } catch (e) {
     document.getElementById('dbMeta').textContent = 'API 不可达';

@@ -309,7 +309,7 @@ Routes.compare = async function (app) {
       grid: { left: 12, right: 28, top: 28, bottom: 8, containLabel: true },
       xAxis: { type: 'value', name: '评论量', nameLocation: 'middle', nameGap: 28,
                nameTextStyle: { color: p.muted },
-               axisLabel: { color: p.muted, formatter: v => fmtNum(v) }, splitLine: { show: false } },
+               axisLabel: { color: p.muted, formatter: v => fmtAxis(v) }, splitLine: { show: false } },
       yAxis: { type: 'value', name: '推荐率%', min: 0, max: 100,
                nameTextStyle: { color: p.muted },
                axisLabel: { color: p.muted }, splitLine: { show: false } },

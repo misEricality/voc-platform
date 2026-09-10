@@ -79,6 +79,7 @@ function esc(s) {
 const SENTI_LABEL = { positive: '正向', neutral: '中性', negative: '负向' };
 const SENTI_BADGE = { positive: 'pos', neutral: 'neu', negative: 'neg' };
 const STATUS_BADGE = { '采集中': 'info', '待采集': 'neu', '已采集': 'pos', '已暂停': 'dim', '采集失败': 'neg' };
+function fmtAxis(v) { const n = Number(v); if (v == null || isNaN(n)) return ""; const a = Math.abs(n); if (a >= 1e6) return (n / 1e6).toFixed(1) + "M"; if (a >= 1e3) return (n / 1e3).toFixed(1) + "K"; return String(n); }
 function fmtNum(v) { return (v === null || v === undefined) ? '-' : Number(v).toLocaleString('zh-CN'); }
 function fmtDate(t) { return t ? String(t).slice(0, 10) : '-'; }
 function pct(a, b) { return b ? (a / b * 100).toFixed(1) + '%' : '0%'; }

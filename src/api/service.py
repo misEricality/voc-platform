@@ -453,8 +453,16 @@ def overview_payload(
         func.max(Comment.extra_meta).label("extra_meta"),
     ]
     row = session.execute(select(*cols).where(*conditions)).one()
+    fallback_meta = None
     if (row.total or 0) == 0:
-        return None
+        has_any = session.execute(
+            select(func.count(Comment.id)).where(Comment.target_id == target_id)
+        ).scalar() or 0
+        if not has_any:
+            return None
+        fallback_meta = session.execute(
+            select(func.max(Comment.extra_meta)).where(Comment.target_id == target_id)
+        ).scalar()
 
     pos, neg, neu = int(row.pos or 0), int(row.neg or 0), int(row.neu or 0)
     opinion_total: int | None = None
@@ -475,7 +483,7 @@ def overview_payload(
     n = pos + neg + neu
     return {
         "target_id": target_id,
-        "name": _meta_name(row.extra_meta, target_id),
+        "name": _meta_name(row.extra_meta or fallback_meta, target_id),
         "total": int(row.total),
         "analyzed": int(row.analyzed or 0),
         "opinion_total": opinion_total,
