@@ -442,7 +442,9 @@ input[type="date"] { color-scheme: dark; }
 .gc-rating { font-size: 11.5px; font-weight: 600; display: inline-block; }
 /* 回顶按钮（compare 页右下角，滚动 >600px 出现） */
 .backtop {
-  position: fixed; right: 28px; bottom: 32px; z-index: 60;
+  /* C5（2026-09-10）：原 bottom:32px 与 .agent-fab（right:32/bottom:32、56px、z-index 90）
+     完全重叠，滚动 >600px 后回顶按钮被悬浮球盖住点不到 → 上移一个悬浮球高度 + 8px */
+  position: fixed; right: 28px; bottom: 96px; z-index: 60;
   padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line3);
   background: var(--panel3); color: var(--ink); font-size: 12.5px; cursor: pointer;
   box-shadow: var(--shadow);
@@ -479,6 +481,12 @@ input[type="date"] { color-scheme: dark; }
 /* 表格固定布局：各列间距一致（指标对比 / 每日明细 / 采集任务共用） */
 table.tbl.fixed { table-layout: fixed; }
 table.tbl.fixed th, table.tbl.fixed td { padding: 8px 12px; word-break: break-word; }
+/* C15（2026-09-10）：指标对比表首列游戏名原按 word-break 折 3–4 行、把整行行高撑开；
+   改单行省略（全名在 <a title="…"> 上，悬停可见），恢复逐行扫描节奏 */
+#tblKpi td:first-child a {
+  display: block; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 /* admin 采集任务表（2026-09-09）：表头字段名一律居中；操作列内容贴右 */
 .tbl-admin th, .tbl-admin td {
   padding: 8px 6px; font-size: 12.5px;

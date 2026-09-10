@@ -227,7 +227,9 @@ Routes.bilibili = async function (app) {
         })).reverse(),
         emphasis: { focus: 'self', itemStyle: { borderColor: p.primary, borderWidth: 2 } },
         blur: { itemStyle: { opacity: .3 } },
-        label: { show: true, position: 'right', color: p.muted, fontSize: 11 },
+        // C11（2026-09-10）：该情感下无数据的 L1 主题（0 值条形）不再输出「0」标签
+        label: { show: true, position: 'right', color: p.muted, fontSize: 11,
+                 formatter: v => (v.value ? v.value : '') },
       }],
     });
     const chart = Charts.get(containerId);

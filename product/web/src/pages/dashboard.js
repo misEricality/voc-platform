@@ -325,7 +325,9 @@ Routes.dashboard = async function (app) {
       series: [{
         type: 'bar', barMaxWidth: 16, data: bars.map(t => t.total).reverse(),
         itemStyle: { color: p.primary, borderRadius: [0, 4, 4, 0] },
-        label: { show: true, position: 'right', color: p.muted, fontSize: 11 },
+        // C11（2026-09-10）：L1 为 full:true 零填充，空窗时 9 行全 0 → 标签不再输出「0」
+        label: { show: true, position: 'right', color: p.muted, fontSize: 11,
+                 formatter: v => (v.value ? v.value : '') },
       }],
     });
   }
