@@ -95,19 +95,39 @@ powershell -ExecutionPolicy Bypass -File scripts\ops\publish_static_snapshot.ps1
 
 ---
 
-## 4. 挂进每日计划任务（跑稳后启用）
+## 4. 自动发布（独立计划任务 · 2026-09-10 修正）
 
-`daily_incremental_collect.py` 已内置编排（2026-09-07），**默认关闭**：
+> ⚠️ **文档修正**：本节原写「`daily_incremental_collect.py` 已内置 `--publish-snapshot`，默认关闭」。
+> 经 2026-09-10 核对，**该参数在代码里从未落地**——`daily_incremental_collect.py` 全文无
+> snapshot/publish 分支，argparse 也无此选项。现改为**独立计划任务**方案，文档与代码对齐。
 
-```powershell
-# 02:00 主任务命令追加 --publish-snapshot（重注册 register_local_collect_task.ps1
-# 需同步修改其命令行；发布失败只记 ERROR，不影响采集退出码与 03:00 哨兵判定）
-python scripts/ops/daily_incremental_collect.py --no-download --no-upload --lookback-days 7 --publish-snapshot
+```
+02:00  VOC-Local-Daily-Collect          采集 + 标注 + 向量
+03:00  VOC-Local-Daily-Collect-Check    哨兵：02:00 失败/漏跑则补采
+03:30  VOC-Local-Agent-Prune            清理超期 Agent 会话
+04:30  VOC-Local-Publish-Snapshot       导出快照 + 发布 EdgeOne Pages   ← 2026-09-10 新增
 ```
 
-- 发布内部先导出后发布，导出失败不发布（`publish_static_snapshot.ps1` 保证）；
-- 发布失败**不改变采集退出码**——采集结果判定与发布链路解耦（工程红线：任务必达优先）；
-- 项目名默认 `EDGEONE_PAGES_PROJECT` env → `voc-platform`，可用 `--snapshot-project` 覆盖。
+注册（4 个任务一次注册，可重复执行 / 幂等）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1
+
+# 自定义发布时刻 / EdgeOne 项目名：
+powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1 -PublishAt "05:00" -SnapshotProject "voc-platform"
+
+# 卸载（含发布任务）：
+powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1 -Uninstall
+```
+
+设计要点：
+
+- **为什么独立任务而不是并进 daily**：发布失败绝不改变采集退出码与 03:00 哨兵判定（工程红线：任务必达优先）；
+- 排在 04:30，确保导出看到当天 02:00 采集后的最新 `voc.db`；单次任务上限 30 分钟；
+- 日志：`logs/publish-snapshot.log`；
+- 链路内部**先导出后发布**，导出失败不发布（`publish_static_snapshot.ps1` 保证）；
+- 项目名由 `-SnapshotProject` 决定（默认 `voc-platform`）；
+- EdgeOne CLI 的 `pages` 子命令已 deprecated（仍可用，输出会提示改用 `makers`）。
 
 ---
 

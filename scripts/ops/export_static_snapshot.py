@@ -17,7 +17,10 @@
     python scripts/ops/export_static_snapshot.py --db-path data/voc.db \
         --out data/exports/snapshot --list-pages 3
 
-被 scripts/ops/daily_incremental_collect.py 在采集成功后调用（--skip-snapshot 可跳过）。
+由 scripts/ops/publish_static_snapshot.ps1 调用（导出 → 发布两步）；自动发布走独立计划任务
+VOC-Local-Publish-Snapshot（04:30，由 register_local_collect_task.ps1 注册）。
+注：daily_incremental_collect.py **不含**快照编排（早期文档曾写 --publish-snapshot，实际未落地；
+2026-09-10 文档已按「独立计划任务」方案修正）。
 
 口径对齐说明（与前端页面逐行核对过）：
 - 「近 N 天不含当天」：start = 今天-N 天，end = 昨天（dashboard.js windowParams）

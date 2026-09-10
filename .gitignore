@@ -53,6 +53,8 @@ data/validation/
 data/covers/
 # Steam 封面素材采样（2026-09-08 素材探测遗留，运行时产物，6.6 MB；2026-09-10 补 ignore）
 data/covers_specimen/
+# 前端评审截图（运行时/评审产物，按 data/ 不入库约定；2026-09-10 补 ignore）
+data/screenshots/
 data/uvicorn.log
 data/uvicorn.err.log
 # API 服务运行时 stderr 重定向（与 uvicorn 日志同类，不入库；2026-09-05 补充）

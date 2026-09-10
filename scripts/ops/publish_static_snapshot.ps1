@@ -1,7 +1,9 @@
 ﻿# 方案③ 静态快照发布脚本（EdgeOne Pages）
 #
 # 职责：导出快照（export_static_snapshot.py）→ 用 EdgeOne CLI 发布到 EdgeOne Pages。
-# 手动 / 计划任务两用；daily_incremental_collect.py --publish-snapshot 时在采集成功后调用。
+# 手动 / 计划任务两用。自动发布走**独立计划任务** VOC-Local-Publish-Snapshot（04:30），
+# 由 register_local_collect_task.ps1 一并注册（不并入 daily_incremental_collect.py：
+# 采集结果判定与发布链路解耦，发布失败不影响采集退出码）。
 #
 # 用法：
 #   # 首次手动：导出 + 生产环境发布
@@ -36,31 +38,41 @@ $Root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 # 默认值不放 param 块：$PSScriptRoot 在部分调用方式（包装器/管道）下为空，Join-Path 会炸
 if (-not $Dist) { $Dist = Join-Path $Root "data\exports\snapshot" }
 if (-not $Python) { $Python = Join-Path $Root ".venv-ml\Scripts\python.exe" }
-$Dist = Resolve-Path $Dist -ErrorAction SilentlyContinue
+# 保留未 Resolve 的绝对路径：导出用 --out 传它（冷启动时 Resolve-Path 会返回空）
+$DistRaw = $Dist
+if (-not [System.IO.Path]::IsPathRooted($DistRaw)) { $DistRaw = Join-Path $Root $DistRaw }
+$Dist = Resolve-Path $DistRaw -ErrorAction SilentlyContinue
 
 function Write-Log([string]$msg) {
     Write-Host ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $msg)
 }
 
 # ---------- 1. 前置检查 ----------
-if (-not $SkipExport) {
-    if (-not (Test-Path $Python)) {
-        Write-Log "[FAIL] 未找到 Python 解释器：$Python"
+# 顺序要求：非 -SkipExport 时 dist 由本次导出生成，**不能提前校验**（冷启动会误判 exit 2）。
+# 2026-09-10 修复：此前先查 dist 再导出，导致产物被清理后无法靠自身重新导出。
+if ($SkipExport) {
+    if (-not $Dist -or -not (Test-Path (Join-Path $Dist "index.html"))) {
+        Write-Log "[FAIL] 快照目录不存在或缺少 index.html：$Dist（-SkipExport 需要已有产物）"
         exit 2
     }
-}
-
-if (-not $Dist -or -not (Test-Path (Join-Path $Dist "index.html"))) {
-    Write-Log "[FAIL] 快照目录不存在或缺少 index.html：$Dist（先跑一次导出）"
+} elseif (-not (Test-Path $Python)) {
+    Write-Log "[FAIL] 未找到 Python 解释器：$Python"
     exit 2
 }
 
 # ---------- 2. 导出快照 ----------
 if (-not $SkipExport) {
     Write-Log "开始导出静态快照…"
-    & $Python (Join-Path $Root "scripts\ops\export_static_snapshot.py")
+    # 显式传 --out，保证自定义 -Dist 时导出目录 == 发布目录（默认同为 data\exports\snapshot）
+    & $Python (Join-Path $Root "scripts\ops\export_static_snapshot.py") --out $DistRaw
     if ($LASTEXITCODE -ne 0) {
         Write-Log "[FAIL] 快照导出失败（exit $LASTEXITCODE）"
+        exit 3
+    }
+    # 导出后重新解析（冷启动时 $Dist 之前为空）
+    $Dist = Resolve-Path $DistRaw -ErrorAction SilentlyContinue
+    if (-not $Dist -or -not (Test-Path (Join-Path $Dist "index.html"))) {
+        Write-Log "[FAIL] 导出结束但未找到 index.html：$DistRaw"
         exit 3
     }
     Write-Log "快照导出完成：$Dist"

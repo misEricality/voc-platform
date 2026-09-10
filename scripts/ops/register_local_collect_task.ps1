@@ -20,6 +20,13 @@
 #   covers yesterday + the day before). Recovery:
 #   python scripts/ops/daily_incremental_collect.py --no-download --no-upload --full-replay
 #
+# Last updated: 2026-09-10 (added snapshot-publish task VOC-Local-Publish-Snapshot at 04:30:
+#   runs ops/publish_static_snapshot.ps1 -> exports the 3 read-only dashboards to
+#   data/exports/snapshot and publishes them to EdgeOne Pages (public static site).
+#   Runs AFTER collect 02:00 / sentinel 03:00 / agent-prune 03:30 so the export sees the
+#   fresh data. Kept as a SEPARATE task on purpose: publish failure must not change the
+#   collect exit code or the 03:00 sentinel verdict. NOTE: daily_incremental_collect.py has
+#   no --publish-snapshot flag (earlier docs claimed it existed; corrected 2026-09-10).)
 # Last updated: 2026-09-09 (added agent-prune task VOC-Local-Agent-Prune at 03:30:
 #   runs scripts/ops/prune_agent_history.py to delete agent_sessions older than
 #   AGENT_RETENTION_DAYS (default 30, 0 = keep forever). FK CASCADE cleans messages.
@@ -36,8 +43,10 @@
 
 param(
     [switch]$Uninstall,
-    [string]$At = "02:00",      # 02:00 BJT (machine local timezone)
-    [string]$CheckAt = "03:00"  # sentinel check time
+    [string]$At = "02:00",           # 02:00 BJT (machine local timezone)
+    [string]$CheckAt = "03:00",      # sentinel check time
+    [string]$PublishAt = "04:30",    # static snapshot publish time
+    [string]$SnapshotProject = "voc-platform"  # EdgeOne Pages project name
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,7 +61,7 @@ if (-not (Test-Path $Python)) { Write-Error "python not found: $Python (check .v
 if (-not (Test-Path $Script)) { Write-Error "script not found: $Script"; exit 1 }
 
 if ($Uninstall) {
-    foreach ($name in @($TaskName, "$TaskName-Check", "VOC-Local-Agent-Prune")) {
+    foreach ($name in @($TaskName, "$TaskName-Check", "VOC-Local-Agent-Prune", "VOC-Local-Publish-Snapshot")) {
         $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
         if ($existing) {
             Unregister-ScheduledTask -TaskName $name -Confirm:$false
@@ -143,10 +152,40 @@ Register-ScheduledTask -TaskName $PruneTaskName -Action $actionPrune -Trigger $t
     -Force | Out-Null
 
 Write-Host "  -> $PruneTaskName daily at 03:30 (prune agent_sessions older than retention)"
+
+# ---- snapshot-publish task: 04:30 export static snapshot + publish to EdgeOne Pages ----
+$PublishTaskName = "VOC-Local-Publish-Snapshot"
+$PublishScript = Join-Path $ProjectRoot "scripts\ops\publish_static_snapshot.ps1"
+if (-not (Test-Path $PublishScript)) { Write-Error "publish script not found: $PublishScript"; exit 1 }
+$PublishLogFile = Join-Path $LogDir "publish-snapshot.log"
+
+$pubTask = Get-ScheduledTask -TaskName $PublishTaskName -ErrorAction SilentlyContinue
+if ($pubTask) { Write-Host "updating: $PublishTaskName" } else { Write-Host "creating: $PublishTaskName" }
+
+# publish_static_snapshot.ps1 is PowerShell; run it through powershell.exe so the
+# ExecutionPolicy holds in the non-interactive scheduled-task context
+$innerPub = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$PublishScript`" -Name $SnapshotProject >> `"$PublishLogFile`" 2>&1"
+$cmdArgsPub = "/c cd /d `"$ProjectRoot`" && $innerPub"
+$actionPub = New-ScheduledTaskAction -Execute "cmd.exe" -Argument $cmdArgsPub -WorkingDirectory $ProjectRoot
+$triggerPub = New-ScheduledTaskTrigger -Daily -At $PublishAt
+$settingsPub = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+
+Register-ScheduledTask -TaskName $PublishTaskName -Action $actionPub -Trigger $triggerPub `
+    -Settings $settingsPub -Principal $principal `
+    -Description "VoC static snapshot publish (04:30 BJT): export pre-aggregated JSON + deploy to EdgeOne Pages (public read-only dashboards); intentionally separate from collect so publish failures never affect the collect exit code" `
+    -Force | Out-Null
+
+Write-Host "  -> $PublishTaskName daily at $PublishAt (export + publish static snapshot to EdgeOne Pages)"
+
 Write-Host ""
 Write-Host "Test run manually:"
 Write-Host "  & `"$Python`" `"$Script`" --no-download --no-upload"
 Write-Host "  & `"$Python`" `"$CheckScript`" --dry-run"
 Write-Host "  & `"$Python`" `"$PruneScript`" --dry-run"
+Write-Host "  powershell -ExecutionPolicy Bypass -File `"$PublishScript`" -Name $SnapshotProject"
 Write-Host "Uninstall:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts/ops/register_local_collect_task.ps1 -Uninstall"
