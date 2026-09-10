@@ -278,7 +278,9 @@ Routes.compare = async function (app) {
                splitLine: { show: false } },
       yAxis: {
         type: 'category', data: names.slice().reverse(),
-        axisLabel: { color: p.muted, interval: 0, width: 96, overflow: 'break', lineHeight: 14 },
+        // C3（2026-09-10）：长游戏名原 overflow:'break' 折成 2–3 行互相侵占、挤压条形；
+        // 改 'truncate' 单行省略——全名仍可从 trigger:'axis' 的 tooltip 头部读到，无信息损失
+        axisLabel: { color: p.muted, interval: 0, width: 96, overflow: 'truncate', lineHeight: 14 },
         axisTick: { show: false }, axisLine: { lineStyle: { color: p.line } },
       },
       series: ['正向', '中性', '负向'].map((label, i) => {
@@ -317,6 +319,8 @@ Routes.compare = async function (app) {
         type: 'scatter', symbolSize: 14,
         itemStyle: { color: p.primary, opacity: .8 },
         label: { show: true, formatter: p2 => p2.name, color: p.ink, position: 'top', fontSize: 11 },
+        // C4（2026-09-10）：点密集时 position:'top' 的名称标签上下叠压不可读 → 重叠自动隐藏
+        labelLayout: { hideOverlap: true },
         data: pts,
       }],
     });
@@ -464,7 +468,8 @@ Routes.compare = async function (app) {
     const byTid = {};
     data.items.forEach(it => { byTid[it.target_id] = it; });
     const p = Charts.palette();
-    const colorMap = { positive: p.pos, negative: p.neg, neutral: '#8b95a0' };
+    // 中性词取 --muted（2026-09-10：原裸 hex #8b95a0 平移为 token，§8 禁组件裸值）
+    const colorMap = { positive: p.pos, negative: p.neg, neutral: p.muted };
     sel.forEach((g, i) => {
       const el = $(`cloud${i}`);
       const it = byTid[g.target_id];

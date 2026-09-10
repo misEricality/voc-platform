@@ -423,7 +423,7 @@
 }
 .agent-drawer-input .btn-send {
   background: var(--primary-dark);
-  color: #fff;
+  color: #0e141b;  /* C6（2026-09-10）：白字在 --primary-dark 上 ≈2.6:1 → 深字 ≈6.7:1 */
   border: none;
   padding: 6px 14px;
   border-radius: var(--r-sm);
@@ -436,6 +436,15 @@
 .agent-drawer-input .btn-send:disabled {
   opacity: .45;
   cursor: not-allowed;
+}
+/* C17（2026-09-10）：抽屉自有按钮类（.btn-head/.btn-icon/.btn-send/.side-del）补键盘焦点可见
+   （drawer 内的 .btn 由 web.css 的 .btn:focus-visible 覆盖，此处只补自定义类） */
+.agent-drawer .btn-head:focus-visible,
+.agent-drawer .btn-icon:focus-visible,
+.agent-drawer .btn-send:focus-visible,
+.agent-drawer textarea:focus-visible,
+.agent-drawer .side-del:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
 }
 
 /* ---- 抽屉底部小灰字（决策 #16 隐私提示） ---- */

@@ -90,7 +90,13 @@ Routes.dashboard = async function (app) {
       </div>
     </div>
     <div class="grid half">
-      <div class="card"><h3>情感分布</h3><div class="chart" id="chSenti"></div></div>
+      <div class="card">
+        <h3>情感分布</h3>
+        <div class="chart-wrap">
+          <div class="chart" id="chSenti"></div>
+          <div class="chart-overlay empty" id="sentiEmpty" hidden>当前时间窗内无数据</div>
+        </div>
+      </div>
       <div class="card">
         <h3>L1 主题分布</h3>
         <div class="chart-note" id="l1Note"></div>
@@ -221,9 +227,12 @@ Routes.dashboard = async function (app) {
     $('kpiCount').innerHTML = `
       <div class="kpi-label">评论量</div>
       <div class="kpi-value">${fmtNum(ov.total)}</div>`;
+    // C10（2026-09-10）：空值原渲染成「-%」（无值却带单位），改为一律「-」
+    const rateText = (ov.recommend_rate === null || ov.recommend_rate === undefined)
+      ? '-' : `${ov.recommend_rate}%`;
     $('kpiRate').innerHTML = `
       <div class="kpi-label">推荐率</div>
-      <div class="kpi-value kpi-rate-pos">${ov.recommend_rate ?? '-'}%</div>`;
+      <div class="kpi-value kpi-rate-pos">${rateText}</div>`;
     syncRangeLabel(
       ov.first_posted ? `${fmtDate(ov.first_posted)} 至 ${fmtDate(ov.last_posted)}` : '');
     renderPie(s);
@@ -231,6 +240,16 @@ Routes.dashboard = async function (app) {
 
   function renderPie(s) {
     const p = Charts.palette();
+    const n = (s.positive || 0) + (s.neutral || 0) + (s.negative || 0);
+    // C2（2026-09-10）：全 0 时 ECharts 仍会画出等分三色环 + 三个「0%」标签，
+    // 视觉上像"三色各占 1/3"，与同屏「当前时间窗内无数据」直接矛盾 →
+    // 清空系列 + 显示空态覆盖层（覆盖层不透明，且不改写画布容器 DOM）
+    const emptyEl = $('sentiEmpty');
+    if (emptyEl) emptyEl.hidden = n > 0;
+    if (!n) {
+      Charts.render('chSenti', { series: [] });
+      return;
+    }
     Charts.render('chSenti', {
       tooltip: { trigger: 'item', formatter: '{b}：{c}（{d}%）' },
       legend: { bottom: 0, textStyle: { color: p.muted }, itemGap: 18 },
@@ -289,8 +308,9 @@ Routes.dashboard = async function (app) {
     const meta = topics.find(t => t.topic === fb) || null;
     const bars = meta ? topics.filter(t => t !== meta) : topics;
     const grand = topics.reduce((s, t) => s + t.total, 0);
-    $('l1Note').textContent = meta
-      ? `「${fb}」${fmtNum(meta.total)} 条，占 ${grand ? (meta.total / grand * 100).toFixed(1) : '0.0'}%`
+    // C18（2026-09-10）：空窗（grand=0）时不再输出「0 条，占 0.0%」噪音，整行置空
+    $('l1Note').textContent = (meta && grand)
+      ? `「${fb}」${fmtNum(meta.total)} 条，占 ${(meta.total / grand * 100).toFixed(1)}%`
       : '';
     // ECharts yAxis 类目首个在底部 → reverse 保证 yaml primary 第一条「机制与内容」在最上
     Charts.render('chL1', {
@@ -305,7 +325,9 @@ Routes.dashboard = async function (app) {
       series: [{
         type: 'bar', barMaxWidth: 16, data: bars.map(t => t.total).reverse(),
         itemStyle: { color: p.primary, borderRadius: [0, 4, 4, 0] },
-        label: { show: true, position: 'right', color: p.muted, fontSize: 11 },
+        // C11（2026-09-10）：L1 为 full:true 零填充，空窗时 9 行全 0 → 标签不再输出「0」
+        label: { show: true, position: 'right', color: p.muted, fontSize: 11,
+                 formatter: v => (v.value ? v.value : '') },
       }],
     });
   }

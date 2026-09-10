@@ -10,7 +10,7 @@
    - done 事件 usage：消息流尾部展示本轮 token 消耗小字
    - main.js 在 boot 阶段调用 window.mountAgentDrawer() */
 (function () {
-  const CSS_HREF = 'src/agent-drawer.css?v=20260910b';
+  const CSS_HREF = 'src/agent-drawer.css?v=20260910c';
 
   const SPARKLE_SVG = `
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
