@@ -7,6 +7,9 @@ body {
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.55;
+  /* 全宽行（gc-row 等 50vw 负 margin）比视口宽一个滚动条宽 → 裁掉横向溢出；
+     clip 不产生滚动容器，position:sticky 不受影响（overflow-x:hidden 会破坏 sticky） */
+  overflow-x: clip;
 }
 a { color: var(--primary); text-decoration: none; }
 
@@ -52,6 +55,17 @@ a { color: var(--primary); text-decoration: none; }
 }
 .nav-menu a:hover { background: var(--panel3); color: var(--primary); }
 .topbar-meta { color: var(--dim); font-size: 12px; white-space: nowrap; }
+
+/* AI 入口：左起第一项 + sparkle icon（决策 #19/#20）；2026-09-10 起与其他标题视觉一致：
+   任何状态无背景/边框/阴影，字色规则相同（未选中 muted / hover ink / 选中 primary） */
+.nav a.nav-ai {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none;
+  color: var(--muted); font-weight: 400;
+}
+.nav a.nav-ai:hover { background: none; color: var(--ink); }
+.nav a.nav-ai.active { background: none; color: var(--primary); }
+.nav-sparkle { width: 18px; height: 18px; }
 
 /* ---------- 布局 ---------- */
 #app { max-width: 1280px; margin: 0 auto; padding: 24px; }
@@ -333,7 +347,8 @@ input[type="date"] { color-scheme: dark; }
 .op-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 /* 单游戏看板文本放大（仅本页；bilibili 窄栏共享 .lc-text 不受影响） */
-.pg-dashboard .lc-text { font-size: 16px; }
+.pg-dashboard .lc-text { font-size: 15px; }
+.pg-dashboard .btn.sm { font-size: 13px; }  /* 主题选项按钮放大一档 */
 .pg-dashboard .lc-play { font-size: 14px; }
 .pg-dashboard .lc-play small { font-size: 12px; }
 
@@ -354,18 +369,23 @@ input[type="date"] { color-scheme: dark; }
 .grid.three { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 1100px) { .grid.three { grid-template-columns: 1fr; } }
 
-/* 游戏封面横滑行（2026-09-06 重做）：单行 6 个可视位 + 两端箭头，铺满浏览器全宽；
+/* 游戏封面横滑行（2026-09-08 重做）：横版 header 封面单行 6 可视位 + 箭头，全宽；
+   整行吸顶（冻结）：滚过卡片行后贴在顶栏下，信息行折叠只留封面，hover 显示浮层；
    滑出可视区的卡片变暗（.offscreen），选中状态保留 */
 .gc-row {
   display: flex; align-items: stretch; gap: 6px;
+  position: sticky; top: 60px; z-index: 49;
+  background: var(--bg);
   margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw);
   padding: 0 max(24px, calc(50vw - 616px));
+  transition: box-shadow .2s;
 }
+.gc-row.frozen { box-shadow: 0 6px 16px rgba(0, 0, 0, .3); }
 .gc-row .gs-arrow { align-self: center; flex: none; }
 .game-cards {
   flex: 1; min-width: 0;
   display: flex; gap: 14px; overflow-x: auto;
-  scrollbar-width: none; padding: 4px 0;
+  scrollbar-width: none; padding: 6px 0;
 }
 .game-cards::-webkit-scrollbar { display: none; }
 .game-card {
@@ -374,10 +394,9 @@ input[type="date"] { color-scheme: dark; }
   overflow: hidden; cursor: pointer; user-select: none;
   transition: border-color .15s, transform .12s, opacity .2s;
 }
-.game-card.offscreen { opacity: .35; }
 .game-card:hover { transform: translateY(-2px); border-color: var(--line3); }
 .game-card.selected { border-color: var(--primary); }
-.gc-cover { position: relative; aspect-ratio: 2 / 3; background: var(--panel3); overflow: hidden; }
+.gc-cover { position: relative; aspect-ratio: 460 / 215; background: var(--panel3); overflow: hidden; }
 .gc-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .gc-cover .gc-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font-size: 18px; }
 .gc-cover::after {
@@ -390,13 +409,35 @@ input[type="date"] { color-scheme: dark; }
   display: grid; place-items: center; padding: 8px; text-align: center;
   color: var(--muted); font-size: 12.5px;
 }
-.gc-info { padding: 9px 10px 11px; }
+/* 冻结态 hover 浮层：信息行折叠后，hover 封面显示名称/发行日/评级 */
+.gc-tip {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: grid; gap: 1px; padding: 6px 9px;
+  background: rgba(10, 12, 16, .86);
+  opacity: 0; pointer-events: none; transition: opacity .15s;
+}
+.gc-tip-name { font-size: 12px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-tip-meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gc-row.frozen .game-card:hover .gc-tip { opacity: 1; }
+/* 信息区两行：名称 / 日期+评级；冻结时折叠隐藏 */
+.gc-info { padding: 8px 10px 9px; max-height: 70px; overflow: hidden; transition: max-height .25s, padding .25s, opacity .2s; }
+.gc-row.frozen .gc-info { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
 .gc-name {
   font-size: 12.5px; font-weight: 600; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.gc-date { font-size: 11.5px; color: var(--muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
-.gc-rating { font-size: 11.5px; font-weight: 600; margin-top: 4px; display: inline-block; }
+.gc-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; }
+.gc-date { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gc-rating { font-size: 11.5px; font-weight: 600; display: inline-block; }
+/* 回顶按钮（compare 页右下角，滚动 >600px 出现） */
+.backtop {
+  position: fixed; right: 28px; bottom: 32px; z-index: 60;
+  padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line3);
+  background: var(--panel3); color: var(--ink); font-size: 12.5px; cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.backtop:hover { color: var(--primary); border-color: var(--primary); }
+.backtop[hidden] { display: none; }
 
 /* Steam 评级配色（官方色，2026-09-04 用户确认） */
 .r-best, .r-great, .r-good { color: #66c0f4; }
@@ -410,51 +451,48 @@ input[type="date"] { color-scheme: dark; }
 }
 .mini-chart { height: 200px; }
 .mini-chart .empty { padding: 20px 0; font-size: 12px; }
-
-/* 游戏名吸顶条（2026-09-06 重做）：单行横向滚动 + 两端箭头，铺满浏览器全宽。
-   全宽 = 负 margin 挣脱 #app 容器；左右 padding 与 1280px 内容区对齐 */
-.game-sticky {
-  display: flex; position: sticky; top: 60px; z-index: 49;
-  align-items: center; gap: 6px;
-  background: var(--bg);
-  margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw);
-  padding: 0 max(24px, calc(50vw - 616px));
-  max-height: 0; opacity: 0; overflow: hidden; transform: translateY(-6px);
-  transition: max-height .28s, opacity .22s, transform .22s, padding .28s, margin .28s;
-}
-.game-sticky.show {
-  max-height: 60px; opacity: 1; transform: translateY(0);
-}
-.gs-scroll {
-  flex: 1; min-width: 0;
-  display: flex; align-items: center; gap: 8px;
-  overflow-x: auto; padding: 8px 0;
-  scrollbar-width: none;
-}
-.gs-scroll::-webkit-scrollbar { display: none; }
-.gs-arrow {
-  flex: none; width: 26px; height: 26px; padding: 0;
-  border-radius: 50%; display: grid; place-items: center;
-  background: var(--panel2); border: 1px solid var(--line2);
-  color: var(--ink2); font-size: 15px; line-height: 1; cursor: pointer;
-}
-.gs-arrow:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
-.gs-arrow:disabled { opacity: .3; cursor: default; }
-.gs-chip {
-  flex: none; max-width: 150px; overflow: hidden; text-overflow: ellipsis;
-  padding: 4px 12px; font-size: 12.5px; cursor: pointer; user-select: none;
-  background: var(--panel2); border: 1px solid var(--line2); border-radius: 99px;
-  color: var(--muted); transition: border-color .15s, color .15s;
-}
-.gs-chip:hover { color: var(--ink); border-color: var(--line3); }
-.gs-chip.selected {
-  border-color: var(--primary); color: var(--primary);
-  background: var(--panel3); font-weight: 600;
+/* 评论词云（2026-09-08）：echarts-wordcloud 容器 */
+.cloud-chart { height: 230px; }
+.cloud-chart .empty { padding: 30px 0; font-size: 12px; }
+/* 高光时刻「Top N」标签（颜色内联，随排名红/橙/黄） */
+.hl-top {
+  display: inline-block; padding: 0 8px; margin-right: 8px;
+  border: 1px solid; border-radius: 99px; font-size: 11px; font-weight: 600;
+  line-height: 18px; vertical-align: 1px;
 }
 
 /* 表格固定布局：各列间距一致（指标对比 / 每日明细 / 采集任务共用） */
 table.tbl.fixed { table-layout: fixed; }
 table.tbl.fixed th, table.tbl.fixed td { padding: 8px 12px; word-break: break-word; }
+/* admin 采集任务表（2026-09-09）：表头字段名一律居中；操作列内容贴右 */
+.tbl-admin th, .tbl-admin td {
+  padding: 8px 6px; font-size: 12.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tbl-admin th { text-align: left; }  /* 字段名全部靠左 */
+.tbl-admin .btn.sm { padding: 4px 6px; }
+.tbl-admin .td-actions { text-align: right; }  /* 操作列贴右 */
+/* Steam 表（2026-09-09 定稿）：操作 190、状态 150、AppID/URL/语言/发行时间各 120，
+   剩余全部给游戏名称 */
+.tbl-admin.t-steam { table-layout: fixed; }
+.tbl-admin.t-steam .c-act { width: 190px; }
+.tbl-admin.t-steam .c-status { width: 150px; }
+.tbl-admin.t-steam .c-id,
+.tbl-admin.t-steam .c-url,
+.tbl-admin.t-steam .c-lang,
+.tbl-admin.t-steam .c-date { width: 140px; }
+.tbl-admin.t-steam .c-name { width: auto; }
+/* B站表列宽（2026-09-09 按实测像素定稿）：BVID/投稿/采集/评论 112、URL 67、状态 130、
+   操作 210（内容靠左），剩余全部给视频标题（fixed 布局，无宽度的 c-title 自动吃满） */
+.tbl-admin.t-bili { table-layout: fixed; }
+.tbl-admin.t-bili .c-id,
+.tbl-admin.t-bili .c-date,
+.tbl-admin.t-bili .c-cnt { width: 112px; }
+.tbl-admin.t-bili .c-url { width: 67px; }
+.tbl-admin.t-bili .c-status { width: 130px; }
+.tbl-admin.t-bili .c-act { width: 190px; }
+.tbl-admin.t-bili .c-title { width: auto; }
+.tbl-admin.t-bili .td-actions { text-align: right; padding-right: 10px; }  /* 内容贴右端，留 10px */
 .tbl .th-c, .tbl .td-c { text-align: center; }
 .tbl .th-end, .tbl .td-end { text-align: right; }
 

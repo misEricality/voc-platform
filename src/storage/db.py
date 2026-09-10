@@ -15,6 +15,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -26,7 +27,7 @@ from sqlalchemy import (
     select,
     delete,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 
 from ..collectors.base import RawComment
 
@@ -299,6 +300,8 @@ class BilibiliQueue(Base):
     fail_reason = Column(Text)  # 最后一次失败原因
     revisit = Column(Boolean, default=False, nullable=False)  # high-value 重采标记
     note = Column(Text)  # 工程师备注
+    # 展示/隐藏（2026-09-08）：视频看板可见性开关，与 status（采集状态机）独立；NULL = 展示
+    visible = Column(Integer)
 
     # ---- 视频快照（2026-09-04 · B站视频看板；采集/识别时从 view API 一次性快照） ----
     aid = Column(Integer)  # AV 号（评论/弹幕 target_id = "bilibili:video:{aid}" 的映射键）
@@ -337,6 +340,7 @@ class BilibiliQueue(Base):
             "fail_reason": self.fail_reason,
             "revisit": self.revisit,
             "note": self.note,
+            "visible": self.visible != 0,  # NULL=展示
             "aid": self.aid,
             "pic": self.pic,
             "owner_name": self.owner_name,
@@ -376,6 +380,9 @@ class CollectTask(Base):
     enabled = Column(Integer, nullable=False, default=1)  # 1=采集中 0=已暂停（SQLite bool）
     created_at = Column(DateTime, default=_utcnow)
     last_collected_at = Column(DateTime)  # 采集侧回写（预留）
+    # 展示/隐藏（2026-09-08）：看板/下拉/图表的可见性开关，与 enabled（采集/暂停）独立；
+    # NULL = 展示（兼容存量行，init_db 自动 ALTER）
+    visible = Column(Integer)
 
     __table_args__ = (
         Index("ux_collect_task", "platform", "target_id", unique=True),
@@ -391,8 +398,105 @@ class CollectTask(Base):
             "count": self.count,
             "source_url": self.source_url,
             "enabled": bool(self.enabled),
+            "visible": self.visible != 0,  # NULL=展示
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_collected_at": self.last_collected_at.isoformat() if self.last_collected_at else None,
+        }
+
+
+class AgentSession(Base):
+    """原声分析 Agent 对话会话表（2026-09-09 · 见 docs/architecture/ORIGINAL_VOICE_ANALYSIS_AGENT.md）
+
+    设计：
+    - id 用 uuid 字符串（前端立即持有，断线重连无需 round-trip）
+    - anon_user_id 是浏览器 localStorage 生成的 UUID（非 PII），用于在无登录场景下
+      隔离"我自己的对话"；列表/导出 API 严格按此过滤，未来登录态可平滑接管
+    - page_context 是当时的 window.__pageAgentContext 快照（TEXT 存 JSON，SQLite 无原生 JSON）
+    - title 自动生成（首条 user message 前 30 字）
+    """
+
+    __tablename__ = "agent_sessions"
+
+    id = Column(Text, primary_key=True)  # uuid4 字符串（TEXT 不限长，比 VARCHAR 更适合）
+    page = Column(String(32), nullable=False)  # dashboard / compare / bilibili / data / admin / agent / global
+    page_context = Column(Text)  # JSON 字符串
+    title = Column(String(120))  # 自动标题（前 30 字 + 省略号）
+    model = Column(String(64), nullable=False, default="deepseek-v4-flash")
+    anon_user_id = Column(Text)  # 匿名用户 UUID；NULL = 旧记录（未带标识）
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    # 关系：SQLAlchemy 看到 cascade="all, delete-orphan" 会自动按依赖顺序 INSERT/UPDATE/DELETE
+    # 配合 FK ON DELETE CASCADE，让 30 天裁剪脚本删 session 时自动级联删 messages
+    messages = relationship(
+        "AgentMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        passive_deletes=True,  # 让数据库 CASCADE 处理，SQLAlchemy 不重复发 DELETE
+    )
+
+    __table_args__ = (
+        Index("ix_agent_session_page", "page"),
+        Index("ix_agent_session_updated", "updated_at"),
+        Index("ix_agent_session_anon", "anon_user_id"),
+        Index("ix_agent_session_anon_updated", "anon_user_id", "updated_at"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "page": self.page,
+            "page_context": self.page_context,
+            "title": self.title,
+            "model": self.model,
+            "anon_user_id": self.anon_user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class AgentMessage(Base):
+    """原声分析 Agent 消息表（2026-09-09 · 见 docs/architecture/ORIGINAL_VOICE_ANALYSIS_AGENT.md）
+
+    设计：
+    - FK session_id → agent_sessions.id ON DELETE CASCADE
+      （30 天裁剪脚本删 session 时自动级联删 messages；前提是 PRAGMA foreign_keys=ON）
+    - content 存"已完成"的文本（assistant 流式 token 实时推 SSE，不进 DB；final 落库）
+    - tool_calls 用 JSON 数组（一个 assistant message 可能并行调多个 tool）
+    - tool_name 冗余存一份方便查询（避免每次 parse tool_calls）
+    """
+
+    __tablename__ = "agent_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(
+        Text,
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    role = Column(String(16), nullable=False)  # user / assistant / tool
+    content = Column(Text)  # 文本内容
+    tool_calls = Column(Text)  # JSON：[{id, name, args}]
+    tool_call_id = Column(String(64))  # tool 响应对应的 assistant 调用 id
+    tool_name = Column(String(64))  # 冗余字段方便查询
+    created_at = Column(DateTime, default=_utcnow)
+
+    session = relationship("AgentSession", back_populates="messages")
+
+    __table_args__ = (
+        Index("ix_agent_msg_session", "session_id", "created_at"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "role": self.role,
+            "content": self.content,
+            "tool_calls": self.tool_calls,
+            "tool_call_id": self.tool_call_id,
+            "tool_name": self.tool_name,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -436,6 +540,9 @@ def init_db(db_url: str | None = None) -> tuple:
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA busy_timeout=30000")
+            # 启用外键约束（SQLite 默认 OFF；2026-09-09 原声分析 Agent 落地：
+            # agent_messages.session_id → agent_sessions.id ON DELETE CASCADE 依赖此项）
+            cur.execute("PRAGMA foreign_keys=ON")
             cur.close()
 
     Base.metadata.create_all(engine)
@@ -627,7 +734,13 @@ class CommentRepository:
             valid_l1_labels: 合法 L1 标签集合；用于过滤越界 topic
             analyzer_version: 分析溯源标识（"{provider}:{model}@{prompt_hash8}"）；
                 来自 analyzer.analyzer_version 属性；不传/为 None 则不写入（兼容旧调用）。
+
+        ⚠️ 2026-09-08 修复：SessionLocal 为 autoflush=False——调用方若在同 session
+        先 upsert（未 commit）再调本方法，SELECT 看不到 pending 插入 → obj=None →
+        **静默空操作**（分析结果无声丢失）。查询前显式 flush 消除该陷阱；
+        已 commit 的调用方行为不变。
         """
+        self.session.flush()  # 让同 session 内未提交的 upsert 可见（autoflush=False）
         stmt = select(Comment).where(Comment.id == comment_id)
         obj = self.session.execute(stmt).scalar_one_or_none()
         if not obj:

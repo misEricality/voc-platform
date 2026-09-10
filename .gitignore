@@ -51,6 +51,8 @@ data/_bili_videos.json
 data/validation/
 # 封面本地缓存 / 服务日志（2026-09-05：看板封面本地化后新增；covers 可由采集脚本重新下载）
 data/covers/
+# Steam 封面素材采样（2026-09-08 素材探测遗留，运行时产物，6.6 MB；2026-09-10 补 ignore）
+data/covers_specimen/
 data/uvicorn.log
 data/uvicorn.err.log
 # API 服务运行时 stderr 重定向（与 uvicorn 日志同类，不入库；2026-09-05 补充）
@@ -58,6 +60,10 @@ data/_api_server.err
 
 # ---- CodeBuddy IDE 本机数据（不应提交；2026-09-05）----
 .codebuddy/
+# ---- playwright-cli 本地验证产物（快照/截图/console log；不应提交；2026-09-07）----
+.playwright-cli/
+# ---- EdgeOne CLI 运行态（项目绑定缓存；不应提交；2026-09-08）----
+.edgeone/
 
 # ---- DSH web profile 冒烟临时目录（scripts/dev/verify_dsh_web_smoke.ps1 生成，默认自动清理）----
 .dsh-home-smoke/

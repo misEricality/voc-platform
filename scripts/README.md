@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-09-07（新增 `ops/check_daily_collect.py` 每日采集哨兵 + `dev/verify_dsh_web_smoke.ps1` DSH web profile 冒烟；dev/ 活跃脚本 13 个）
+> **最后更新**：2026-09-09（原声分析 Agent 落地：ops/ 新增 prune_agent_history.py + 补登记 check_daily_collect.py）
 
 ---
 
@@ -12,15 +12,14 @@
 scripts/
 ├── README.md                       ⬅ 你在这里
 ├── smoke_test.py                   ✅ 项目骨架冒烟测试（长期保留，CI 用）
-├── dev/                            🧪 开发期活跃脚本（13 个，hander 真正会用到的工具集）
+├── dev/                            🧪 开发期活跃脚本（12 个，hander 真正会用到的工具集）
 │   ├── 标注核心                       reanalyze_all / rematch_opinions / recompute_topics
 │   │                                   rebuild_golden_set / mine_fallback_candidates（按需跑）
 │   ├── 微话题下钻                     l35_cluster（P9 阶段2 骨架）
 │   ├── 弹幕分析                       analyze_danmaku（B 站弹幕词典匹配）
 │   ├── 原型数据导出                   export_prototype_data（被 product/ 下脚本引用）
-│   ├── 端到端验证（2026-08-31 新增）   verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect
-│   ├── Web 前端冒烟（2026-09-02 新增）  verify_web_spa_load_order.js（node，模拟浏览器求值顺序检查 Routes 注册）
-│   └── DSH web profile 冒烟（2026-09-07 新增） verify_dsh_web_smoke.ps1（临时 DSH_HOME + curl 主页 + 进程清理）
+│   └── 端到端验证（2026-08-31 新增）   verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect
+│   └── Web 前端冒烟（2026-09-02 新增）  verify_web_spa_load_order.js（node，模拟浏览器求值顺序检查 Routes 注册）
 ├── dev/archive/                    📦 已完成任务的一次性脚本（42 个，2026-09-01 归档）
 │   ├── debug/                           debug_dup_source_id / debug_pagination_loss / debug_recent_order
 │   ├── diag/                            diag_batch_vs_single / diag_prompt_a / diag_bili_412
@@ -52,7 +51,9 @@ scripts/
     ├── push_via_api.py                 ✅ sandbox 屏蔽 git push 时走 GH REST API 兜底（2026-08-31）
     ├── hash_admin_password.py          ✅ 生成 Web 看板 ADMIN_PASSWORD_HASH（pbkdf2，2026-09-02）
     ├── backfill_bili_highlights.py     ✅ 一次性：存量 B 站视频快照 + 弹幕高光 LLM 总结回填（2026-09-04）
-    ├── register_local_collect_task.ps1 ✅ 注册本地直采计划任务（北京 02:00 → voc.db；2026-09-02 已注册）
+    ├── register_local_collect_task.ps1 ✅ 注册本地直采计划任务（北京 02:00 采集 + 03:00 哨兵 + 03:30 prune → voc.db；2026-09-02 已注册）
+    ├── check_daily_collect.py          ✅ 每日采集哨兵（03:00 检查 02:00 结果，失败/漏跑则补采；2026-09-07）
+    ├── prune_agent_history.py          ✅ Agent 会话 30 天裁剪（03:30 跑，FK CASCADE 删消息；2026-09-09）
     └── register_sync_tasks.ps1         ✅ Windows Task Scheduler 注册（10:00/13:00/18:00/22:00 sync）
 ```
 
@@ -68,11 +69,12 @@ scripts/
 | **ops/refresh_likes.py** | 发布满 7 天的评论回采点赞/回复/开发者回复 | `python -m scripts.refresh_likes --platform steam --target <appid>` |
 | **ops/backfill_embeddings.py** | 评论语义向量回填 / 换模型全量重算 | `python scripts/ops/backfill_embeddings.py --limit 100`（增量）；`--force`（清空重算，单事务原子切换） |
 | **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调用 + 本地直采计划任务）；2026-09-05 起内置 B站队列 run-due（`run_bilibili_queue`，默认跑，`--skip-bilibili` 关闭，`--bili-limit 5` 防风控） | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地直采计划任务用）；测试：`tests/test_bilibili_queue.py` run_bilibili_queue 编排 2 例 |
-| **ops/check_daily_collect.py** | 每日采集哨兵（03:00 计划任务 `VOC-Local-Daily-Collect-Check`）：读 02:00 任务的 LastTaskResult/State，失败或未跑则补采；并发安全（02:00 仍在跑/残留进程则跳过）、幂等（upsert + analyzed 跳过）；注册见 `register_local_collect_task.ps1`（同脚本一并注册/卸载） | `python scripts/ops/check_daily_collect.py`（检查+按需补采）；`--dry-run`（只判定）；`--force`（手动应急补采）；日志 `logs/collect-check.log`；测试：`tests/test_check_daily_collect.py` 5 例 |
 | **ops/verify_release_upload.py** | P6 静默失败防御：daily collect 跑完后用 `gh release view` 检查 `voc.db` asset 实际状态（size > 1KB + state=uploaded），失败 exit 1 让 workflow 标红。详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3` | GH Actions workflow 自动调用；也可 `--tag voc-daily-YYYY-MM-DD` 手动验证；测试：`tests/test_verify_release_upload.py` 8 例 |
 | **ops/smart_sync_release.py** | 本地自动 sync GH Release → `data/voc.db`（幂等）：①今天 release 未上传 → 安静 exit 0（专为"10:00 早跑，workflow 还没好"场景设计）②本地比远端新 → noop exit 0 ③远端比本地新 → 下载 + 安全 rename 替换 → exit 0 ④文件锁（Streamlit 打开）→ exit 1 + 提示"关仪表盘" | `python scripts/ops/smart_sync_release.py`（默认 today UTC）或 `--date 2026-08-28` 指定日期。注册到 Windows Task Scheduler 见 `register_sync_tasks.ps1`（4 task 错开 10:00/13:00/18:00/22:00） |
 | **ops/register_sync_tasks.ps1** | 注册 Windows Task Scheduler 任务：4 个 daily VOC-Sync-Release-* 任务，分别 10:00 / 13:00 / 18:00 / 22:00，每天跑 `smart_sync_release.py` | **需以管理员身份运行 PowerShell**：`powershell -ExecutionPolicy Bypass -File scripts\ops\register_sync_tasks.ps1`。卸载：`... -Uninstall`。DSH agent 无 admin 权限，不能自动注册 |
-| **ops/register_local_collect_task.ps1** | 注册本地直采计划任务 `VOC-Local-Daily-Collect`（北京 02:00）：跑 `daily_incremental_collect.py --no-download --no-upload` 直接写 `data/voc.db`，前端直读零延迟；错过补跑（StartWhenAvailable）+ 日志落 `logs/collect.log` | `powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1`（当前用户注册，**无需管理员**）。卸载：`... -Uninstall`。⚠️ 机器关机 >2 天会有数据缺口，恢复后加 `--full-replay` 手动补 |
+| **ops/register_local_collect_task.ps1** | 注册本地直采计划任务 `VOC-Local-Daily-Collect`（北京 02:00）+ `VOC-Local-Daily-Collect-Check` 哨兵（03:00）+ `VOC-Local-Agent-Prune`（03:30）：跑 `daily_incremental_collect.py --no-download --no-upload` 直接写 `data/voc.db`，前端直读零延迟；错过补跑（StartWhenAvailable）+ 日志落 `logs/collect.log` | `powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1`（当前用户注册，**无需管理员**）。卸载：`... -Uninstall`。⚠️ 机器关机 >2 天会有数据缺口，恢复后加 `--full-replay` 手动补 |
+| **ops/check_daily_collect.py** | 每日采集哨兵：03:00 检查 `VOC-Local-Daily-Collect` 上次结果，失败/漏跑则补采（`LastTaskResult != 0` 或未跑）；并发安全（02:00 仍在跑则跳过） | 由计划任务自动调用；手动 `python scripts/ops/check_daily_collect.py --dry-run`；测试 `tests/test_check_daily_collect.py` 5 例 |
+| **ops/prune_agent_history.py** | Agent 会话 30 天滚动裁剪：删 `agent_sessions.created_at < now-AGENT_RETENTION_DAYS`（默认 30，0=永久），`agent_messages` 走 FK CASCADE | 由计划任务 03:30 调用；手动 `python scripts/ops/prune_agent_history.py --dry-run`；测试 `tests/test_prune_agent_history.py` 6 例 |
 | **ops/reset_qwen_flash_bogus.py** | P11 清理 8/24-25 QWEN-flash 模型 404 留下的假数据：UPDATE 261 条 `analyzer_version=llm:qwen3-flash@...` 的评论清掉分析字段，让明早 cron 重新打 | 默认 dry-run 打印预演；`--commit` 真正清；`--like` 宽松匹配（清所有 `llm:qwen%` 假数据） |
 | **ops/archive_online_games.py** | 一次性：把 4 款 Steam 网游（PUBG/Apex/Dota2/CS2）数据从主库抽到 `data/archive/online_games_YYYY-MM-DD.db`，并从主库删除（2026-08-23 已执行） | `python scripts/ops/archive_online_games.py --dry-run`（预览）；不带参数实际执行；归档后主库 VACUUM |
 | **ops/backfill_bili_highlights.py** | 一次性：存量 fetched B 站视频回填快照（封面/UP主/播放量/三连/时长/标签）+ 弹幕高光 LLM 总结（30s 桶 top3 → `bilibili_queue.highlights_json`）；此后新采集由 pipeline 自动完成 | `python scripts/ops/backfill_bili_highlights.py`（全部）或 `... BV1xxx`（指定）；依赖 .env LLM Key（默认 DEEPSEEK），每视频 1 次 view 调用 + 3 次 LLM |
@@ -199,7 +201,7 @@ scripts/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
-| 2026-09-07 | 新建 `ops/check_daily_collect.py`（每日采集哨兵）+ 注册脚本新增哨兵任务 `VOC-Local-Daily-Collect-Check`（03:00）：读 02:00 任务的 LastTaskResult/State，失败或未跑则补采；并发安全 + 幂等；测试 +5 例（判定逻辑四分支 + 孤儿进程） | 9/5~9/7 连续三晚 02:00 因本机到 Steam 网络不通全灭，StartWhenAvailable 只补「错过」不补「失败」，工程师要求增加 03:00 检查补采 |
+| 2026-09-09 | 新建 `ops/prune_agent_history.py`（Agent 会话 30 天裁剪，FK CASCADE）；补登记 `ops/check_daily_collect.py`（9/7 新增漏登记） | 原声分析 Agent 落地：30 天合规裁剪 + 03:00 采集哨兵链闭环 |
 | 2026-09-06 | `ops/daily_incremental_collect.py` Steam 采集成功后回写 `collect_tasks.last_collected_at`（`task_row_id` 此前透传但从未被消费） | Web 看板 admin 列表新增「采集时间」列依赖该字段 |
 | 2026-09-05 | `ops/daily_incremental_collect.py` 内置 B站队列 run-due（`run_bilibili_queue` 复用 `src/queue/runner.py`，默认跑 / `--skip-bilibili` 关闭 / `--bili-limit 5` 防风控 + 预留计划任务时长余量）；计划任务命令不变无需重注册；测试 +2 例（编排透传 / 结构性异常不阻塞） | 修复调度缺口：daily 此前只采 Steam，B站队列 due 过期任务无本地调度器负责（当日晚间 uvicorn backfill ImportError 排查时发现） |
 | 2026-08-19 | 新建 `ops/daily_incremental_collect.py`：GitHub Actions 每日调用的增量采集编排入口；同步登记 ops 章节 | P6 自动化流水线落地 |
@@ -209,4 +211,5 @@ scripts/
 | 2026-09-01 | **HANDOVER 收口 · dev/ 激进归档 42 个一次性脚本到 `archive/`**：按 9 个子目录分类（debug/ diag/ e2e/ one_shot_backfill/ one_shot_curate/ one_shot_export/ one_shot_prototype/ one_shot_verify/ P6_bootstrap/）；dev/ 保留 11 个核心脚本（reanalyze_all / rematch_opinions / recompute_topics / rebuild_golden_set / mine_fallback_candidates / l35_cluster / analyze_danmaku / export_prototype_data / verify_glm_5_3_flash / verify_smart_window_e2e / verify_today_collect）；ops/ 补 `push_via_api.py` + `register_sync_tasks.ps1`；README 头部时间戳与目录树同步 | 项目交接准备：让新接手者一眼看到「真正活跃的工具集」；冗余一次性脚本不污染日常 dev/ 视角 |
 | 2026-09-02 | 新建 `ops/hash_admin_password.py`（生成 Web 看板 ADMIN_PASSWORD_HASH）+ dev/ 新增 `verify_web_spa_load_order.js`（SPA 加载顺序冒烟） | Web 实时看板（WEB_DASHBOARD.md）落地配套：管理员密码哈希工具 + 前端无浏览器回归防线 |
 | 2026-09-07 | 新建 `dev/verify_dsh_web_smoke.ps1`（DSH web profile 冒烟：临时 DSH_HOME + 临时 cwd + curl 主页 + title 断言 + 进程清理；目的：方案 A「DSH iframe 嵌入 dashboard」阶段 0 验证） | 原声分析 Agent 集成（方案 A vs B vs C）选型落地第一步：先验证 DSH web 壳能在本机起来，**看完 UI 后再决定走 iframe 嵌入 vs 自写 UI** |
+| 2026-09-10 | **P11 bogus 清理执行**：`ops/reset_qwen_flash_bogus.py --commit` 清理 2542 条 QWEN-flash 假标注（6 个 Steam 目标）；`dev/reanalyze_all.py` 补写 `analyzer_version`（重打溯源）+ 以一次性计划任务重打（这些评论在 cron 7 天回看窗之外） | P11 收尾：清掉 8/24-25 模型名 404 留下的 neutral 假数据，让情感/观点统计恢复真实口径 |
 - 不要把 prompt 模板或业务配置写死在脚本里，统一从 `config/` 加载

@@ -2,7 +2,7 @@
 
 > **业务知识与代码解耦** — 改业务配置不必动 Python 代码，不必重启服务。
 >
-> **最后更新**：2026-09-07
+> **最后更新**：2026-09-09
 
 ---
 
@@ -18,6 +18,9 @@ config/
 ├── topics/                         🏷️ 三级标签体系
 │   ├── gaming.yaml                     GDT v3.1.1：L1 10 / L2 28 / L3 111 三级标签树
 │   └── l3_definitions.yaml             111 个 L3 定义 + 关键词（程序匹配词典）
+├── agent/                          🤖 原声分析 Agent 配置（2026-09-09）
+│   ├── tools.yaml                      4 个 tool 的 OpenAI function calling schema（从 tools.py 抽离，§3 红线）
+│   └── skills/                         3 个 skill YAML（负面痛点聚焦 / 情感趋势对比 / 原声引用增强）
 └── monitoring/                     ⏰ 自动化采集监控目标（P6）
     └── targets.yaml                    每日定时采集的目标清单（6 款 Steam 单机游戏，2026-08-25 起 count: null auto 模式）
 ```
@@ -84,6 +87,8 @@ config/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-09 | 新建 `agent/tools.yaml`（4 tool OpenAI function calling schema）+ `agent/skills/`（3 个 skill YAML） | 原声分析 Agent 落地 + §3 红线修复（prompt/schema 不写死代码，统一走 config/） |
+| 2026-09-08 | 新建 `wordlists/wordcloud_stopwords.txt`（评论词云停用词表，每行空格分隔多词；加载于 `service._cloud_stopwords`） | compare 页评论词云功能上线：jieba 分词噪声过滤，脏词直接往表里加无需改代码 |
 | 2026-09-07 | `monitoring/targets.yaml` targets 条目新增可选字段 **`release_date_cn`**（北京时间发行日人工校准），已填黑神话 2024-08-20 / 巫师3 2015-05-19 / 文明6 2016-10-21；`service._refresh_game_meta` 刷新时应用覆盖 | 探测核实 Steam appdetails/商店页只提供 Valve 美西口径日期（黑神话=08-19），与北京时间差异因解锁时刻而异（+0/+1 天）无法程序换算，admin「发行时间」列与对比看板同期窗口依赖该日期 |
 | 2026-09-06 | `monitoring/targets.yaml` targets 段新增 **明末：渊虚之羽（steam:2277560）**（auto 模式、schinese）——该目标前一日已经 admin 加入 `collect_tasks`，本次同步进 yaml 使其进入 `/api/targets?monitored=true` 白名单 | 前端单游戏看板/游戏对比看板/数据管理的目标下拉都以 targets.yaml 为 monitored 白名单，不加入则新任务采到的数据前端不可见 |
 | 2026-09-02 | `monitoring/targets.yaml` **语义变更**：降级为 `collect_tasks` 表（DB）的**种子/回退源**——首次运行自动种子化到 DB，之后 Web 看板「系统管理」直接在 DB 增删改；`daily_incremental_collect.py` 优先读 DB，空表才回退 yaml（详见 `docs/architecture/WEB_DASHBOARD.md §3.4`） | Web 实时看板立项：DB 单一权威源，网页改采集目标不再写 git 跟踪文件 |

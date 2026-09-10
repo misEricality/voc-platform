@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lynx — 实时口碑看板</title>
 <link rel="stylesheet" href="src/tokens.css">
-<link rel="stylesheet" href="src/web.css?v=20260906c">
+<link rel="stylesheet" href="src/web.css?v=20260910">
 </head>
 <body>
 <header class="topbar">
   <div class="brand">Lynx</div>
   <nav class="nav" id="nav">
+    <!-- AI 原声分析助手一级页已下线（2026-09-10 归档 src/pages/archive/）：入口统一为右下悬浮球 -->
     <div class="nav-drop">
       <a href="#/compare" data-page="compare">Steam游戏看板 ▾</a>
       <div class="nav-menu">
@@ -36,13 +37,19 @@
 <div id="modalRoot"></div>
 
 <script src="vendor/echarts.min.js"></script>
+<script src="vendor/echarts-wordcloud.min.js"></script>
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="src/utils/anon-id.js?v=20260909"></script>
 <script src="src/api.js?v=20260905c"></script>
+<script src="src/agent.js?v=20260910a"></script>
+<script src="src/agent-drawer.js?v=20260910b"></script>
 <script src="src/charts.js?v=20260905c"></script>
-<script src="src/pages/dashboard.js?v=20260905c"></script>
-<script src="src/pages/compare.js?v=20260906c"></script>
-<script src="src/pages/bilibili.js?v=20260905c"></script>
-<script src="src/pages/data.js?v=20260906c"></script>
-<script src="src/pages/admin.js?v=20260907"></script>
-<script src="src/main.js?v=20260905c"></script>
+<script src="src/pages/dashboard.js?v=20260910b"></script>
+<script src="src/pages/compare.js?v=20260910c"></script>
+<script src="src/pages/bilibili.js?v=20260910b"></script>
+<script src="src/pages/data.js?v=20260908"></script>
+<script src="src/pages/admin.js?v=20260909d"></script>
+<script src="src/main.js?v=20260910c"></script>
 </body>
 </html>

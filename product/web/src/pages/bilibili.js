@@ -252,6 +252,7 @@ Routes.bilibili = async function (app) {
       drawL1Chart('chL1Pos', 'positive', topicsCache.pos);
       drawL1Chart('chL1Neg', 'negative', topicsCache.neg);
       renderVoices();
+      setAgentContext();
     });
   }
   const topicsCache = { pos: [], neg: [] };
@@ -373,6 +374,15 @@ Routes.bilibili = async function (app) {
         return;
       }
       $('chDmB').querySelector('.empty')?.remove();
+      // 高光排名 → 颜色（2026-09-09）：折线着色方案已放弃（区域填充/折线叠色实测观感均不佳），
+      // 仅保留悬停浮层标题与「高光时刻」卡片 Top N 标签的着色
+      const HL_TEXT = ['#d9534f', '#fb8c00', '#fbc02d'];
+      const ranked = (((cur() || {}).highlights || {}).buckets || []).slice().sort((a, b) => b.count - a.count);
+      const hlOf = {};  // 桶下标 → 高光排名 0/1/2
+      ranked.slice(0, 3).forEach((hb, r) => {
+        const idx = d.buckets.findIndex(b => b.start_sec === hb.start_sec);
+        if (idx >= 0) hlOf[idx] = r;
+      });
       Charts.render('chDmB', {
         legend: { show: false },  // 去除「弹幕」图例
         tooltip: { show: false },  // 自定义浮层替代默认 tooltip
@@ -393,7 +403,7 @@ Routes.bilibili = async function (app) {
       });
       const chart = Charts.get('chDmB');
       if (!chart) return;
-      const n = d.buckets.length;
+      const n = d.buckets.length;  // 桶热区/像素换算依赖（勿删）
       const hide = () => { pop.hidden = true; band.hidden = true; };
       const showBucket = (idx) => {
         const b = d.buckets[idx];
@@ -407,7 +417,7 @@ Routes.bilibili = async function (app) {
           band.style.width = Math.max(8, x2 - x1) + 'px';
           band.hidden = false;
           pop.innerHTML = `
-            <div class="dm-pop-title">${fmtSec(b.start_sec)} ~ ${fmtSec(b.end_sec)} · ${b.count} 条</div>
+            <div class="dm-pop-title"${hlOf[idx] != null ? ` style="color:${HL_TEXT[hlOf[idx]]}"` : ''}>${fmtSec(b.start_sec)} ~ ${fmtSec(b.end_sec)} · ${b.count} 条</div>
             ${(b.samples || []).map(s => `<div class="dm-pop-item">${esc(s)}</div>`).join('') || '<div class="dm-pop-item dim">无样本</div>'}`;
           const wrapW = $('chDmB').clientWidth;
           pop.style.left = Math.max(4, Math.min(x1 - 110, wrapW - 268)) + 'px';
@@ -455,11 +465,20 @@ Routes.bilibili = async function (app) {
   }
   function renderHighlights(v) {
     const buckets = (v.highlights && v.highlights.buckets) || [];
-    $('hlGrid').innerHTML = buckets.length ? buckets.map(b => `
+    // 标题恢复原色，前置「Top N」彩色标签（对齐弹幕时间轴折线色，2026-09-09）
+    const HL_TEXT = ['#d9534f', '#fb8c00', '#fbc02d'];
+    const ranked = buckets.slice().sort((a, b) => b.count - a.count);
+    $('hlGrid').innerHTML = buckets.length ? buckets.map(b => {
+      const r = ranked.indexOf(b);
+      const tag = r >= 0 && r < 3
+        ? `<span class="hl-top" style="color:${HL_TEXT[r]};border-color:${HL_TEXT[r]}">Top ${r + 1}</span>`
+        : '';
+      return `
       <div class="card hl-card">
-        <div class="hl-time">${fmtSec(b.start_sec)} ~ ${fmtSec(b.end_sec)} · ${fmtNum(b.count)} 条弹幕</div>
+        <div class="hl-time">${tag}${fmtSec(b.start_sec)} ~ ${fmtSec(b.end_sec)} · ${fmtNum(b.count)} 条弹幕</div>
         <div class="hl-summary">${renderSummary(b.summary)}</div>
-      </div>`).join('')
+      </div>`;
+    }).join('')
       : '<div class="empty" style="grid-column:1/-1">高光总结尚未生成（采集回填后显示）</div>';
   }
 
@@ -483,6 +502,48 @@ Routes.bilibili = async function (app) {
     ]);
   }
 
-  $('selVideo').addEventListener('change', e => { state.tid = e.target.value; refreshAll(); });
+  /* ---- 跨页上下文（2026-09-09 阶段 8 落地）：供全局 AI 抽屉「引用当前查询」按钮使用 ---- */
+  function setAgentContext() {
+    const v = cur();
+    const label = `${v?.title || v?.bv_id || state.tid}` +
+      (state.filterTopic ? ` · ${state.filterSenti === 'positive' ? '正向' : '负向'} · ${state.filterTopic}` : '');
+    const params = {
+      target: state.tid,
+      grain: 'comment', sort: 'likes',
+      topic: state.filterTopic,
+      sentiment: state.filterSenti,
+      page: 1, page_size: 50,
+    };
+    window.__pageAgentContext = {
+      page: 'bilibili',
+      target_id: state.tid,
+      target_name: v?.title || '',
+      filter_topic: state.filterTopic,
+      filter_sentiment: state.filterSenti,
+      label,
+      quick_query: `/api/comments?${new URLSearchParams(Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== '' && v != null)))}`,
+      /* 2026-09-10「引用当前查询」：抽屉引用按钮调用，返回当前查询的聚合摘要（≤2000 字符） */
+      build_summary: async () => {
+        const enc = encodeURIComponent;
+        const o = await API.get(`/api/overview?target=${enc(state.tid)}&grain=comment`);
+        const t = await API.get(`/api/topics?target=${enc(state.tid)}&level=L1&grain=opinion` +
+          (state.filterSenti ? `&sentiment=${enc(state.filterSenti)}` : ''));
+        const s = o.sentiment || {};
+        const tops = (t.slice ? t : (t.topics || t.items || [])).slice(0, 8)
+          .map(x => `${x.topic} ${x.total}(负${x.negative_pct ?? '-'}%)`).join(' / ');
+        return [
+          `页面: bilibili（B站视频看板）`,
+          `视频: ${o.name || v?.title || state.tid} (${state.tid})`,
+          `筛选: ${state.filterTopic || '全部主题'} · ${state.filterSenti || '全部情感'}`,
+          `情感: 总 ${o.total} 条评论 · 负 ${s.negative}(${s.negative_pct}%) · 正 ${s.positive}(${s.positive_pct}%) · 中 ${s.neutral}`,
+          `主题Top8: ${tops || '（无主题数据）'}`,
+        ].join('\n');
+      },
+    };
+  }
+
+  $('selVideo').addEventListener('change', e => { state.tid = e.target.value; refreshAll(); setAgentContext(); });
   refreshAll();
+  setAgentContext();  // 初始 baseline（即便首次 refresh 失败也有 tid）
 };

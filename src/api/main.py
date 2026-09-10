@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
 from src.api.routers import admin_router, auth_router, public_router
+from src.api.routers_agent import agent_router
 from src.storage.db import init_db
 
 log = logging.getLogger("voc.api")
@@ -73,6 +74,7 @@ def create_app(*, db_url: str | None = None) -> FastAPI:
     app.include_router(public_router)
     app.include_router(auth_router)
     app.include_router(admin_router)
+    app.include_router(agent_router)
 
     # 缓存策略：HTML/业务 JS 禁缓存；API GET no-store（看板要实时，防浏览器启发式缓存）；
     # echarts 大文件允许缓存 1 天

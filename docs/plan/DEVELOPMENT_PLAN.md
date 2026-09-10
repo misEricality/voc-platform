@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../architecture/STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-09-07（洁癖收口：同步本地直采 + 03:00 补采哨兵 + Web 看板 UX 第二轮 + 测试 129 例；README/AGENTS/DEVELOPMENT_PLAN 已刷新）
+> **最后更新**：2026-09-10（P11 bogus 清理执行 + 计划外进度入库：原声分析 Agent / 静态快照部署 / 每日采集哨兵；测试 219 例）
 
 ---
 
@@ -30,6 +30,17 @@
 
 ## ✅ 二、已完成里程碑（按时间倒序）
 
+
+### M12 · v0.8 Web 实时看板 + 静态快照部署 + 原声分析 Agent（2026-09-02 ~ 2026-09-10）
+
+**已完成**（2026-09-10 补登，此前只散落在 `AGENTS.md` 版本记录里、未进本计划）：
+- **Web 实时看板（P，2026-09-02 阶段 1-5 + 09-07 收尾）**：`src/api/` FastAPI（公开只读端点 + 管理员 session 鉴权 + 任务 CRUD）+ `product/web/` 原生 ECharts SPA（单游戏看板 / 游戏对比 / B站视频 / 数据管理 / 系统管理 5 页）+ `collect_tasks` 表 + SQLite WAL；三看板按线框图重写 + 系统管理子模块化（09-03~05）；对抗审查 P1×4 + P2×3 已修
+- **原声分析 Agent（2026-09-08 ~ 09-10）**：`src/agent/`（FastAPI SSE + function calling + 4 tool：overview/topics/comments/search_docs）+ `config/agent/`（tools.yaml + skills）+ 前端悬浮球两段式抽屉（小窗 420 / 大窗 900 含历史栏，`#/agent` 一级页已下线归档）+ **引用当前查询**（看板摘要注入上下文，不落库）+ 30 天滚动裁剪（`prune_agent_history.py`，03:30 计划任务）+ Markdown 导出 + 匿名 UUID 隔离；上线后经对抗式审查修 P0×2（chat 越权 fail-open / 伪造 XFF 绕限流）+ P1×2
+- **公网部署方案 ③ 静态快照（2026-09-07）**：`ops/export_static_snapshot.py`（复用 service 聚合层导出三页预聚合 JSON）+ `api.js` 静态 shim + `ops/publish_static_snapshot.ps1`（发布 EdgeOne Pages）；公网 live 实测三页 / 降级 / 窗口化全过；手册 `docs/architecture/STATIC_SNAPSHOT_DEPLOYMENT.md`
+- **每日采集哨兵（2026-09-07）**：`ops/check_daily_collect.py` + 计划任务 `VOC-Local-Daily-Collect-Check`（03:00 检查 02:00 失败/未跑则补采，并发安全、幂等）；本地直采链路 02:00 → 03:00 兜底
+- **评论词云对比（2026-09-08）**：`/api/wordcloud`（jieba + TF-IDF 跨游戏区分度 + 词级情感着色）+ `config/wordlists/wordcloud_stopwords.txt`
+- **P11 bogus 清理执行（2026-09-10）**：`ops/reset_qwen_flash_bogus.py --commit` 清掉 2542 条 QWEN-flash 假标注（6 个 Steam 目标）+ `reanalyze_all.py` 补 `analyzer_version` 溯源后重打
+- **测试**：49 → **219 例**（agent 64 + API + 快照导出 + 哨兵 + 词云 + 黄金集等）
 
 ### M11 · v0.7 分析溯源 + CI pytest（2026-08-21）
 
@@ -120,25 +131,25 @@
 
 ---
 
-## 📊 三、当前数据快照（2026-09-07）
+## 📊 三、当前数据快照（2026-09-10）
 
 | 指标 | 数值 | 业务解读 |
 |---|---|---|
-| 总评论数 | **21,917 条** | Steam 单机 ~18.5K（含新加明末/鬼武者）+ 归档 4 款网游 ~4.9K + B 站 5 视频 ~3.5K |
-| Steam 主库覆盖 | **8 款单机** | 黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末：渊虚之羽 / 鬼武者 |
-| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-08-23.db`** | PUBG / Apex / Dota 2 / CS2；监控目标已 exclude |
-| B 站支持 | **5 个视频 / ~3.5K 评论 + 7.4K 弹幕** | `bilibili:video:{aid}` 形态 target；本地 `run-due` 每日调度 |
-| 情感分析覆盖 | **~80%+ 已分析** | analyzer_version 溯源已上线；新数据 `llm:glm-5.3-flash@...` |
-| 观点级标注 | ~28,579 条 | `comment_opinions` 表（程序匹配观点短语） |
-| 语义向量 | ~20,887 条 | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
-| 已支持游戏/视频 | **8 单机 Steam + 4 归档网游 + 5 B 站视频** | 主库聚焦 8 单机 + 5 B 站；4 网游可单独查归档 |
-| 数据截至 | 2026-09-07 | 本地直采 02:00 + 03:00 补采哨兵；7 天回看窗口幂等补齐 |
-| 兜底占比 | topic 67.6% / opinion 67.4% | GDT v3.1.1 锁定 |
+| 总评论数 | **23,632 条** | ⚠️ 含 4 款已归档网游 4,916 条（疑为 sync 回灌，见下行）+ Steam 单机 ~14.5K + B 站 5 视频 4,241 |
+| Steam 主库覆盖 | 实测 13 个 `target_id`：**单机 8 款** + **4 款网游（4,916 条）** + `steam:999`（1 条噪声） | 单机：黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末：渊虚之羽 / 鬼武者 |
+| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-08-23.db`（4,916 条）** | ⚠️ **主库中仍存在同款 4,916 条**（PUBG/Apex/Dota2/CS2），与 2026-08-23「归档后从主库删除」的记录不符 —— 疑似后续 `sync_local_from_release` / `smart_sync_release` 把归档前的 DB 回灌，**待确认后重新归档** |
+| B 站支持 | **5 个视频 / 4,241 评论 + 7,359 弹幕** | `bilibili:video:{aid}` 形态 target；本地 `run-due` 每日调度 |
+| 情感分析覆盖 | **23,553 / 23,632 = 99.7% 已分析** | 剩 79 条未分析（63 Steam「三轮后无观点」+ 16 B站历史遗留）；主标注器 `llm:deepseek-v4-flash@73892f47`（2,819 条）、`glm-5.3-flash@55c003a3`（7,798 条） |
+| 观点级标注 | **47,505 条** | `comment_opinions` 表（程序匹配观点短语；2026-09-10 P11 重打后 +~17K） |
+| 语义向量 | **22,628 条** | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
+| 已支持游戏/视频 | **8 单机 Steam + 5 B 站视频**（+ 4 网游归档副本，主库仍有重复） | 主库应聚焦 8 单机 + 5 B 站 |
+| 数据截至 | 2026-09-10 | 本地直采 02:00 + 03:00 补采哨兵；7 天回看窗口幂等补齐 |
+| 兜底占比 | topic 67.6% / opinion 67.4%（**2026-09-10 重打后未复测**） | GDT v3.1.1 锁定；复测脚本已归档到 `scripts/dev/archive/one_shot_curate/stage1_report.py` |
 | 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111） |
-| 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）** | FastAPI + 原生 SPA 5 页；Streamlit 并存；VPS 部署选型已完成，待落地 |
-| 平台覆盖 | **Steam（单机 8 + 归档 4）+ B站（5 视频）** | 微博为下一主扩展 |
-| 数据存储 | SQLite 单文件（`data/voc.db`，**129 MB / 2026-09-07**）| WAL 模式；前端服务读 × cron 写并发；GH Actions `collect` job 已停用 |
-| 测试门禁 | **pytest 129 例** | 黄金集 + API + 队列 + 每日采集 + 哨兵 + monitored 白名单 |
+| 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）+ 公网静态快照（EdgeOne Pages）** | FastAPI + 原生 SPA 5 页 + Agent 抽屉；Streamlit 并存；方案 ③ 已上线，方案 ①b（VPS 只读服务）待外部资源 |
+| 平台覆盖 | **Steam（单机 8）+ B站（5 视频）** | 微博为下一主扩展 |
+| 数据存储 | SQLite 单文件（`data/voc.db`，**144.2 MB / 2026-09-10**）| WAL 模式；前端服务读 × cron 写并发；GH Actions `collect` job 已停用 |
+| 测试门禁 | **pytest 219 例** | 黄金集 + API + 队列 + 每日采集 + 哨兵 + monitored 白名单 + Agent |
 
 ---
 
@@ -277,8 +288,8 @@
 - 6 个回归测试全绿（空库起步 / 时间窗 / 不擦旧数据 / 单失败容错 / gh CLI 容错 / 时间窗边界）
 - CI pytest 护栏（P10）：workflow 加 `test` job（与 `collect` 并列）；A3 推送后已上线
 
-**剩余（脚本层小修，下次小版本）**：
-- 🟡 `gh_release_upload` 副作用：先 `gh release view` 检查存在性再决定 create，最小 patch 已写在 `.workbuddy/memory/2026-08-22.md` A1 节
+**剩余（脚本层小修）**：
+- ✅ ~~`gh_release_upload` 副作用（先 `gh release view` 再 create）~~：已落盘（`daily_incremental_collect.py` 内 `_release_exists()` + 上传前 ensure release；同时去掉新版 gh 不支持的 `--name` flag）；workflow 端 `verify_release_upload.py` 步骤已上线——**2026-09-10 文档核对确认**（该链路现已随 `collect` job `if: false` 休眠，恢复云端采集时自动生效）
 
 ---
 
@@ -329,6 +340,35 @@
 **后续**：1）可写一个 `scripts/ops/backfill_analyzer_version.py` 给老 11332 条 NULL 数据补默认值（"legacy-pre-versioning"），方便识别；2）仪表盘可选展示"用当前 prompt 打标 vs 用旧 prompt 打标"的分布。
 
 ---
+
+### ✅ P11 · QWEN-flash bogus 数据清理（2026-09-10 执行）
+
+- **背景**：2026-08-24/25 三个 QWEN-flash 模型名全部 API 404，catch 块把整批静默标成 `neutral`，污染 2542 条评论（`analyzer_version=llm:qwen3-flash@55c003a3`，6 个 Steam 目标）
+- **✅ 已执行**：`python scripts/ops/reset_qwen_flash_bogus.py --commit`（清理前先 WAL checkpoint + 备份 `data/backups/voc.pre-p11-20260910.db`）；2542 行 `analyzed_at` 与分析字段已重置，版本分布中 qwen 行归零、无孤儿 `comment_opinions` 残留
+- **🔁 重打**：因这些评论的 `posted_at` 集中在 8/04~8/25，**已在每日 cron 的 7 天回看窗口之外**（实测近 7 天未分析 = 0），不会被自动重打 → 用 `scripts/dev/reanalyze_all.py --platform steam` 手动重打（一次性计划任务触发，避免 CLI 派生进程被冻结）
+- **配套修复**：`reanalyze_all.py` 原先不写 `analyzer_version`，重打后会继续保持 NULL（与 legacy 未溯源数据无法区分）；已在 `update_analysis` 调用补 `analyzer_version=analyzer.analyzer_version`（2026-09-10）
+
+---
+
+### ✅ P12 · 原声分析 Agent（2026-09-08 ~ 09-10，计划外新增）
+
+> 详见 [ORIGINAL_VOICE_ANALYSIS_AGENT.md](../architecture/ORIGINAL_VOICE_ANALYSIS_AGENT.md)（设计蓝本 + 22 项决策 + 现役修正）。
+
+- **业务目标**：让看板从"人翻图表"升级为"用人话问数据"——平台门面级能力
+- **✅ 已交付**：`src/agent/`（SSE 流式 + function calling + 4 tool + skill 系统）+ `config/agent/`（tools.yaml 抽离，prompt/描述不写死代码）+ 前端悬浮球两段式抽屉 + 「引用当前查询」（当前页筛选摘要注入上下文）+ 30 天滚动裁剪 + Markdown 导出 + 匿名 UUID 会话隔离
+- **加固**：上线后对抗式审查修 P0×2（chat 端点越权 fail-open / 伪造 XFF 绕过限流）+ P1×2（LLM 配置失败无 error 事件 / list_sessions total 失真）
+
+---
+
+### ✅ P13 · 公网部署方案 ③（静态快照，2026-09-07）
+
+> 选型见 [DEPLOYMENT_OPTIONS.md](../architecture/DEPLOYMENT_OPTIONS.md)，操作手册见 [STATIC_SNAPSHOT_DEPLOYMENT.md](../architecture/STATIC_SNAPSHOT_DEPLOYMENT.md)。
+
+- **✅ 已落地**：三页预聚合 JSON 导出（383 路由 / 5.4 MB）+ 静态 shim + EdgeOne Pages 发布链路；公网 live 实测通过
+- **范围**：只导三看板页（不含数据管理 / 系统管理，无写操作）；首页 = 游戏对比（静态版）
+- **待办**：方案 ① 已于 2026-09-10 定为**变体 ①b**（本机采集 + 推 DB + VPS 只读服务，含实时查询与 Agent 对话），落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](../architecture/SELF_HOSTED_VPS_DEPLOYMENT.md)，待 VPS / 域名 / 备案到位
+
+---
 ## ⚖️ 五、决策建议（业务视角）
 
 ### ⭐ 当前主线（P6 运行态失效待收口 2026-08-22；2026-09-01 更新 workflow yaml 与版本记录脱节收口）
@@ -343,15 +383,16 @@
 7. ~~**CS2（appid 730）补采复查**~~：已于 2026-08-23 关闭（CS2 与其他 3 款网游归档到 `data/archive/online_games_2026-08-23.db`）
 8. **🆕 B 站自动化（阶段 0）**：2026-08-23 落地 — `bilibili_queue` 表 + CLI（`python -m src.queue ...`）+ workflow `bilibili-daily.yml`；工程师手输 BV 号入清单，系统识别投稿时间后自动计算第 7 天，每日 cron 触发采集；Web 看板「系统管理」已可网页增删改（2026-09-02）；详见 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)
 
-### 🚦 中期主线（Web 看板已收口 + 公网部署 + L3.5 + PEDM + P11 清理）
+### 🚦 中期主线（公网部署 ①b + L3.5 + PEDM + 作品化）
 
 1. ✅ ~~**P8 时间序列趋势图**~~：2026-09-02 已随 Web 看板交付
 2. ✅ **Web 实时看板阶段 5 收口**：VPS 部署文档更新（鉴权/WAL/8000 端口 + 03:00 补采哨兵）+ AGENTS.md 版本记录 + §6 健康检查 8 条（2026-09-07 洁癖收口）
-3. **P11 qwen-flash bogus 清理**（`scripts/ops/reset_qwen_flash_bogus.py --commit`）：本地采集跑稳后清；预期 261 行重打
+3. ✅ ~~**P11 qwen-flash bogus 清理**~~：**2026-09-10 已执行**（实际 **2542 行**，6 个 Steam 目标；原「261 行」估算偏低）；这些评论 `posted_at` 在 8/04~8/25，**在每日 cron 的 7 天回看窗之外**（实测近 7 天未分析 = 0），故改用 `reanalyze_all.py --platform steam` 手动重打 + 补写 `analyzer_version` 溯源 —— 详见 §四 P11
 4. ✅ ~~**workflow cron change + verify step push**~~：已推送（2026-09-01）；2026-09-02 起 workflow `collect` job 置 `if: false` 停用（数据链路切**本地直采**：Task Scheduler `VOC-Local-Daily-Collect` 北京 02:00 直写 voc.db；`test` job 保留作 CI 门禁）——详见 [AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md) §0
-5. **🆕 公网部署（准备启动，选型已完成）**：[DEPLOYMENT_OPTIONS.md](../architecture/DEPLOYMENT_OPTIONS.md) 已评估 5 方案，结论为「方案 ③ 静态快照做作品集门面 + 方案 ① VPS 全栈做真实系统」两步走；洁癖收口后即可进入落地
-6. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
-7. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
+5. **🆕 公网部署（进行中）**：[DEPLOYMENT_OPTIONS.md](../architecture/DEPLOYMENT_OPTIONS.md) 选型「③ 静态快照 + ① VPS」两步走——**③ 已于 2026-09-07 上线**（EdgeOne Pages，三看板快照）；**① 于 2026-09-10 确认启用变体 ①b**（本机采集 + DB 同步 + VPS 只读服务，含实时查询与 Agent 对话）：VPS 用国内轻量、域名新买（国内节点需 ICP 备案）、Agent 公开+限流小范围内测。落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](../architecture/SELF_HOSTED_VPS_DEPLOYMENT.md)；**待外部资源到位**（VPS / 域名 / 备案）后执行部署
+6. ✅ ~~**原声分析 Agent**~~：2026-09-08 ~ 09-10 落地（见 §四 P12）+ 对抗式审查加固；「引用当前查询」已接入 dashboard / bilibili / compare 三看板
+7. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
+8. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）
 
 ### 🌅 长期作品化（v1.0）
 
@@ -378,10 +419,15 @@
 | ~~🟠 打标双主链路分叉（2026-08-15 评审发现）~~ | ✅ **已收口（2026-08-06 方案4）**：批量+三轮收敛进 `reanalyze_all.py`；单条仅用于新评论入 pipeline | 成本与可维护性 |
 | ~~🟡 CI 无 pytest~~ | ✅ **已解决（2026-08-21）**：`.github/workflows/daily-collect.yml` 加 `test` job（装 `requirements-core.txt` 不装 torch），与 `collect` job 并列；`pytest tests/` 在 push/cron 都会跑 | 工程护栏 |
 | ~~🟡 分析结果无版本溯源~~ | ✅ **已解决（2026-08-21）**：`comments.analyzer_version` 字段（`{provider}:{model}@{prompt_hash8}`），LLM 与本地 analyzer 都有 `analyzer_version` 属性；prompt 文件改动自动联动 hash；老数据列已加好（值 = NULL = 未溯源） | 换模型/prompt 后存量数据可按 version 分组重打或比对 |
+| ~~🟡 P11 · QWEN-flash bogus 假数据（2542 条）~~ | ✅ **已清理（2026-09-10）**：`ops/reset_qwen_flash_bogus.py --commit` 重置 2542 条 → 因 posted_at 在 cron 7 天窗之外，改用 `dev/reanalyze_all.py --platform steam` 手动重打；同步给 `reanalyze_all` 补写 `analyzer_version`（否则重打结果仍为 NULL）——详见 §四 P11 | 情感统计真实性 / 观点库 |
 | 🔴 **P6 release asset 实际未上传（2026-08-22 发现）** | ✅ **已收口 2026-08-23**：`voc-daily-bootstrap` release 已建立（id 375081991，含 76 MB DB baseline），自助脚本 `pwsh scripts/dev/archive/P6_bootstrap/setup_p6_bootstrap.ps1 -Step Bootstrap` 已成功跑完 | P8 时间序列 / P9 阶段 0 / 「累积 DB」核心目标 |
 | 🟡 **P6 workflow 文件推送被 PAT scope 阻塞（2026-08-22 起 8 commit 未推）** | ✅ **已收口 2026-08-23**：9 commit 已通过 GitHub Git Database API 推送（含 workflow 改动，PAT 含 `workflow` scope）；远端 main HEAD = `048db18`，workflow 含 `test:` job | CI test job 上线 |
 | 🟡 下一代标签系统（GDT+PEDM 双轨） | 分阶段采纳，见 [next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md](./next-gen-tagging/ANNOTATION_SYSTEM_UPGRADE_PLAN.md)；阶段 1 词表已落地，语义匹配已证伪，黄金集门禁已上线 | 阶段 0 依赖 P6 持久化；阶段 1 待全量重打收口 |
 | 标注算法已切换方案4 | 见 [ANNOTATION_PIPELINE.md](../architecture/ANNOTATION_PIPELINE.md) | 文档已更新 |
+| 🟢 **LLM 标注降本④项（2026-09-08 立项）**——前置已完成：批量调用（10 条/批）、`reasoning_effort=low`、前缀缓存友好、`update_analysis` flush 修复（见 AGENTS.md 2026-09-08 行） | ① **Batch API 半价**：GLM/通义均支持异步批量（输入输出半价），标注是离线场景完美匹配——把分析阶段改为「积攒待标 → 异步提交 → 次日取结果」或独立批量任务；② **内容去重缓存**：短评重复率高（"好评""111"），按 content hash 复用标注结果（comments 加 hash 列或独立缓存表，analyze 前查重）；③ **短文本走本地模型**：极短/无具体维度评论（约占 2/3）走 `sentiment_local`（零边际成本），LLM 只标长评/高赞——需先用 golden set 评测 local 准确率；④ **Qwen3-8B/14B 评测**：SiliconFlow/百炼免费额度跑 golden set 对比 GLM-5.3-Flash（0.8/2.8 元每百万），达标则成本降至 1/5~1/10——⚠️ 用百炼正式端点，勿用 token-plan 个人版（8/25 模型名 404 事故） | 标注成本（8 游戏 × 每日数百条 + B站千条级首采，LLM 调用为最大可变成本） |
+| 🟠 **Steam 代理断网 → 02:00 采集与 03:00 哨兵同时失效（2026-09-07 发现）** | 本机依赖代理 `127.0.0.1:7877`（Python 不走系统代理）；可选根治：`SteamCollector` 直连失败回落 `STEAM_PROXY` env。**已知局限**：哨兵与主任务仅隔 1h，整夜断网时补采同样失败 | 每日数据完整性（观察中） |
+| 🟠 **本机 Web 服务无守护进程** | uvicorn 靠手动重启（且必须用 `.venv-ml` 解释器，否则 backfill 线程静默 ModuleNotFoundError）；方案 ①b 落地后由 VPS `voc-web.service` 接管 | 本地看板可用性 |
+| 🔴 **4 款网游疑似回灌主库（2026-09-10 发现）** | 主库实测仍有 PUBG/Apex/Dota2/CS2 共 4,916 条，与 `data/archive/online_games_2026-08-23.db` **完全重复**；推测是归档后某次 `sync_local_from_release` / `smart_sync_release` 用归档前的远端 DB 覆盖了本地库。**需先确认，再按 `ops/archive_online_games.py` 重新归档**（删除类操作，未经确认不执行） | 数据口径（「主库聚焦 8 单机」）/ 看板默认目标 |
 
 ---
 
@@ -433,15 +479,18 @@
 | M7 · v0.3 | 主题分类精细（L1-L3 三级标签）+ 词云 + 语义向量化（P2.5），仪表盘有"洞察力" | ✅ |
 | M8 · v0.4 | 多目标横向对比（10 款 Steam 同看 → 2026-08-23 后主库 6 款单机 + 4 款归档可单独查） | ✅（2026-08-19：Streamlit 对比视图 + 原型卡片页 + 下钻；2026-08-23 归档后多目标视图仍可显示所有 target，只需切到归档 DB） |
 | M9 · v0.5 | 多平台覆盖（Steam + B 站） | ✅ |
-| M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | ✅（代码完成 2026-08-20；运行态收口 2026-08-23：bootstrap release 已建 + 9 commit 推送 + CI test job 上线）；待修：`gh_release_upload` 对已存在 release 的副作用 patch（见 `.workbuddy/memory/2026-08-22.md` A1） |
+| M10 · v0.6 | 自动化每日采集 + 时间序列趋势 | ✅（代码完成 2026-08-20；运行态收口 2026-08-23：bootstrap release 已建 + 9 commit 推送 + CI test job 上线）；`gh_release_upload` 副作用 patch 已落盘（2026-09-10 核对：`_release_exists()` + 去 `--name` flag + workflow verify step） |
 | M11 · v0.7 | 分析结果溯源 + CI pytest 护栏 | ✅（2026-08-21：P10 analyzer_version 字段 + init_db 自动演进 + CI test job）；2026-09-01 加 DESIGN_TOKENS v1.0（三原型 v2 迁移版上线 + tokens.css 单一来源） |
-| M12 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | P8 时间序列已于 2026-09-02 随 Web 看板交付，前置全部解锁；剩 P9 阶段2/3 + P11 清理 + 作品化 |
+| M12 · v0.8 | Web 实时看板 + 静态快照部署 + 原声分析 Agent | ✅（2026-09-02 ~ 09-10：SPA 5 页 + `collect_tasks` + WAL；方案 ③ EdgeOne Pages 上线；Agent 悬浮球抽屉 + 4 tool + 对抗审查加固；测试 49 → 219 例） |
+| M13 · v1.0 | 完整文档 + 复盘博客 + 简历亮点包 | P8 时间序列 / P11 清理已于 2026-09-10 完成，前置全部解锁；剩 P9 阶段 2/3 + 作品化 4 件套 |
 
-**M8 → M11 路径**：
+**M8 → M13 路径**：
 1. M8：✅ P3 多目标对比已完成（2026-08-19）
 2. M9：✅ B 站采集器已落地（跨平台对比视图为可选增强，归 P5）
 3. M10：✅ P6 自动化流水线已收口（2026-08-23：bootstrap release + 9 commit 推送 + CI test job 上线）；✅ P8 时间序列趋势图已于 2026-09-02 随 Web 看板交付（前置全部解锁）
 4. M11：✅ P10 分析溯源 + CI pytest 已完成（2026-08-21）
+5. M12：✅ Web 实时看板 + 方案 ③ 静态快照 + 原声分析 Agent 已于 2026-09-02 ~ 09-10 交付；✅ P11 bogus 清理 2026-09-10 执行
+6. M13：⏳ 待推进 —— P9 阶段 2/3 + 作品化 4 件套（完整文档 / mermaid 架构图 / 复盘博客 / 演示视频）
 
 ---
 

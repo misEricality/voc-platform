@@ -2,7 +2,7 @@
 
 > **pytest 自动回归门禁** — 不放脚本，CI 与本地共用同一套用例。
 >
-> **最后更新**：2026-09-07（新增 `test_check_daily_collect.py` / `test_monitored_targets.py`；用例数 110 → 129）
+> **最后更新**：2026-09-09（原声分析 Agent 落地：新增 6 个 agent 测试文件 + prune + wordcloud 等；用例数 138 → 219）
 
 ---
 
@@ -25,6 +25,15 @@ tests/
 ├── test_collect_tasks.py            🗃️  collect_tasks 表 + 种子迁移 + WAL + B站 paused（2026-09-02）
 ├── test_api.py                      🌐  Web API 端点 + 鉴权 + 任务 CRUD（2026-09-02）
 ├── test_steam_collector.py          🚰  Steam 空响应重试 + 应用层时间窗（2026-09-03）
+├── test_snapshot_export.py          📤  静态快照导出（2026-09-07）
+├── test_wordcloud.py                ☁️  评论词云（jieba + TF-IDF + 情感着色，2026-09-08）
+├── test_bulk_upsert_preserves_analysis.py 🛡️  重采保全已分析数据（2026-09-08）
+├── test_agent_schema.py             🤖  Agent 表结构 + FK CASCADE（2026-09-09）
+├── test_agent_endpoints.py          🤖  Agent API 端点回归（sessions/chat/export/search/rate-limit）
+├── test_agent_chat_loop.py          🤖  Agent tool_call 循环 + SSE + skill 注入
+├── test_agent_skills.py             🤖  Skill YAML 匹配 + tool schema yaml 加载
+├── test_agent_tools.py              🤖  4 个 tool 实现（query_overview/topics/comments/search_docs）
+├── test_prune_agent_history.py      🧹  30 天 agent 会话裁剪（2026-09-09）
 └── fixtures/                        📦 测试夹具（不入 scripts/）
     ├── golden_match_set.json         410 条 L3 匹配真值（黄金集）
     └── golden_overrides.json         人工校正项（覆盖部分黄金集）
@@ -34,7 +43,7 @@ tests/
 
 ## 📊 当前用例统计
 
-- **共 129 例**（pytest 2026-09-07 实测 129 collected；上版 49 例 → 78 → 82 → 94 → 97 → 110 → 129）
+- **共 219 例**（pytest 2026-09-09 实测 219 passed；上版 49 → 78 → 82 → 94 → 97 → 110 → 129 → 138 → 204 → 210 → 214 → 219）
 - 1 例 ML 环境依赖跳过（`test_embedding.py`，无 torch 时 skip；本机 .venv-ml 有 torch 时全量跑）
 - CI 跑通门禁：`pytest tests/` 在 push / cron 都跑（workflow `test:` job）
 - `requirements-core.txt` 已含 fastapi/uvicorn/httpx/itsdangerous（`test_api.py` 依赖）

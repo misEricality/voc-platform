@@ -90,13 +90,19 @@ def _fake_analyzer_factory():
         name = "fake"
 
         def analyze(self, text, *, context=None):
-            return AnalysisResult(
-                sentiment="positive",
-                sentiment_score=0.5,
-                sentiment_confidence=0.9,
-                topic="玩法与内容",
-                opinions=[],
-            )
+            return self.analyze_batch([text])[0]
+
+        def analyze_batch(self, texts, **kwargs):
+            return [
+                AnalysisResult(
+                    sentiment="positive",
+                    sentiment_score=0.5,
+                    sentiment_confidence=0.9,
+                    topic="玩法与内容",
+                    opinions=[],
+                )
+                for _ in texts
+            ]
 
     return _FakeAnalyzer()
 

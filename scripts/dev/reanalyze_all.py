@@ -187,6 +187,9 @@ def main() -> None:
             topic=r.topic,
             sub_topics=None,  # 方案4：sub_topics 不再使用
             opinions=[op.to_dict() for op in r.opinions],
+            # P10 溯源：重打同样写 analyzer_version，否则回填结果会继续保持 NULL
+            # （与 legacy 未溯源数据无法区分；2026-09-10 P11 重打修复）
+            analyzer_version=getattr(analyzer, "analyzer_version", None),
         )
         topic_counter[r.topic or "(空)"] += 1
         sentiment_counter[r.sentiment] += 1

@@ -1,0 +1,124 @@
+# config/agent/tools.yaml
+# 原声分析 Agent · 4 个 tool 的 OpenAI function calling schema（2026-09-09 · §4.2 落地）
+#
+# 为什么不写死在 src/agent/tools.py（§3 红线修复 · 2026-09-09）：
+# - tool description 对 LLM 行为极其敏感：描述模糊 → LLM 不知道何时调；工程师
+#   迭代 description 时不应改 Python 代码、重启服务
+# - 与 §3 红线 "prompt / 业务配置 / API Key 写死在代码里，统一走 config/" 一致
+# - 与同目录 skills/*.yaml 共享同一 yaml schema 风格（便于 agent/ 配置集中维护）
+#
+# 加载机制（src/agent/tools.py:_load_tool_schemas）：
+# - 启动期一次性加载（lru_cache）→ chat.py 用 TOOL_SCHEMAS 注入 system prompt + function calling schema
+# - 修改本文件后需重启服务进程（lru_cache 不会自动感知）——但代码无需改一行
+# - 单 schema 解析失败 → 整个文件拒绝（fail-fast；不静默缺 tool）
+#
+# 与 tools.py 的对应关系：
+#   yaml "function.name" → tools.py:run_tool() 分发的 key
+#   yaml "function.parameters" → LLM function calling 的 JSON schema 字段（必须严格遵循 OpenAI 规范）
+#   实际函数体（接 service.overview_payload / topics_payload / comments_payload / md_corpus.search）
+#   仍在 src/agent/tools.py，不在 yaml（yaml 只管 schema，业务逻辑留 Python 测）
+
+- type: function
+  function:
+    name: query_overview
+    description: |
+      查询单目标（Steam 游戏/B 站视频）的核心 KPI：总评论数/已分析数/情感构成/推荐率/时间范围。
+      用户问'X 总共有多少评论'、'X 的好评率'、'X 的情感分布'时使用。
+    parameters:
+      type: object
+      properties:
+        target:
+          type: string
+          description: "目标 ID，格式 'steam:2358720' 或 'bilibili:BVxxx'"
+        start:
+          type: string
+          description: "起始日期 YYYY-MM-DD（可选）"
+        end:
+          type: string
+          description: "结束日期 YYYY-MM-DD（可选）"
+        grain:
+          type: string
+          enum: [comment, opinion]
+          description: "聚合粒度：comment=评论级；opinion=观点级（多观点可重复计入）"
+      required: [target]
+
+- type: function
+  function:
+    name: query_topics
+    description: |
+      查询主题/标签分布（带情感筛选）。用户问'主要痛点是什么'、'最常被讨论的功能'、
+      '吐槽最多的游戏内容'时使用。
+    parameters:
+      type: object
+      properties:
+        target:
+          type: string
+          description: "目标 ID"
+        level:
+          type: string
+          enum: [L1, L2, L3]
+          description: "主题层级：L1=大类，L2=子类，L3=细粒度"
+        sentiment:
+          type: string
+          enum: [positive, negative, neutral]
+          description: "情感筛选（可选）"
+        start:
+          type: string
+          description: "起始日期 YYYY-MM-DD（可选）"
+        end:
+          type: string
+          description: "结束日期 YYYY-MM-DD（可选）"
+        top_n:
+          type: integer
+          description: "返回 top N（默认 10，封顶 50）"
+      required: [target, level]
+
+- type: function
+  function:
+    name: query_comments
+    description: |
+      查询评论明细（按目标/情感/主题/时间过滤）。
+      用户问'举几个具体的评论例子'、'具体怎么说的'、'找出 N 条相关评论'时使用。
+      limit 默认 20，封顶 50。topic 参数支持 L1/L2/L3 任一段名字（如 query_topics
+      返回的'战斗系统'、'核心机制与循环'、'机制与内容'都能直接传），无需指定 level。
+    parameters:
+      type: object
+      properties:
+        target:
+          type: string
+          description: "目标 ID"
+        sentiment:
+          type: string
+          enum: [positive, negative, neutral]
+          description: "情感筛选（可选）"
+        topic:
+          type: string
+          description: "主题筛选（可选），可传 L1/L2/L3 任一段名字，自动按段匹配 full_path"
+        start:
+          type: string
+          description: "起始日期 YYYY-MM-DD（可选）"
+        end:
+          type: string
+          description: "结束日期 YYYY-MM-DD（可选）"
+        limit:
+          type: integer
+          description: "返回条数（默认 20，封顶 50）"
+      required: [target]
+
+- type: function
+  function:
+    name: search_docs
+    description: |
+      在项目文档（架构/计划/FAQ 等 5 个 markdown）中检索与用户问题相关的章节。
+      用户问'X 是什么意思'、'Y 是怎么实现的'、'项目文档里关于 Z 怎么说'时使用。
+      当用户问题与具体数据无关、属于项目知识/设计意图/FAQ 类时优先调用。
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "查询关键词或短语"
+        top_k:
+          type: integer
+          description: "返回最相关的 K 个章节（默认 3）"
+      required: [query]

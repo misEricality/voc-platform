@@ -9,8 +9,8 @@
 > - 总路线图：[../plan/DEVELOPMENT_PLAN.md](../plan/DEVELOPMENT_PLAN.md)
 > - 字段与存储设计：[DATA_FIELDS.md](./DATA_FIELDS.md) / [DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
 >
-> **最后更新**：2026-09-04
-> **状态**：🟡 选型结论（方案 ③ + ① 组合拳），**暂不开发**——等 P9 主线推进后再择机启动
+> **最后更新**：2026-09-10
+> **状态**：🟢 方案 ③ 已落地（2026-09-07，见 [STATIC_SNAPSHOT_DEPLOYMENT.md](./STATIC_SNAPSHOT_DEPLOYMENT.md)）；🟡 **方案 ① 于 2026-09-10 改为启用变体 ①b**（本机采集 + 推 DB + VPS 只读服务，含实时查询与 Agent 对话）——落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](./SELF_HOSTED_VPS_DEPLOYMENT.md)，**待外部资源到位**（国内轻量 VPS / 域名 / ICP 备案）
 
 ---
 
@@ -66,8 +66,9 @@
 | 稳定性 | ★★★☆☆ | 单点无冗余；Oracle 免费机有「闲置回收」策略（需保活）；但**依赖最少，故障排查最直接** |
 | 数据私有 | ★★★★★ | 唯一满分项：DB 只在本地磁盘，无任何 HTTP 出口暴露它 |
 
-**变体 ①b — VPS 只跑展示，采集继续走 GitHub Actions**
-把 `scripts/ops/smart_sync_release.py` 搬上 VPS 每日拉 DB。VPS 规格可降到 1C1G，省掉采集的 CPU 与 API 调用；代价是数据延迟 +1 天、多一条同步链路。
+**变体 ①b — 本机采集 + 推 DB + VPS 只读服务（2026-09-10 确认启用）**
+采集与标注继续留在本机（B 站风控 / 代理环境必须本地），每日 `wal_checkpoint → scp → 远端原子替换` 把 `data/voc.db` 推到 VPS；VPS 只跑 Caddy + uvicorn（实时查询 + Agent 对话，DB 只读消费）。VPS 规格可降到 2C2G 且**不装 ML 依赖**；代价是多一条同步链路（失败只记 ERROR，不阻塞采集判定）。
+> 早期草案曾考虑「VPS 拉 GH Release」，但 `collect` job 已停用（切本地直采），故实际改为**本机直推**。
 
 **变体 ①c — 停用 Streamlit**
 Web 看板（FastAPI + SPA）已覆盖仪表盘能力，VPS 上可只起 uvicorn 一个服务，省 ~400 MB 常驻内存与一个 systemd unit。
@@ -161,7 +162,7 @@ GitHub Actions（现有 P6 流水线）
 | 方案 | 部署便捷 | 维护便捷 | 成本/年 | 稳定性 | 数据私有 | 改造量 | 实时查询 | 管理页可写 |
 |---|---|---|---|---|---|---|---|---|
 | ① VPS 全栈 ⭐ | ★★★☆☆ | ★★★☆☆ | **¥0~120** | ★★★☆☆ | ★★★★★ | 0（照文档） | ✅ | ✅ |
-| ①b VPS 展示 + GH 采集 | ★★★☆☆ | ★★☆☆☆ | ¥0~120 | ★★★☆☆ | ★★★★★ | 0.5 天 | ✅（延迟 1 天） | ⚠️ 云端不同步 |
+| ①b VPS 只读 + 本机推 DB | ★★★☆☆ | ★★★☆☆ | ¥0~120 | ★★★☆☆ | ★★★★★ | 0.5 天 | ✅ | ❌（VPS 是只读副本） |
 | ② PaaS 容器 | ★★★★☆ | ★★★★☆ | ¥420~840 | ★★★☆☆ | ★★☆☆☆ | 0.5 天 | ✅ | ⚠️ 需解决并发写 |
 | ③ 静态快照 ⭐ | ★★★★★ | ★★★★★ | **¥0** | ★★★★★ | ★★☆☆☆ | 0.5 天 | ❌ 仅预聚合 | ❌ |
 | ④ Workers + D1 | ★★★★★ | ★★★★★ | ¥0 | ★★★★★ | ★★★☆☆ | **1~2 周** | ✅ | ✅ |
@@ -171,7 +172,7 @@ GitHub Actions（现有 P6 流水线）
 
 ---
 
-## 4. 决策记录（2026-09-04）
+## 4. 决策记录（2026-09-04 初版 · 2026-09-10 追加）
 
 | # | 决策点 | 结论 | 理由 |
 |---|---|---|---|
@@ -181,7 +182,8 @@ GitHub Actions（现有 P6 流水线）
 | 4 | 方案 ① 是否加 Docker | **建议加** | 一次性成本极低（一个 `docker-compose.yml`），换来环境一致性与 10 分钟迁移/重装能力 |
 | 5 | 方案 ① 是否保留 Streamlit | **VPS 上建议停用（变体 ①c）** | Web 看板已覆盖仪表盘能力；Streamlit 常驻占 ~400 MB 且是额外攻击面 |
 | 6 | 方案 ③ 快照是否含全量明细 | **只放聚合结果，不放原始评论全量** | 快照公开，遵循最小暴露原则；原始评论保留在私有 DB |
-| 7 | 何时启动 | **暂不开发**，等 P9 阶段 2/3 落地后 | 部署是「锦上添花」，P9 是 v1.0 主线，优先级更高 |
+| 7 | 何时启动 | ~~暂不开发，等 P9 阶段 2/3 落地后~~ → **2026-09-10 提前启动**（③ 已上线，①b 进入落地准备） | 静态门面已就绪、Agent 已上线，「公网可访问」诉求提前于 P9 |
+| 8 | **2026-09-10 追加**：VPS 形态采用哪个变体 | **变体 ①b**（本机采集 + 推 DB + VPS 只读服务） | B 站风控依赖本机 buvid/代理（搬 VPS 会重踩 412）；本地直采 + 哨兵已跑稳，不重复建设；VPS 最轻（不装 ML）；DB 只在两台受控机间 SSH 传输。域名新买 + 国内节点需 ICP 备案；Agent 按「公开 + 限流」小范围内测 |
 
 ---
 
@@ -203,4 +205,6 @@ GitHub Actions（现有 P6 流水线）
 
 | 日期 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-10 | **方案 ① 定为变体 ①b 并进入落地准备**：本机采集 + `push_db_to_vps.ps1` 推 DB + VPS 只读服务（Caddy + uvicorn，含实时查询与 Agent 对话）；VPS 用国内轻量、域名新买（国内节点需 ICP 备案）、Agent 公开 + 限流小范围内测。同步修正本文档：①b 定义（原「VPS 拉 GH Release」已不成立，`collect` job 已停用）、①b 对比行、决策 7 解冻 + 追加决策 8；落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](./SELF_HOSTED_VPS_DEPLOYMENT.md) | P11 收尾时同步文档：把「计划外已做 + 2026-09-10 部署决策」补进选型文档，消除与 DEVELOPMENT_PLAN 的状态不一致 |
+| 2026-09-07 | **方案 ③ 落地**：`scripts/ops/export_static_snapshot.py`（三页预聚合快照，复用 service.py 聚合层）+ `api.js` 静态 shim（manifest 路由表，实时模式零影响）+ `publish_static_snapshot.ps1`（EdgeOne Pages）+ daily `--publish-snapshot`（默认关闭）。决策 7 解冻：数据链路已切本地直采，导出走本地脚本而非 GH Actions；托管平台按工程师确认用 EdgeOne Pages（非文档原定的 Cloudflare Pages）。操作手册：[STATIC_SNAPSHOT_DEPLOYMENT.md](./STATIC_SNAPSHOT_DEPLOYMENT.md) | 工程师启动部署开发 |
 | 2026-09-04 | 初版：5 方案（VPS 全栈 / PaaS 容器 / 静态快照 / Workers+D1 / CDN+VPS）+ 3 条硬约束 + 7 条决策记录 + 落地前置检查 | 工程师提出「部署到公网」需求，先做选型评估、**暂不开发** |

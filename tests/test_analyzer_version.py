@@ -246,11 +246,17 @@ def test_pipeline_passes_analyzer_version(monkeypatch, test_db_path):
             return "fake:test@aabbccdd"
 
         def analyze(self, text, *, context=None):
+            return self.analyze_batch([text])[0]
+
+        def analyze_batch(self, texts, **kwargs):
             from src.analyzers.base import AnalysisResult
-            return AnalysisResult(
-                sentiment="positive", sentiment_score=0.5,
-                sentiment_confidence=0.9, topic="玩法与内容", opinions=[],
-            )
+            return [
+                AnalysisResult(
+                    sentiment="positive", sentiment_score=0.5,
+                    sentiment_confidence=0.9, topic="玩法与内容", opinions=[],
+                )
+                for _ in texts
+            ]
 
     # Wrap update_analysis 抓取入参
     from src.storage import db as db_mod
@@ -300,11 +306,17 @@ def test_pipeline_handles_missing_analyzer_version_gracefully(monkeypatch):
 
         # 故意没有 analyzer_version 属性
         def analyze(self, text, *, context=None):
+            return self.analyze_batch([text])[0]
+
+        def analyze_batch(self, texts, **kwargs):
             from src.analyzers.base import AnalysisResult
-            return AnalysisResult(
-                sentiment="positive", sentiment_score=0.5,
-                sentiment_confidence=0.9, topic="玩法与内容", opinions=[],
-            )
+            return [
+                AnalysisResult(
+                    sentiment="positive", sentiment_score=0.5,
+                    sentiment_confidence=0.9, topic="玩法与内容", opinions=[],
+                )
+                for _ in texts
+            ]
 
     from src.storage import db as db_mod
     original_update = db_mod.CommentRepository.update_analysis
@@ -459,7 +471,7 @@ def test_pipeline_cli_accepts_glm_5_3_flash_choice():
     result = subprocess.run(
         [sys.executable, "-m", "src.pipeline", "--platform", "steam", "--target", "999",
          "--analyzer", "glm-5.3-flash", "--help"],
-        capture_output=True, text=True, cwd=ROOT,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT,
     )
     # choices 在 --help 里，进程退出码可能非 0（argparse 解析顺序问题），只验 stderr/stdout 内容
     combined = (result.stdout or "") + (result.stderr or "")

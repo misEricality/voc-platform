@@ -20,6 +20,11 @@
 #   covers yesterday + the day before). Recovery:
 #   python scripts/ops/daily_incremental_collect.py --no-download --no-upload --full-replay
 #
+# Last updated: 2026-09-09 (added agent-prune task VOC-Local-Agent-Prune at 03:30:
+#   runs scripts/ops/prune_agent_history.py to delete agent_sessions older than
+#   AGENT_RETENTION_DAYS (default 30, 0 = keep forever). FK CASCADE cleans messages.
+#   Runs after the 03:00 sentinel so any session created today from a fresh install
+#   has time to be written before the 03:30 sweep sees it.)
 # Last updated: 2026-09-07 (added sentinel task VOC-Local-Daily-Collect-Check at 03:00:
 #   checks whether the 02:00 run succeeded (LastTaskResult != 0 or missed) and re-runs
 #   daily_incremental_collect.py if needed. Covers "ran but failed" (3 nights in a row of
@@ -47,7 +52,7 @@ if (-not (Test-Path $Python)) { Write-Error "python not found: $Python (check .v
 if (-not (Test-Path $Script)) { Write-Error "script not found: $Script"; exit 1 }
 
 if ($Uninstall) {
-    foreach ($name in @($TaskName, "$TaskName-Check")) {
+    foreach ($name in @($TaskName, "$TaskName-Check", "VOC-Local-Agent-Prune")) {
         $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
         if ($existing) {
             Unregister-ScheduledTask -TaskName $name -Confirm:$false
@@ -112,9 +117,36 @@ Register-ScheduledTask -TaskName $CheckTaskName -Action $actionCheck -Trigger $t
     -Force | Out-Null
 
 Write-Host "  -> $CheckTaskName daily at $CheckAt (sentinel: backfill if 02:00 failed/missed)"
+
+# ---- agent-prune task: 03:30 delete agent_sessions older than AGENT_RETENTION_DAYS ----
+$PruneTaskName = "VOC-Local-Agent-Prune"
+$PruneScript = Join-Path $ProjectRoot "scripts\ops\prune_agent_history.py"
+if (-not (Test-Path $PruneScript)) { Write-Error "agent-prune script not found: $PruneScript"; exit 1 }
+$PruneLogFile = Join-Path $LogDir "agent-prune.log"
+
+$pruneTask = Get-ScheduledTask -TaskName $PruneTaskName -ErrorAction SilentlyContinue
+if ($pruneTask) { Write-Host "updating: $PruneTaskName" } else { Write-Host "creating: $PruneTaskName" }
+
+$innerPrune = "`"$Python`" `"$PruneScript`" >> `"$PruneLogFile`" 2>&1"
+$cmdArgsPrune = "/c cd /d `"$ProjectRoot`" && $innerPrune"
+$actionPrune = New-ScheduledTaskAction -Execute "cmd.exe" -Argument $cmdArgsPrune -WorkingDirectory $ProjectRoot
+$triggerPrune = New-ScheduledTaskTrigger -Daily -At "03:30"
+$settingsPrune = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+
+Register-ScheduledTask -TaskName $PruneTaskName -Action $actionPrune -Trigger $triggerPrune `
+    -Settings $settingsPrune -Principal $principal `
+    -Description "VoC agent history prune (03:30 BJT): delete agent_sessions older than AGENT_RETENTION_DAYS (default 30, 0=forever); FK CASCADE drops agent_messages" `
+    -Force | Out-Null
+
+Write-Host "  -> $PruneTaskName daily at 03:30 (prune agent_sessions older than retention)"
 Write-Host ""
 Write-Host "Test run manually:"
 Write-Host "  & `"$Python`" `"$Script`" --no-download --no-upload"
 Write-Host "  & `"$Python`" `"$CheckScript`" --dry-run"
+Write-Host "  & `"$Python`" `"$PruneScript`" --dry-run"
 Write-Host "Uninstall:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts/ops/register_local_collect_task.ps1 -Uninstall"

@@ -103,7 +103,7 @@ async function renderAdmin(app) {
       <div class="toolbar" style="justify-content:flex-end">
         <button class="btn primary" id="btnAdd">＋ 新增任务</button>
       </div>
-      <div style="overflow:auto"><table class="tbl fixed" id="tblTasks"></table></div>
+      <div style="overflow:auto"><table class="tbl tbl-admin" id="tblTasks"></table></div>
     </div>`;
 
   let platform = 'steam';
@@ -123,7 +123,19 @@ async function renderAdmin(app) {
     document.getElementById('tabSteam').classList.toggle('active', p === 'steam');
     document.getElementById('tabBili').classList.toggle('active', p === 'bilibili');
     load();
+    setAgentContext();
   }
+
+  /* ---- 跨页上下文（2026-09-09 阶段 8 落地）：admin 是 CRUD 页，无 quick_query；
+     只暴露当前平台 + 任务列表视角，让 agent 知道用户在管什么 ---- */
+  function setAgentContext() {
+    window.__pageAgentContext = {
+      page: 'admin',
+      platform,
+      label: `采集任务 · ${platform === 'steam' ? 'Steam' : 'B 站'}`,
+    };
+  }
+  setAgentContext();  // 初始 baseline
 
   async function load() {
     const d = await API.get(`/api/admin/tasks?platform=${platform}`);
@@ -132,21 +144,26 @@ async function renderAdmin(app) {
 
   /* ----- Steam ----- */
   function renderSteam(rows) {
+    tbl.classList.add('t-steam'); tbl.classList.remove('t-bili');
     // 发行时间倒序（缺发行日排最后），无视添加任务时间
     rows = rows.slice().sort((a, b) =>
       (b.release_date || '').localeCompare(a.release_date || '') || a.id - b.id);
     tbl.innerHTML = `
-      <thead><tr><th>游戏名称</th><th>AppID</th><th>URL</th><th>语言</th><th>发行时间</th><th>状态</th><th>操作</th></tr></thead>
+      <thead><tr>
+        <th class="c-name">游戏名称</th><th class="c-id">AppID</th><th class="c-url">URL</th>
+        <th class="c-lang">语言</th><th class="c-date">发行时间</th><th class="c-status">状态</th><th class="c-act">操作</th>
+      </tr></thead>
       <tbody>${rows.length ? rows.map(t => `<tr data-id="${t.id}">
-        <td style="font-weight:600">${esc(t.name || '(未命名)')}</td>
+        <td class="col-name" style="font-weight:600" title="${esc(t.name || '')}">${esc(t.name || '(未命名)')}</td>
         <td>${esc(t.target_id)}</td>
         <td><a href="${esc(t.url)}" target="_blank" rel="noopener">打开</a></td>
         <td>${esc(LANG_CN[t.language] || t.language || '-')}</td>
         <td>${t.release_date ? fmtDate(t.release_date) : '-'}</td>
-        <td><span class="badge ${STATUS_BADGE[t.status_display] || 'dim'}">${t.status_display}</span></td>
-        <td style="white-space:nowrap">
+        <td><span class="badge ${STATUS_BADGE[t.status_display] || 'dim'}">${t.status_display}</span>${t.visible ? '' : ' <span class="badge dim" title="看板/下拉/图表不显示（数据保留，data 页仍可见）">已隐藏</span>'}</td>
+        <td class="td-actions">
           <button class="btn sm" data-act="edit">编辑</button>
           <button class="btn sm" data-act="pause">${t.enabled ? '暂停' : '恢复'}</button>
+          <button class="btn sm" data-act="vis" title="控制看板/下拉/图表是否显示（与采集/暂停独立）">${t.visible ? '隐藏' : '展示'}</button>
           <button class="btn sm danger" data-act="del">删除</button>
         </td></tr>`).join('') : '<tr><td colspan="8" class="empty">暂无 Steam 任务</td></tr>'}</tbody>`;
 
@@ -158,6 +175,9 @@ async function renderAdmin(app) {
         else if (btn.dataset.act === 'pause') {
           await API.patch(`/api/admin/tasks/steam/${id}`, { enabled: !row.enabled });
           toast(row.enabled ? '已暂停' : '已恢复'); load();
+        } else if (btn.dataset.act === 'vis') {
+          await API.patch(`/api/admin/tasks/steam/${id}`, { visible: !row.visible });
+          toast(row.visible ? '已隐藏（看板/下拉不显示，数据保留）' : '已恢复展示'); load();
         } else if (btn.dataset.act === 'del') {
           if (!confirm(`确认删除「${row.name || row.target_id}」？历史数据保留，仅停止采集。`)) return;
           await API.del(`/api/admin/tasks/steam/${id}`);
@@ -234,6 +254,7 @@ async function renderAdmin(app) {
 
   /* ----- BiliBili ----- */
   function renderBili(rows) {
+    tbl.classList.add('t-bili'); tbl.classList.remove('t-steam');
     // 投稿日期倒序（缺投稿时间排最后），无视添加任务时间
     rows = rows.slice().sort((a, b) => {
       const pa = a.pubdate ? new Date(a.pubdate) : 0;
@@ -241,9 +262,13 @@ async function renderAdmin(app) {
       return pb - pa || a.id - b.id;
     });
     tbl.innerHTML = `
-      <thead><tr><th>视频标题</th><th>BVID</th><th>URL</th><th>投稿时间</th><th>采集时间</th><th>评论/弹幕</th><th>状态</th><th>操作</th></tr></thead>
+      <thead><tr>
+        <th class="c-title">视频标题</th><th class="c-id">BVID</th><th class="c-url">URL</th>
+        <th class="c-date">投稿时间</th><th class="c-date">采集时间</th><th class="c-cnt">评论/弹幕</th>
+        <th class="c-status">状态</th><th class="c-act">操作</th>
+      </tr></thead>
       <tbody>${rows.length ? rows.map(t => `<tr data-id="${t.id}">
-        <td style="font-weight:600;max-width:760px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.title || '')}">${esc(t.title || '(未识别)')}</td>
+        <td class="col-title" style="font-weight:600" title="${esc(t.title || '')}">${esc(t.title || '(未识别)')}</td>
         <td>${esc(t.bv_id)}</td>
         <td><a href="${esc(t.url)}" target="_blank" rel="noopener">打开</a></td>
         <td>${fmtDate(t.pubdate)}</td>
@@ -252,13 +277,14 @@ async function renderAdmin(app) {
             ? Math.max(0, Math.round((new Date(t.fetched_at) - new Date(t.pubdate)) / 86400000)) + ' 天'
             : '-'}</td>
         <td>${fmtNum(t.comment_count)} / ${fmtNum(t.danmaku_count)}</td>
-        <td><span class="badge ${STATUS_BADGE[t.status_display] || 'dim'}" title="${esc(t.fail_reason || '')}">${t.status_display}</span></td>
-        <td style="white-space:nowrap">
+        <td><span class="badge ${STATUS_BADGE[t.status_display] || 'dim'}" title="${esc(t.fail_reason || '')}">${t.status_display}</span>${t.visible ? '' : ' <span class="badge dim" title="视频看板不显示（数据保留，data 页仍可见）">已隐藏</span>'}</td>
+        <td class="td-actions">
           ${t.status !== 'fetched' ? `<button class="btn sm" data-act="edit">编辑</button>` : `<button class="btn sm" disabled title="已采集任务不可编辑">编辑</button>`}
           ${t.status === 'fetched'
             ? `<button class="btn sm" disabled title="已采集任务无需暂停">暂停</button>`
             : (['pending', 'scheduled', 'fetching', 'failed'].includes(t.status)
               ? `<button class="btn sm" data-act="pause">${t.status === 'paused' ? '恢复' : '暂停'}</button>` : '')}
+          <button class="btn sm" data-act="vis" title="控制视频看板是否显示（与采集状态独立）">${t.visible ? '隐藏' : '展示'}</button>
           ${t.status !== 'fetched' ? `<button class="btn sm danger" data-act="del">删除</button>` : `<button class="btn sm danger" disabled title="已采集任务不可删除">删除</button>`}
         </td></tr>`).join('') : '<tr><td colspan="8" class="empty">暂无 B 站任务</td></tr>'}</tbody>`;
 
@@ -270,6 +296,9 @@ async function renderAdmin(app) {
         else if (btn.dataset.act === 'pause') {
           await API.patch(`/api/admin/tasks/bilibili/${id}`, { action: row.status === 'paused' ? 'resume' : 'pause' });
           toast(row.status === 'paused' ? '已恢复' : '已暂停'); load();
+        } else if (btn.dataset.act === 'vis') {
+          await API.patch(`/api/admin/tasks/bilibili/${id}`, { action: row.visible ? 'hide' : 'show' });
+          toast(row.visible ? '已隐藏（视频看板不显示，数据保留）' : '已恢复展示'); load();
         } else if (btn.dataset.act === 'del') {
           if (!confirm(`确认删除 ${row.bv_id}？`)) return;
           await API.del(`/api/admin/tasks/bilibili/${id}`);

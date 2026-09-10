@@ -124,6 +124,7 @@ main():
 | GET | `/api/topics/tree` | **L1~L3 主题树**（`config/topics/gaming.yaml`，树状筛选器数据源） | yaml 直读（service 层轻量 loader） |
 | GET | `/api/topics?target=&level=L1\|L2\|L3&grain=&sentiment=&start=&end=&full=` | 主题分布（原声/观点双颗粒度；`full=true` 按 yaml `primary` 顺序返回全部 L1 含零计数与「综合与元表达」） | opinions / comments.topic 聚合 |
 | GET | `/api/comments?target=&page=&page_size=&sentiment=&topic=&q=&start=&end=&grain=&sort=time\|likes` | **原声分页列表**（`sort=time` posted_at desc（默认）；`sort=likes` 点赞降序→时间降序（B站原声列表）；附观点标签 + extra 解析游玩时长；`grain=comment` 时 topic 精确匹配 L1） | comments + comment_opinions join |
+| GET | `/api/wordcloud?targets=a,b,c&start=&end=&top_n=60` | **评论词云**（compare 页，2026-09-08）：jieba 分词 → 停用词过滤（`config/wordlists/wordcloud_stopwords.txt`）→ 跨游戏 TF-IDF 区分度权重 + 词频/占比 + 词的主导情感标签（词内多数决，前端三色着色）；进程内 FIFO 缓存 | comments 原文聚合 |
 | GET | `/api/opinions?target=&page=&page_size=&sentiment=&topic=&start=&end=` | **观点分页列表**（观点粒度看板；每条附所属原声：原文/情感/主题/推荐/游玩时长；情感过滤在观点级） | comment_opinions join comments |
 | GET | `/api/danmaku/{bvid}` | **弹幕时间轴**（30s 固定桶 + 每桶 10 条随机样本 ≤15 字，悬停浮层用） | `danmaku` 表聚合（`bucket_danmaku_rows`） |
 | GET | `/api/bilibili/videos` | **B站视频看板数据源**（fetched 视频快照：封面/UP主/播放量/三连/时长/标签 + 采集量 + 性别分布 + 高光总结） | `bilibili_queue` 快照列 + `extra_json.profile.sex` 聚合 |

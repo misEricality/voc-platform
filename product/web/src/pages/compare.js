@@ -22,7 +22,9 @@ Routes.compare = async function (app) {
   const selected = new Set(games.slice(0, 3).map(g => g.target_id));  // 默认勾选前 3
   let userTouched = false;  // 用户手动改过选择后，meta 到位不再覆盖默认选中
   const MAX_SELECTED = 6;   // 最多同时选 6 款参与对比
-  const state = { mode: '同期', polar: 'negative' };  // 同期 | 累计；negative | positive
+  // 静态快照模式（window.STATIC_SNAPSHOT）：同期窗口依赖运行时动态计算，
+  // 预生成 JSON 无法覆盖任意选中组合 → 强制累计口径并隐藏同期按钮
+  const state = { mode: window.STATIC_SNAPSHOT ? '累计' : '同期', polar: 'negative' };  // 同期 | 累计；negative | positive
   let reqSeq = 0;
   let metaTimer = null;
 
@@ -38,11 +40,16 @@ Routes.compare = async function (app) {
   const daysBetween = (a, b) => Math.floor((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
   function daysSince(ds) { return daysBetween(ds, new Date().toISOString().slice(0, 10)); }
 
-  // 封面兜底链：本地 /covers → Steam CDN 竖版 → 名称占位（全局函数供 onerror 内联调用）
+  // 封面兜底链（2026-09-08 横版化）：本地 /covers（header_schinese）→ CDN 简中 header → CDN 英文 header → 名称占位
   window.__gcImgError = function (img) {
-    if (img.dataset.fb !== '1') {
-      img.dataset.fb = '1';
-      img.src = `https://cdn.cloudflare.steamstatic.com/steam/apps/${img.dataset.appid}/library_600x900.jpg`;
+    const step = +(img.dataset.fb || 0);
+    const chain = [
+      `https://cdn.cloudflare.steamstatic.com/steam/apps/${img.dataset.appid}/header_schinese.jpg`,
+      `https://cdn.cloudflare.steamstatic.com/steam/apps/${img.dataset.appid}/header.jpg`,
+    ];
+    if (step < chain.length) {
+      img.dataset.fb = step + 1;
+      img.src = chain[step];
     } else {
       img.style.display = 'none';
       img.closest('.gc-cover').classList.add('noimg');
@@ -54,22 +61,16 @@ Routes.compare = async function (app) {
       <h1>Steam游戏看板 - 游戏对比</h1>
       <span class="head-actions">
         <div class="seg sm" id="segMode">
-          <button data-mode="同期" title="同期：各游戏取等长的最近 N 天窗口（N = 选中中最晚发行游戏的已发行天数，按库内最新评论日截止）">同期</button>
+          ${window.STATIC_SNAPSHOT ? '' : '<button data-mode="同期" title="同期：各游戏取等长的最近 N 天窗口（N = 选中中最晚发行游戏的已发行天数，按库内最新评论日截止）">同期</button>'}
           <button data-mode="累计" title="累计：不截断时间，使用库内全部数据对比">累计</button>
         </div>
       </span>
     </div>
 
-    <div id="gcSentinel" style="height:1px"></div>
-    <div class="gc-row">
+    <div class="gc-row" id="gcRow">
       <button class="gs-arrow" id="gcPrev" aria-label="向左滑动">‹</button>
       <div class="game-cards" id="gameCards"></div>
       <button class="gs-arrow" id="gcNext" aria-label="向右滑动">›</button>
-    </div>
-    <div class="game-sticky" id="gameSticky">
-      <button class="gs-arrow" id="gsPrev" aria-label="向左滑动">‹</button>
-      <div class="gs-scroll" id="gsScroll"></div>
-      <button class="gs-arrow" id="gsNext" aria-label="向右滑动">›</button>
     </div>
 
     <div class="grid half section-gap">
@@ -89,9 +90,17 @@ Routes.compare = async function (app) {
     </div>
 
     <div class="card section-gap">
+      <div class="card-head">
+        <h3>评论词云对比</h3>
+      </div>
+      <div class="grid three" id="cloudGrid"></div>
+    </div>
+
+    <div class="card section-gap">
       <h3>指标对比</h3>
       <div style="overflow:auto"><table class="tbl fixed" id="tblKpi"></table></div>
-    </div>`;
+    </div>
+    <button class="backtop" id="btnTop" title="回到页面顶部" hidden>↑ 顶部</button>`;
 
   const $ = id => document.getElementById(id);
   function paintSeg(container, attr, value) {
@@ -110,68 +119,37 @@ Routes.compare = async function (app) {
     $('gameCards').innerHTML = games.map(g => {
       const m = metaMap[g.target_id] || {};
       const appid = appidOf(g.target_id);
+      const date = esc(m.release_date || '…');
+      const rating = esc(m.rating_desc || '…');
       return `
       <div class="game-card ${selected.has(g.target_id) ? 'selected' : ''}" data-tid="${esc(g.target_id)}">
         <div class="gc-cover" data-name="${esc(g.name)}">
           ${m.cover_file || m.release_date ? `<img src="/covers/${esc(appid)}.jpg" data-appid="${esc(appid)}" alt="${esc(g.name)}" onerror="__gcImgError(this)">` : '<div class="gc-loading">…</div>'}
+          <div class="gc-tip">
+            <span class="gc-tip-name">${esc(g.name)}</span>
+            <span class="gc-tip-meta">${date} · ${rating}</span>
+          </div>
         </div>
         <div class="gc-info">
           <div class="gc-name" title="${esc(g.name)}">${esc(g.name)}</div>
-          <div class="gc-date">${esc(m.release_date || '…')}</div>
-          <div class="gc-rating ${m.rating_desc ? ratingClass(m.rating_desc) : ''}">${esc(m.rating_desc || '…')}</div>
+          <div class="gc-meta">
+            <span class="gc-date">${date}</span>
+            <span class="gc-rating ${m.rating_desc ? ratingClass(m.rating_desc) : ''}">${rating}</span>
+          </div>
         </div>
       </div>`;
     }).join('');
-    renderSticky();
     updateCardVis();
   }
 
-  /* ---- 吸顶筛选条：单行横向滚动（全量游戏，两端箭头滑动），铺满浏览器全宽 ----
-     吸顶位跟随 topbar 可见性：topbar 不在视口顶部（被隐藏/滚出）时贴 top:0，消除悬空 */
-  function renderSticky() {
-    const scroll = $('gsScroll');
-    if (!scroll) return;
-    scroll.innerHTML = games.map(g =>
-      `<span class="gs-chip ${selected.has(g.target_id) ? 'selected' : ''}" data-tid="${esc(g.target_id)}" title="${esc(g.name)}">${esc(g.name)}</span>`
-    ).join('');
-    updateArrows();
-  }
-  function updateArrows() {
-    const scroll = $('gsScroll');
-    if (!scroll) return;
-    $('gsPrev').disabled = scroll.scrollLeft <= 2;
-    $('gsNext').disabled = scroll.scrollLeft >= scroll.scrollWidth - scroll.clientWidth - 2;
-  }
-  $('gameSticky').addEventListener('click', e => {
-    const chip = e.target.closest('.gs-chip');
-    if (!chip) return;
-    const tid = chip.dataset.tid;
-    if (selected.has(tid) && selected.size <= 2) { toast('至少保留 2 款游戏参与对比', true); return; }
-    if (!selected.has(tid) && selected.size >= MAX_SELECTED) { toast(`最多同时选择 ${MAX_SELECTED} 款游戏参与对比`, true); return; }
-    userTouched = true;
-    selected.has(tid) ? selected.delete(tid) : selected.add(tid);
-    chip.classList.toggle('selected', selected.has(tid));
-    document.querySelectorAll('#gameCards .game-card').forEach(c =>
-      c.classList.toggle('selected', selected.has(c.dataset.tid)));
-    refreshData();
-  });
-  $('gsPrev').addEventListener('click', () => $('gsScroll').scrollBy({ left: -420, behavior: 'smooth' }));
-  $('gsNext').addEventListener('click', () => $('gsScroll').scrollBy({ left: 420, behavior: 'smooth' }));
-  $('gsScroll').addEventListener('scroll', updateArrows, { passive: true });
-  new IntersectionObserver(([e]) => {
-    const sticky = $('gameSticky');
-    if (sticky) sticky.classList.toggle('show', !e.isIntersecting);
-  }, { rootMargin: '-60px 0px 0px 0px' }).observe($('gcSentinel'));
-
-  /* ---- 封面卡横滑行：单行 6 个可视位，滑出可视区的卡片变暗（选中状态保留），箭头滑动 ---- */
+  /* ---- 吸顶行（gc-row）：滚过卡片行后冻结在顶栏下，信息行折叠只留横版封面；
+     hover 封面浮层显示名称/发行日/评级。
+     吸顶位跟随 topbar 可见性：topbar 不在视口顶部（被隐藏/滚出）时贴 top:0 ---- */
   function updateCardVis() {
+    // 仅维护箭头可用态（2026-09-10：offscreen 变暗已移除——横向滚动被容器裁剪，
+    // 卡片永远不会滑出浏览器视口，无需可视性区分）
     const wrap = $('gameCards');
     if (!wrap) return;
-    const r0 = wrap.getBoundingClientRect();
-    wrap.querySelectorAll('.game-card').forEach(c => {
-      const r = c.getBoundingClientRect();
-      c.classList.toggle('offscreen', r.right < r0.left + 2 || r.left > r0.right - 2);
-    });
     $('gcPrev').disabled = wrap.scrollLeft <= 2;
     $('gcNext').disabled = wrap.scrollLeft >= wrap.scrollWidth - wrap.clientWidth - 2;
   }
@@ -183,16 +161,22 @@ Routes.compare = async function (app) {
   $('gcNext').addEventListener('click', () => $('gameCards').scrollBy({ left: gcStep(), behavior: 'smooth' }));
   $('gameCards').addEventListener('scroll', updateCardVis, { passive: true });
 
-  /* ---- gameSticky 吸顶位跟随 topbar：topbar 不在视口顶部（隐藏/滚出）时贴 top:0 ---- */
+  /* ---- 冻结检测 + 吸顶位跟随 topbar + 回顶按钮 ---- */
   const topbarEl = document.querySelector('.topbar');
-  function syncStickyTop() {
-    const stickyEl = $('gameSticky');
-    if (!stickyEl || !topbarEl) return;
-    const bottom = topbarEl.getBoundingClientRect().bottom;
-    stickyEl.style.top = bottom > 1 ? '60px' : '0px';
+  function syncSticky() {
+    const row = $('gcRow');
+    if (!row) return;
+    const top = topbarEl && topbarEl.getBoundingClientRect().bottom > 1 ? 60 : 0;
+    row.style.top = top + 'px';
+    row.classList.toggle('frozen', row.getBoundingClientRect().top <= top + 1);
   }
-  window.addEventListener('scroll', syncStickyTop, { passive: true });
-  window.addEventListener('resize', () => { updateArrows(); updateCardVis(); });
+  window.addEventListener('scroll', syncSticky, { passive: true });
+  const btnTop = $('btnTop');
+  if (btnTop) {
+    window.addEventListener('scroll', () => { btnTop.hidden = window.scrollY < 600; }, { passive: true });
+    btnTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  }
+  window.addEventListener('resize', updateCardVis);
 
   /* ---- 元数据加载（stale-while-revalidate + 轮询，不阻塞首屏） ---- */
   async function loadMeta(tries = 0) {
@@ -209,7 +193,7 @@ Routes.compare = async function (app) {
         games.slice(0, 3).forEach(g => selected.add(g.target_id));
       }
       renderCards();
-      if (d.refreshing && d.refreshing.length && tries < 20) {
+      if (!window.STATIC_SNAPSHOT && d.refreshing && d.refreshing.length && tries < 20) {
         metaTimer = setTimeout(() => loadMeta(tries + 1), 3000);
         return;
       }
@@ -228,7 +212,6 @@ Routes.compare = async function (app) {
     userTouched = true;
     selected.has(tid) ? selected.delete(tid) : selected.add(tid);
     card.classList.toggle('selected', selected.has(tid));
-    renderSticky();
     refreshData();
   });
 
@@ -239,6 +222,7 @@ Routes.compare = async function (app) {
     state.mode = btn.dataset.mode;
     paintSeg($('segMode'), 'mode', state.mode);
     refreshData();
+    setAgentContext();
   });
   $('segPolar').addEventListener('click', e => {
     const btn = e.target.closest('button[data-polar]');
@@ -246,6 +230,7 @@ Routes.compare = async function (app) {
     state.polar = btn.dataset.polar;
     paintSeg($('segPolar'), 'polar', state.polar);
     refreshData();
+    setAgentContext();
   });
 
   /* ---- 同期窗口（等长最近窗口，见文件头口径说明） ---- */
@@ -448,15 +433,113 @@ Routes.compare = async function (app) {
       renderWordCmp(list);
       renderTopGrid(list);
       renderKpiTable(list);
+      renderCloudGrid(sel, win, seq);  // 词云独立拉取，不阻塞主图表
     } catch (e) {
       if (seq === reqSeq) toast(e.message, true);
     }
   }
 
+  /* ---- 评论词云对比（2026-09-08）：跟随选中游戏与同期/累计窗口；不受负向/正向切换影响 ----
+     字号 = 跨游戏 TF-IDF 区分度；颜色 = 词的主导情感（后端聚合该词所属评论的情感分布） */
+  async function renderCloudGrid(sel, win, seq) {
+    const grid = $('cloudGrid');
+    if (!grid) return;
+    grid.innerHTML = sel.map((g, i) => `
+      <div class="card mini-topic">
+        <h3 title="${esc(g.name)}">${esc(g.name)}</h3>
+        <div class="cloud-chart" id="cloud${i}"></div>
+      </div>`).join('');
+    let data = null;
+    try {
+      const qs = new URLSearchParams({ targets: sel.map(g => g.target_id).join(',') });
+      if (win) { qs.set('start', win.start); qs.set('end', win.end); }
+      data = await API.get(`/api/wordcloud?${qs}`);
+      if (seq !== reqSeq) return;  // 过期响应丢弃
+    } catch (e) { /* 静态快照未收录 / 接口失败 → 空态 */ }
+    if (seq !== reqSeq) return;
+    if (!data || !data.items || !data.items.length) {
+      grid.innerHTML = '<div class="empty">词云数据不可用</div>';
+      return;
+    }
+    const byTid = {};
+    data.items.forEach(it => { byTid[it.target_id] = it; });
+    const p = Charts.palette();
+    const colorMap = { positive: p.pos, negative: p.neg, neutral: '#8b95a0' };
+    sel.forEach((g, i) => {
+      const el = $(`cloud${i}`);
+      const it = byTid[g.target_id];
+      if (!el) return;
+      if (!it || !it.words.length) {
+        el.innerHTML = '<div class="empty">时间窗内无足够评论</div>';
+        return;
+      }
+      // echarts-wordcloud 内部处理会丢掉 data 项的自定义字段 → tooltip 用词名查表取数
+      const byWord = {};
+      it.words.forEach(w => { byWord[w.word] = w; });
+      Charts.render(`cloud${i}`, {
+        tooltip: {
+          formatter: p2 => {
+            const w = byWord[p2.name];
+            if (!w) return esc(p2.name);
+            // 好评/差评取占比更高的一项（与词颜色同口径）
+            const good = w.pos_pct >= w.neg_pct;
+            return `${esc(p2.name)}<br>出现 ${fmtNum(w.count)} 次 · 占该游戏词频 ${w.share}%` +
+              ` · ${good ? '好评' : '差评'}率 ${good ? w.pos_pct : w.neg_pct}%`;
+          },
+        },
+        series: [{
+          type: 'wordCloud', shape: 'circle',
+          width: '98%', height: '98%',
+          sizeRange: [12, 34], rotationRange: [0, 0], gridSize: 6,
+          drawOutOfBound: false, layoutAnimation: true,  // 逐词飘入动画（2026-09-09 恢复）
+          data: it.words.map(w => ({
+            name: w.word,
+            value: w.weight,
+            textStyle: { color: colorMap[w.sentiment] || colorMap.neutral },
+          })),
+        }],
+      });
+    });
+  }
+
+  /* ---- 跨页上下文（2026-09-09 阶段 8 落地）：compare 是多游戏对比，无单一 quick_query；
+     只暴露选中列表 + polar/mode 让 agent 知道当前对比的视角 ---- */
+  function setAgentContext() {
+    const sel = games.filter(g => selected.has(g.target_id));
+    window.__pageAgentContext = {
+      page: 'compare',
+      mode: state.mode,        // 同期 / 累计
+      polar: state.polar,      // negative / positive
+      selected: sel.map(g => ({ target_id: g.target_id, name: g.name })),
+      label: `${state.mode} · ${state.polar === 'negative' ? '负向' : '正向'} · ${sel.length} 款游戏`,
+      // 多游戏对比无单一 quick_query；agent-drawer 不会显示"引用当前查询"按钮
+      /* 2026-09-10「引用当前查询」：选中游戏的对比 KPI 摘要（每游戏一行） */
+      build_summary: async () => {
+        const enc = encodeURIComponent;
+        if (!sel.length) throw new Error('未选中任何游戏');
+        const rows = await Promise.all(sel.map(g =>
+          API.get(`/api/overview?target=${enc(g.target_id)}&grain=comment`).catch(() => null)));
+        const lines = [];
+        rows.forEach((o, i) => {
+          const g = sel[i];
+          if (!o) { lines.push(`${g.name || g.target_id}: 数据获取失败`); return; }
+          const s = o.sentiment || {};
+          lines.push(`${o.name || g.name || g.target_id}: 总 ${o.total} · 负 ${s.negative}(${s.negative_pct}%) · 正 ${s.positive} · 推荐率 ${o.recommend_rate ?? '-'}% · 最近评论 ${(o.last_posted || '').slice(0, 10) || '-'}`);
+        });
+        return [
+          `页面: compare（游戏对比看板）`,
+          `口径: ${state.mode === 'window' ? '同期窗口' : '累计'} · 视角 ${state.polar === 'negative' ? '负向' : '正向'} · 共 ${sel.length} 款`,
+          ...lines,
+        ].join('\n');
+      },
+    };
+  }
+
   paintSeg($('segMode'), 'mode', state.mode);
   paintSeg($('segPolar'), 'polar', state.polar);
   renderCards();
-  syncStickyTop();     // 初始吸顶位对齐 topbar 当前可见性
+  syncSticky();        // 初始吸顶位与冻结态对齐
   loadMeta();          // 异步：不阻塞首屏；到位后重排卡片并刷新数据
   await refreshData();
+  setAgentContext();   // baseline（即便 meta 加载失败也有 mode/polar）
 };

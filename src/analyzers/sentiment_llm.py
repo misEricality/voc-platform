@@ -39,6 +39,8 @@ PROMPTS_DIR = PROJECT_ROOT / "config" / "prompts"
 TOPICS_DIR = PROJECT_ROOT / "config" / "topics"
 
 DEFAULT_BATCH_SIZE = 10
+# 输出上限（2026-09-08 成本优化）：10 条批量 JSON 正常 ~1-2k token，设上限防跑飞
+MAX_OUTPUT_TOKENS = 2500
 
 # 用于 analyzer_version 溯源的 prompt 集合（任一文件内容改动 → 集合 hash 变 → version 变）。
 PROMPT_FILES_FOR_VERSION: tuple[str, ...] = (
@@ -157,6 +159,10 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             "default_base_url": "https://open.bigmodel.cn/api/paas/v4/",
             "model_env": "GLM_5_3_FLASH_MODEL",
             "default_model": "glm-5.3-flash",
+            # 2026-09-08 成本优化：GLM-5.3-Flash 思考模式不可关闭（thinking.type 仅支持
+            # enabled），但支持 reasoning_effort=low —— 实测 reasoning_tokens=0，
+            # 输出从「思考+JSON」收敛为纯 JSON，单条耗时 15-20s → ~1.5s
+            "extra_body": {"reasoning_effort": "low"},
         },
     }
 
@@ -211,6 +217,7 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
         context: dict | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
         strict: bool = False,
+        raise_on_error: bool = False,
     ) -> list[AnalysisResult]:
         """批量分析（10 条/批）
 
@@ -219,6 +226,11 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             context: 上下文（忽略，批量模式下每条 context 由调用方管理）
             batch_size: 批大小
             strict: True 时用 strict prompt（收敛第 2/3 轮：强制至少 1 条观点）
+            raise_on_error: True 时批次级异常直接抛出（调用方决定重试策略）；
+                False（默认，兼容）→ 该批返回失败标记结果（neutral）。
+                ⚠️ 失败标记结果若被 update_analysis 落库会固化 analyzed_at，
+                下轮跳过不重试——**主链路应传 True**（2026-09-08：GLM 400 等错误
+                曾被静默吞掉并固化 neutral）。
 
         Returns:
             list[AnalysisResult]（长度 == len(texts)，缺失的评论返回空结果）
@@ -237,6 +249,7 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
                     ],
                     temperature=0.1,
                     response_format={"type": "json_object"},
+                    max_tokens=MAX_OUTPUT_TOKENS,
                     timeout=60,
                 )
                 # provider 级额外参数（如 deepseek 禁用 thinking，使 temperature 生效）
@@ -246,6 +259,8 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
                 content = resp.choices[0].message.content
                 parsed = self._parse_batch(content, batch_size=len(chunk))
             except Exception as e:
+                if raise_on_error:
+                    raise
                 # 整个批次失败 → 该批所有评论标记失败（进下一轮）
                 for i in range(len(chunk)):
                     results[start + i] = AnalysisResult(

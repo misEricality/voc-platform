@@ -4,8 +4,9 @@
    （6 款单机 + fetched B 站视频），无需登录（公开只读端点） */
 Routes.data = async function (app) {
   const [steam, bili] = await Promise.all([
-    API.get('/api/targets?platform=steam&monitored=true'),
-    API.get('/api/bilibili/videos'),
+    // data 页运维豁免（2026-09-08）：include_hidden 拉全量（含 admin 隐藏目标）
+    API.get('/api/targets?platform=steam&monitored=true&include_hidden=true'),
+    API.get('/api/bilibili/videos?include_hidden=true'),
   ]);
   // 下拉顺序与其他页对齐（2026-09-06）：Steam 按发行日期倒序（/api/games/meta，失败回落名称序，
   // 同 dashboard/compare 序）；B站按投稿日期倒序（同 admin 列表序）
@@ -82,4 +83,27 @@ Routes.data = async function (app) {
   document.getElementById('selTarget').addEventListener('change', render);
   document.getElementById('selDays').addEventListener('change', render);
   await render();
+
+  /* ---- 跨页上下文（2026-09-09 阶段 8 落地）：供 AI 抽屉「引用当前查询」按钮使用 ---- */
+  function setAgentContext() {
+    const tid = document.getElementById('selTarget').value;
+    const days = document.getElementById('selDays').value;
+    const name = tid
+      ? (orderedSteam.find(t => t.target_id === tid)?.name || orderedBili.find(v => v.target_id === tid)?.title || tid)
+      : '全部目标';
+    const params = {};
+    if (tid) params.target = tid;
+    if (days) params.days = days;
+    window.__pageAgentContext = {
+      page: 'data',
+      target_id: tid,
+      target_name: name,
+      days: days,
+      label: `${name} · 近 ${days} 天`,
+      quick_query: `/api/trends?${new URLSearchParams(params)}`,
+    };
+  }
+  document.getElementById('selTarget').addEventListener('change', setAgentContext);
+  document.getElementById('selDays').addEventListener('change', setAgentContext);
+  setAgentContext();  // 初始 baseline
 };

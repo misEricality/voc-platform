@@ -31,7 +31,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.storage.db import (
@@ -179,7 +179,8 @@ def _release_date_overrides() -> dict[str, date]:
 
 
 def list_targets_payload(
-    session: Session, platform: str | None = None, *, monitored: bool = False
+    session: Session, platform: str | None = None, *, monitored: bool = False,
+    include_hidden: bool = False,
 ) -> list[dict]:
     """目标列表 + 聚合指标（直接复用 CommentRepository.list_targets 的同源查询）
 
@@ -189,6 +190,8 @@ def list_targets_payload(
     （只存在于 excluded_targets / 归档 DB）依旧被挡在外面。
     另：collect_tasks 里还没有任何评论的任务也补进列表（total=0），达成「添加即可见，
     采到数据即可看」。
+    include_hidden=True（2026-09-08）：不过滤 collect_tasks.visible=0（隐藏）的目标——
+    data 页「运维全量」豁免用；看板/对比/下拉等默认过滤。
     """
     from src.storage.db import CommentRepository
 
@@ -201,6 +204,11 @@ def list_targets_payload(
         allow = allow | {f"{t.platform}:{t.target_id}" for t in task_rows}
         rows = [t for t in rows if t["target_id"] in allow]
 
+        # 隐藏过滤（2026-09-08）：admin「隐藏」的目标在看板/下拉不可见，数据仍入库
+        if not include_hidden:
+            hidden = {f"{t.platform}:{t.target_id}" for t in task_rows if t.visible == 0}
+            rows = [t for t in rows if t["target_id"] not in hidden]
+
         # 零数据任务补位（total=0）：admin 刚添加、backfill 未跑完时即可在下拉中看到
         seen = {t["target_id"] for t in rows}
         for t in task_rows:
@@ -208,6 +216,8 @@ def list_targets_payload(
             if tid in seen:
                 continue
             if platform and t.platform != platform:
+                continue
+            if not include_hidden and t.visible == 0:
                 continue
             rows.append({
                 "target_id": tid,
@@ -220,6 +230,193 @@ def list_targets_payload(
                 "pos": 0, "neg": 0, "neu": 0,
             })
     return rows
+
+
+# ==================== 评论词云（2026-09-08 · compare 页） ====================
+
+WORDCLOUD_TOP_N_DEFAULT = 60
+WORDCLOUD_MIN_COUNT = 4  # 最低词频门槛（跨游戏 TF-IDF 前过滤长尾）
+_WORDCLOUD_CACHE: dict = {}  # (targets_tuple, start, end, top_n) → payload；进程内 FIFO
+_WORDCLOUD_CACHE_MAX = 16
+
+_TOKEN_OK_RE = re.compile(r"[\u4e00-\u9fffA-Za-z]")
+
+
+@lru_cache(maxsize=1)
+def _cloud_stopwords() -> frozenset[str]:
+    """config/wordlists/wordcloud_stopwords.txt → 停用词集（忽略大小写）"""
+    path = Path(__file__).resolve().parent.parent.parent / "config" / "wordlists" / "wordcloud_stopwords.txt"
+    if not path.exists():
+        return frozenset()
+    words = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            # 每行可空格分隔多个词
+            words.update(w.lower() for w in line.split())
+    return frozenset(words)
+
+
+def _cloud_tokens(text: str) -> list[str]:
+    """单条评论 → 过滤后的词元列表（jieba 分词 + 停用词/噪声过滤）"""
+    import jieba
+
+    out = []
+    for tok in jieba.lcut(text):
+        tok = tok.strip()
+        if len(tok) < 2 or not _TOKEN_OK_RE.search(tok):
+            continue
+        if tok.lower() in _cloud_stopwords():
+            continue
+        out.append(tok)
+    return out
+
+
+_CLOUD_TF_CACHE: dict = {}  # (db_url, target_id) → {"max_id","total","days":{word:{date:[c,pos,neg,neu]}}}
+_CLOUD_TF_LOCK = __import__("threading").Lock()
+
+
+def _cloud_tf_for_target(session: Session, target_id: str) -> dict:
+    """目标级「词×日×情感」频次矩阵（评论内容不可变 → 只在数据变化时重建一次）
+
+    指纹 = (count, max_id)；新增评论后自动失效重建。构建耗时（jieba 全量分词）
+    摊销为每目标一次，此后任意窗口筛选退化为按日求和。
+    """
+    engine_key = str(session.get_bind().url)
+    key = (engine_key, target_id)
+    row = session.execute(
+        select(func.count(Comment.id), func.max(Comment.id)).where(Comment.target_id == target_id)
+    ).one()
+    total, max_id = int(row[0] or 0), int(row[1] or 0)
+    cached = _CLOUD_TF_CACHE.get(key)
+    if cached and cached["max_id"] == max_id and cached["total"] == total:
+        return cached
+
+    with _CLOUD_TF_LOCK:
+        cached = _CLOUD_TF_CACHE.get(key)  # 双重检查：并发请求只构建一次
+        if cached and cached["max_id"] == max_id and cached["total"] == total:
+            return cached
+        rows = session.execute(
+            select(Comment.content, Comment.sentiment, Comment.posted_at).where(
+                Comment.target_id == target_id, Comment.content.is_not(None)
+            )
+        ).all()
+        days: dict[str, dict[str, list[int]]] = {}
+        for content, sentiment, posted_at in rows:
+            if not posted_at:
+                continue
+            d = posted_at.date().isoformat()
+            for tok in _cloud_tokens(content):
+                cell = days.setdefault(tok, {}).setdefault(d, [0, 0, 0, 0])
+                cell[0] += 1
+                if sentiment == "positive":
+                    cell[1] += 1
+                elif sentiment == "negative":
+                    cell[2] += 1
+                else:
+                    cell[3] += 1
+        entry = {"max_id": max_id, "total": total, "days": days}
+        _CLOUD_TF_CACHE[key] = entry
+        return entry
+
+
+def wordcloud_payload(
+    session: Session,
+    targets: list[str],
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    top_n: int = WORDCLOUD_TOP_N_DEFAULT,
+) -> dict:
+    """各游戏评论词云（compare 页）：jieba 分词 → 词频/情感聚合 → 跨游戏 TF-IDF 区分度
+
+    - 窗口：posted_at 闭区间（与 overview/topics 同口径），缺省不截断
+    - 每词聚合情感分布（positive/neutral/negative），取多数情感作为词的着色标签
+    - 权重 = tf × idf（idf 按目标间文档频率），突出「区别于其他游戏」的词；
+      count/share 仍随词条返回供 tooltip
+    - 性能（2026-09-09）：评论内容不可变 → 每目标「词×日×情感」频次矩阵只分词构建一次并
+      驻留内存（`_cloud_tf_for_target`，新评论到达后按目标重建）；任意窗口筛选退化为
+      纯计数求和（毫秒级）。参数级 payload 缓存保留。
+    """
+    import math
+
+    if isinstance(start, str):
+        start = _parse_date(start, field="start")
+    if isinstance(end, str):
+        end = _parse_date(end, field="end")
+
+    # 目标级频次矩阵（含数据量指纹，新增评论自动失效重建）
+    tf_entries = []
+    total_fingerprint = []
+    for t in targets:
+        entry = _cloud_tf_for_target(session, t)
+        tf_entries.append((t, entry))
+        total_fingerprint.append((t, entry["max_id"], entry["total"]))
+    cache_key = (tuple(sorted(targets)), start, end, top_n, tuple(total_fingerprint))
+    if cache_key in _WORDCLOUD_CACHE:
+        return _WORDCLOUD_CACHE[cache_key]
+
+    start_d = start.date().isoformat() if start else None
+    end_d = end.date().isoformat() if end else None
+
+    def _window_days(wd: dict) -> dict:
+        """{date: [c,p,n,g]} → 窗口内按日求和"""
+        out = [0, 0, 0, 0]
+        for d, cell in wd.items():
+            if (start_d is None or d >= start_d) and (end_d is None or d <= end_d):
+                for i in range(4):
+                    out[i] += cell[i]
+        return out
+
+    # 每目标窗口内词频 + 情感计数：{target: {word: [count, pos, neg, neu]}}
+    per_target: dict[str, dict[str, list[int]]] = {}
+    for t, entry in tf_entries:
+        bucket: dict[str, list[int]] = {}
+        for w, wd in entry["days"].items():
+            cell = _window_days(wd)
+            if cell[0]:
+                bucket[w] = cell
+        per_target[t] = bucket
+
+    n_docs = sum(1 for b in per_target.values() if b)
+    df: dict[str, int] = {}
+    for bucket in per_target.values():
+        for word in bucket:
+            df[word] = df.get(word, 0) + 1
+
+    items = []
+    for t in targets:
+        bucket = per_target.get(t) or {}
+        total_tokens = sum(c[0] for c in bucket.values())
+        min_count = WORDCLOUD_MIN_COUNT if len(bucket) > 40 else 1  # 数据少的游戏放宽门槛
+        words = [
+            {
+                "word": w,
+                "count": c[0],
+                "share": round(c[0] / total_tokens * 100, 2) if total_tokens else 0,
+                "weight": round(c[0] * (math.log((1 + n_docs) / (1 + df[w])) + 1), 3),
+                "sentiment": max(
+                    (("positive", c[1]), ("negative", c[2]), ("neutral", c[3])),
+                    key=lambda kv: kv[1],
+                )[0],
+                "pos_pct": round(c[1] / c[0] * 100, 1) if c[0] else 0.0,
+                "neg_pct": round(c[2] / c[0] * 100, 1) if c[0] else 0.0,
+            }
+            for w, c in bucket.items()
+            if c[0] >= min_count
+        ]
+        words.sort(key=lambda x: -x["weight"])
+        items.append({
+            "target_id": t,
+            "total_tokens": total_tokens,
+            "words": words[:top_n],
+        })
+
+    payload = {"items": items}
+    if len(_WORDCLOUD_CACHE) >= _WORDCLOUD_CACHE_MAX:
+        _WORDCLOUD_CACHE.pop(next(iter(_WORDCLOUD_CACHE)))
+    _WORDCLOUD_CACHE[cache_key] = payload
+    return payload
 
 
 def overview_payload(
@@ -414,11 +611,15 @@ def comments_payload(
     end: str | None = None,
     grain: str = "opinion",
     sort: str = "time",
+    topic_match_mode: str = "prefix",
 ) -> dict:
     """评论（原声）分页列表，附观点标签 + extra 解析
 
     topic 过滤随 grain：
-    - grain=opinion（默认，既有行为）：任一观点 full_path 以 topic 段开头（L1/L2/L3 前缀）
+    - grain=opinion（默认，既有行为）：任一观点 full_path 满足 topic_match_mode
+      - "prefix"（默认，向后兼容）：full_path 以 topic 开头（仅 L1 工作）
+      - "auto"（2026-09-09 新增，给 Agent tool 用）：topic 可能是 L1/L2/L3 任一段，
+        按 full_path 任一段匹配——`topic` 出现在 L1/L2/L3 位置都查得到
     - grain=comment（原声粒度）：comments.topic 精确等于 topic（只有 L1）
     start/end：按 posted_at 过滤（YYYY-MM-DD 闭区间）。
     sort：time = posted_at desc（单游戏看板口径，2026-09-03）；
@@ -435,7 +636,17 @@ def comments_payload(
     if topic:
         if grain == "comment":
             conditions.append(Comment.topic == topic)
-        else:
+        elif topic_match_mode == "auto":
+            # topic 是 L1/L2/L3 任一段（如"战斗系统"/"核心机制与循环"/"机制与内容"），
+            # 在 full_path 任意位置匹配。full_path 形如 "L1/L2/L3"（L3 可自带斜杠）。
+            op_ids = select(CommentOpinion.comment_id).where(or_(
+                CommentOpinion.full_path == topic,           # 精确
+                CommentOpinion.full_path.like(f"{topic}/%"),   # L1 开头
+                CommentOpinion.full_path.like(f"%/{topic}"),   # L2/L3 结尾
+                CommentOpinion.full_path.like(f"%/{topic}/%"), # L2/L3 中间
+            ))
+            conditions.append(Comment.id.in_(op_ids))
+        else:  # "prefix" 既有行为
             op_ids = select(CommentOpinion.comment_id).where(
                 CommentOpinion.full_path.like(f"{topic}%")
             )
@@ -587,12 +798,13 @@ def danmaku_payload(
     }
 
 
-def bilibili_videos_payload(session: Session) -> list[dict]:
+def bilibili_videos_payload(session: Session, *, include_hidden: bool = False) -> list[dict]:
     """B 站视频看板数据源（2026-09-04）：fetched 视频的快照 + 采集量 + 性别分布 + 高光
 
     - 只返回 status=fetched 且已有 aid 的视频（aid 是评论/弹幕 target_id 的映射键）
     - 性别分布：comments.extra_json.profile.sex（男/女/secret），SQLite json_extract 聚合
     - 高光：highlights_json 解析（采集时 LLM 总结落库，页面零成本）
+    - include_hidden=True（2026-09-08）：不过滤 visible=0（data 页运维豁免）
     """
     from src.storage.db import BilibiliQueue
 
@@ -601,6 +813,8 @@ def bilibili_videos_payload(session: Session) -> list[dict]:
         .where(BilibiliQueue.status == "fetched", BilibiliQueue.aid.is_not(None))
         .order_by(BilibiliQueue.pubdate.desc().nullslast())
     ).scalars())
+    if not include_hidden:
+        rows = [r for r in rows if r.visible != 0]
 
     out = []
     for row in rows:
@@ -786,8 +1000,10 @@ def _download_cover(appid: str) -> str | None:
         if dest.exists() and dest.stat().st_size > 0:
             return f"{appid}.jpg"  # 已下载过，不重复拉
         for url in (
-            f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg",
+            # 2026-09-08：横版 header 简中优先（base 是英文素材，_schinese 缺失时回退）
+            f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header_schinese.jpg",
             f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg",
+            f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg",
         ):
             try:
                 r = requests.get(url, timeout=15)
@@ -881,12 +1097,15 @@ def _meta_row_dict(row: GameMeta | None, target_id: str) -> dict:
     return d
 
 
-def games_meta_payload(session: Session, targets: list[str]) -> dict:
+def games_meta_payload(
+    session: Session, targets: list[str], *, spawn_refresh: bool = True
+) -> dict:
     """游戏元数据（stale-while-revalidate，2026-09-04 加载策略）
 
     **立即返回**现有行（可能字段为 NULL），缺行/超 TTL/字段缺失（review_score 为空）
     的目标交给后台线程刷新（0.5s 间隔），响应体 `refreshing` 非空时前端 3s 轮询。
     修复：原先同步刷新 6 款游戏串行打 Steam 接口，首屏阻塞 30s+。
+    `spawn_refresh=False`（静态快照导出场景）：只读现有行，**不**起后台刷新线程。
     """
     import threading
 
@@ -905,7 +1124,7 @@ def games_meta_payload(session: Session, targets: list[str]) -> dict:
             refreshing.append(t)
         items.append(_meta_row_dict(row, t))
 
-    if refreshing:
+    if refreshing and spawn_refresh:
         threading.Thread(
             target=_refresh_game_meta_batch, args=(refreshing,),
             name="game-meta-refresh", daemon=True,

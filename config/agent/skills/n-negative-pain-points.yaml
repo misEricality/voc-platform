@@ -1,0 +1,14 @@
+name: 负面痛点聚焦
+description: 玩家抱怨的核心问题
+priority: 10
+triggers:
+  keywords: [痛点, 抱怨, 吐槽, 不满, 缺点, 问题, 不行, 烂, 差]
+  tool_name: query_topics
+  tool_args:
+    sentiment: negative
+system_prompt: |
+  你是「负面痛点聚焦」专家，回答时请：
+  - 优先按 negative_pct（负向占比）从高到低排序主题
+  - 每个痛点附 ≥2 条玩家原声引用，用「」包裹并标注主题与情感
+  - 不要平均分配注意力——头 3 个痛点占比通常占总量 60% 以上，详写
+  - 用简洁列表 / 表格，禁用冗长开场白

@@ -50,39 +50,47 @@ class _FakeAnalyzer:
     name = "fake"
 
     def analyze(self, text: str, *, context: dict | None = None) -> AnalysisResult:
-        # 模拟方案4 输出：核心观点映射 topic，观点带完整路径
-        if "打击感" in text:
-            return AnalysisResult(
-                sentiment="positive", sentiment_score=0.8, sentiment_confidence=0.9,
-                topic="玩法与内容",
-                opinions=[
-                    Opinion(phrase="打击感超爽", sentiment="positive",
-                            sentiment_score=0.8, sentiment_confidence=0.9,
-                            is_core=True, l3="打击感",
-                            full_path="玩法与内容/玩法机制/打击感"),
-                ],
-            )
-        if "价格" in text:
-            return AnalysisResult(
-                sentiment="negative", sentiment_score=-0.6, sentiment_confidence=0.85,
-                topic="商业与发行",
-                opinions=[
-                    Opinion(phrase="价格太贵", sentiment="negative",
-                            sentiment_score=-0.6, sentiment_confidence=0.85,
-                            is_core=True, l3="定价",
-                            full_path="商业与发行/价格与价值/定价"),
-                ],
-            )
-        return AnalysisResult(
-            sentiment="positive", sentiment_score=0.5, sentiment_confidence=0.7,
-            topic="叙事与表现",
-            opinions=[
-                Opinion(phrase="剧情很好", sentiment="positive",
-                        sentiment_score=0.5, sentiment_confidence=0.7,
-                        is_core=True, l3="主线",
-                        full_path="叙事与表现/剧情叙事/主线"),
-            ],
-        )
+        # 单条接口：对齐真实 LLMSentimentAnalyzer.analyze（pipeline.py 逐条调用）
+        return self.analyze_batch([text])[0]
+
+    def analyze_batch(self, texts: list[str], **kwargs) -> list[AnalysisResult]:
+        # 模拟方案4 输出：核心观点映射 topic，观点带完整路径（2026-09-08 批量接口）
+        results = []
+        for text in texts:
+            if "打击感" in text:
+                results.append(AnalysisResult(
+                    sentiment="positive", sentiment_score=0.8, sentiment_confidence=0.9,
+                    topic="玩法与内容",
+                    opinions=[
+                        Opinion(phrase="打击感超爽", sentiment="positive",
+                                sentiment_score=0.8, sentiment_confidence=0.9,
+                                is_core=True, l3="打击感",
+                                full_path="玩法与内容/玩法机制/打击感"),
+                    ],
+                ))
+            elif "价格" in text:
+                results.append(AnalysisResult(
+                    sentiment="negative", sentiment_score=-0.6, sentiment_confidence=0.85,
+                    topic="商业与发行",
+                    opinions=[
+                        Opinion(phrase="价格太贵", sentiment="negative",
+                                sentiment_score=-0.6, sentiment_confidence=0.85,
+                                is_core=True, l3="定价",
+                                full_path="商业与发行/价格与价值/定价"),
+                    ],
+                ))
+            else:
+                results.append(AnalysisResult(
+                    sentiment="positive", sentiment_score=0.5, sentiment_confidence=0.7,
+                    topic="叙事与表现",
+                    opinions=[
+                        Opinion(phrase="剧情很好", sentiment="positive",
+                                sentiment_score=0.5, sentiment_confidence=0.7,
+                                is_core=True, l3="主线",
+                                full_path="叙事与表现/剧情叙事/主线"),
+                    ],
+                ))
+        return results
 
 
 def test_pipeline_analysis_writes_opinions(tmp_path, monkeypatch):

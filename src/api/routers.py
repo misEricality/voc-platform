@@ -55,11 +55,41 @@ def _ok(data) -> dict:
 def api_targets(
     platform: str | None = None,
     monitored: bool = False,
+    include_hidden: bool = False,
     s: Session = Depends(get_session),
 ):
     from src.api import service
 
-    return _ok(service.list_targets_payload(s, platform, monitored=monitored))
+    return _ok(service.list_targets_payload(
+        s, platform, monitored=monitored, include_hidden=include_hidden,
+    ))
+
+
+@public_router.get("/wordcloud")
+def api_wordcloud(
+    targets: str,
+    start: str | None = None,
+    end: str | None = None,
+    top_n: int = 60,
+    s: Session = Depends(get_session),
+):
+    """各游戏评论词云（compare 页）：jieba 分词 + 跨游戏 TF-IDF 区分度 + 情感着色
+
+    targets 逗号分隔（≤8）；start/end 为 YYYY-MM-DD 闭区间（posted_at）；top_n 20~100。
+    """
+    from src.api import service
+
+    tl = [t.strip() for t in targets.split(",") if t.strip()][:8]
+    if not tl:
+        raise HTTPException(422, "targets 不能为空")
+    try:
+        start_dt = service._parse_date(start, field="start") if start else None
+        end_dt = service._parse_date(end, field="end") if end else None
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return _ok(service.wordcloud_payload(
+        s, tl, start=start_dt, end=end_dt, top_n=max(20, min(100, top_n)),
+    ))
 
 
 @public_router.get("/games/meta")
@@ -161,11 +191,11 @@ def api_comments(
 
 
 @public_router.get("/bilibili/videos")
-def api_bilibili_videos(s: Session = Depends(get_session)):
+def api_bilibili_videos(include_hidden: bool = False, s: Session = Depends(get_session)):
     """B 站视频看板数据源：fetched 视频快照 + 采集量 + 性别分布 + 高光总结"""
     from src.api import service
 
-    return _ok(service.bilibili_videos_payload(s))
+    return _ok(service.bilibili_videos_payload(s, include_hidden=include_hidden))
 
 
 @public_router.get("/opinions")
@@ -551,6 +581,9 @@ def api_update_steam_task(task_id: int, body: dict, s: Session = Depends(get_ses
 
     if "enabled" in body:
         repo.set_enabled(task_id, bool(body["enabled"]))
+    if "visible" in body:
+        task.visible = 1 if body["visible"] else 0
+        s.commit()
     update_kwargs = {}
     if "name" in body:
         update_kwargs["name"] = body["name"]
@@ -593,10 +626,14 @@ async def api_update_bili_task(row_id: int, body: dict, s: Session = Depends(get
                 row.status = "scheduled"
         else:
             raise HTTPException(502, "识别失败（B 站接口不可用或 BV 无效），稍后重试")
+    elif action == "hide":
+        row.visible = 0  # 看板/下拉隐藏（与采集状态机独立，fetched 也可隐藏）
+    elif action == "show":
+        row.visible = 1
     elif "note" in body:
         row.note = body["note"]
     else:
-        raise HTTPException(422, "action 仅支持 pause/resume/reidentify，或直接传 note")
+        raise HTTPException(422, "action 仅支持 pause/resume/reidentify/hide/show，或直接传 note")
 
     s.commit()
     return _ok(_bili_task_view(row))

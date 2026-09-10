@@ -2,8 +2,50 @@
 /* 页面路由注册表（必须先于 pages/*.js 求值：const 会因 TDZ 让先加载的页面脚本赋值报错） */
 var Routes = {};
 
+/* ---- 静态快照模式（方案③，scripts/ops/export_static_snapshot.py 生成）----
+   静态版入口 index.html 注入 window.STATIC_SNAPSHOT=true 与 SNAPSHOT_META；
+   GET 请求改读 /snapshot/ 下的预生成 JSON（manifest 路由表：端点+参数→文件）。
+   未收录的筛选组合抛出明确错误 → 页面现有 catch/toast 降级。实时模式零影响。 */
+const SNAPSHOT_ROUTES_P = window.STATIC_SNAPSHOT
+  ? fetch('snapshot/manifest.json').then(r => {
+      if (!r.ok) throw new Error('快照 manifest 加载失败：HTTP ' + r.status);
+      return r.json();
+    })
+  : null;
+
+function __snapshotMatch(routes, path, params) {
+  const keys = Object.keys(params);
+  return routes.find(r => {
+    if (r.path !== path) return false;
+    const rk = Object.keys(r.params);
+    if (rk.length !== keys.length) return false;
+    return rk.every(k => r.params[k] === '*' || r.params[k] === params[k]);
+  });
+}
+
+async function snapshotGet(path) {
+  const m = await SNAPSHOT_ROUTES_P;
+  const qIdx = path.indexOf('?');
+  const ep = qIdx === -1 ? path : path.slice(0, qIdx);
+  const params = {};
+  if (qIdx !== -1) {
+    new URLSearchParams(path.slice(qIdx + 1))
+      .forEach((v, k) => { if (v !== '') params[k] = v; });
+  }
+  const hit = __snapshotMatch(m.routes, ep, params);
+  if (!hit) {
+    throw new Error('静态快照未收录该查询（' + ep + '）——仅含预生成维度');
+  }
+  const r = await fetch('snapshot/' + hit.file);
+  if (!r.ok) throw new Error('快照文件加载失败：HTTP ' + r.status);
+  return r.json();
+}
+
 const API = (() => {
   async function request(path, opts = {}) {
+    if (window.STATIC_SNAPSHOT && (!opts.method || opts.method === 'GET')) {
+      return snapshotGet(path);
+    }
     const r = await fetch(path, {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',

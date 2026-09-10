@@ -1,0 +1,400 @@
+/* 原声分析 Agent · 一级页面 #/agent（2026-09-09 第 5 轮）
+   - 左历史栏（240px）：会话列表 + 「新对话」+ 「📥 导出」按钮
+   - 主对话窗口：消息流 + 输入框 + 冷启动示例 chip
+   - 路由：
+     - #/agent                 → 新对话 / 恢复最近会话
+     - #/agent/<session_id>    → 加载指定会话并继续
+   - 与抽屉完全独立（自己的消息流 DOM），但复用 window.Agent 的 chatStream / Sessions
+   - 冷启动示例：从 /api/games/meta visible 前 2 + B站 1 个派生固定 chip（决策 #21） */
+(function () {
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+  function fmtAgo(iso) {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso).slice(0, 10);
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+    if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
+    return String(iso).slice(0, 10);
+  }
+
+  Routes.agent = async function (app) {
+    let sessionId = null;
+    const m = location.hash.match(/^#\/agent\/([a-f0-9-]+)$/i);
+    if (m) sessionId = m[1];
+
+    app.innerHTML =
+      '<div class="agent-page">' +
+        '<aside class="agent-side">' +
+          '<div class="agent-side-head">' +
+            '<button class="btn primary" id="btnNew" style="width:100%">+ 新对话</button>' +
+            '<button class="btn sm" id="btnExport" style="width:100%;margin-top:8px">📥 导出我的对话</button>' +
+          '</div>' +
+          '<div class="agent-side-list" id="sideList">加载中…</div>' +
+        '</aside>' +
+        '<section class="agent-main">' +
+          '<div class="agent-main-head">' +
+            '<h2 id="mainTitle">原声分析助手</h2>' +
+            '<span class="sub" id="mainSub">自然语言查 voc.db；调用 query_overview/topics/comments + 搜项目文档</span>' +
+          '</div>' +
+          '<div class="agent-main-body" id="msgBody"></div>' +
+          '<div class="agent-main-input">' +
+            '<textarea id="msgInput" rows="1" placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"></textarea>' +
+            '<div class="input-bar">' +
+              '<span class="hint">例：「玩家主要痛点是什么」「近 30 天情感趋势」</span>' +
+              '<button class="btn primary" id="btnSend">发送</button>' +
+            '</div>' +
+            '<div class="foot-privacy">匿名 UUID 仅用于保存你的对话历史，不含个人信息</div>' +
+          '</div>' +
+        '</section>' +
+      '</div>';
+
+    if (!document.querySelector('link[href*="agent.css"]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'src/pages/agent.css?v=20260910a';
+      document.head.appendChild(link);
+    }
+    // 2026-09-10 修复：本页 .msg/.tool-call/.typing-dot 样式实际定义在 agent-drawer.css，
+    // 此前只加载 agent.css 导致一级页消息/工具面板一直裸奔无样式；顺带获得 markdown 样式
+    if (!document.querySelector('link[href*="agent-drawer.css"]')) {
+      const link2 = document.createElement('link');
+      link2.rel = 'stylesheet';
+      link2.href = 'src/agent-drawer.css?v=20260910a';
+      document.head.appendChild(link2);
+    }
+
+    const $ = (sel) => app.querySelector(sel);
+    const state = { sessionId, messages: [], streaming: false };
+
+    /* ---- 侧栏：会话列表 ---- */
+    async function loadSideList() {
+      try {
+        const r = await window.Agent.Sessions.list({ limit: 30 });
+        const sessions = (r && r.sessions) || [];
+        if (!sessions.length) {
+          $('#sideList').innerHTML = '<div class="empty-sm">还没有对话，点击「新对话」开始</div>';
+          return;
+        }
+        let html = '';
+        for (let i = 0; i < sessions.length; i++) {
+          const s = sessions[i];
+          const active = (s.id === state.sessionId) ? ' active' : '';
+          html += '<div class="side-item' + active + '" data-id="' + esc(s.id) + '">' +
+            '<div class="side-item-title">' + esc(s.title || '未命名对话') + '</div>' +
+            '<div class="side-item-meta">' +
+              '<span>' + esc(fmtAgo(s.updated_at)) + '</span>' +
+              '<span class="badge dim">' + esc(s.page || '-') + '</span>' +
+            '</div>' +
+            '<button class="side-del" data-del="' + esc(s.id) + '" title="删除">×</button>' +
+          '</div>';
+        }
+        $('#sideList').innerHTML = html;
+        $('#sideList').querySelectorAll('.side-item').forEach(el => {
+          el.addEventListener('click', (e) => {
+            if (e.target.closest('[data-del]')) return;
+            location.hash = '#/agent/' + el.dataset.id;
+          });
+        });
+        $('#sideList').querySelectorAll('[data-del]').forEach(b => {
+          b.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const sid = b.dataset.del;
+            if (!confirm('删除该对话？')) return;
+            try {
+              await window.Agent.Sessions.del(sid);
+              if (state.sessionId === sid) {
+                state.sessionId = null;
+                state.messages = [];
+                location.hash = '#/agent';
+              }
+              await loadSideList();
+              toast('已删除');
+            } catch (err) { toast(err.message, true); }
+          });
+        });
+      } catch (e) {
+        $('#sideList').innerHTML = '<div class="empty-sm">加载失败：' + esc(e.message) + '</div>';
+      }
+    }
+
+    /* ---- 主对话：加载会话详情 ---- */
+    async function loadSession(sid) {
+      state.sessionId = sid;
+      state.messages = [];
+      $('#msgBody').innerHTML = '';
+      if (!sid) { renderColdStart(); return; }
+      try {
+        const detail = await window.Agent.Sessions.get(sid);
+        state.messages = detail.messages || [];
+        for (let i = 0; i < state.messages.length; i++) {
+          appendHistoryMsg(state.messages[i]);
+        }
+        $('#mainTitle').textContent = detail.title || '原声分析助手';
+        $('#mainSub').textContent = state.messages.length + ' 条消息 · ' + (detail.page || '-');
+        _scrollBottom();
+      } catch (e) { toast(e.message, true); }
+    }
+
+    function renderColdStart() {
+      $('#msgBody').innerHTML =
+        '<div class="msg assistant">你好，我是原声分析助手。可以问：\n' +
+          '- 「玩家主要痛点是什么」\n' +
+          '- 「最近 30 天的情感趋势」\n' +
+          '- 「举几个负向评论的原声例子」\n' +
+          '- 「黑神话战斗系统的看法」</div>' +
+        '<div class="chip-row" id="chipRow">' +
+          '<span class="chip-label">试试问：</span>' +
+          '<span class="empty-sm">加载示例…</span>' +
+        '</div>';
+      loadColdStartChips();
+      $('#mainTitle').textContent = '原声分析助手';
+      $('#mainSub').textContent = '自然语言查 voc.db；调用 query_overview/topics/comments + 搜项目文档';
+    }
+
+    async function loadColdStartChips() {
+      try {
+        // /api/games/meta 必须带 targets；先 /api/targets?platform=steam/bilibili 拿白名单
+        // 注意：响应是 {ok, data: [...]}，data 本身是数组
+        const [steamAll, biliAll] = await Promise.all([
+          API.get('/api/targets?platform=steam').catch(() => ({ data: [] })),
+          API.get('/api/targets?platform=bilibili').catch(() => ({ data: [] })),
+        ]);
+        const steam = (steamAll.data || []).slice(0, 2);
+        const bili = (biliAll.data || []).slice(0, 1);
+        const chips = [
+          { q: '最近 30 天玩家主要痛点是什么？', label: '近 30 天玩家痛点' },
+          { q: '对比近 30 天和累计的情感趋势', label: '情感趋势对比' },
+        ];
+        for (let i = 0; i < steam.length; i++) {
+          const g = steam[i];
+          chips.push({ q: '给我看 ' + (g.name || g.target_id) + ' 的负面评论原声几个例子',
+                       label: '「' + (g.name || g.target_id) + '」负向原声' });
+        }
+        for (let i = 0; i < bili.length; i++) {
+          const b = bili[i];
+          const ttl = b.title || b.target_id;
+          chips.push({ q: '视频 ' + ttl + ' 的弹幕情感如何？',
+                       label: '「' + ttl.slice(0, 14) + '…」弹幕情感' });
+        }
+        chips.push({ q: '简要介绍下 Agent 设计意图？', label: 'Agent 设计文档' });
+        const row = $('#chipRow');
+        if (!row) return;
+        let html = '<span class="chip-label">试试问：</span>';
+        for (let i = 0; i < chips.length; i++) {
+          const c = chips[i];
+          html += '<button class="chip" data-q="' + esc(c.q) + '">' + esc(c.label) + '</button>';
+        }
+        row.innerHTML = html;
+        row.querySelectorAll('.chip').forEach(b => {
+          b.addEventListener('click', () => {
+            $('#msgInput').value = b.dataset.q;
+            $('#msgInput').focus();
+            send();
+          });
+        });
+      } catch (e) {
+        const row = $('#chipRow');
+        if (row) row.innerHTML = '<span class="chip-label">冷启动示例暂不可用</span>';
+      }
+    }
+
+    function appendHistoryMsg(m) {
+      if (m.role === 'user') {
+        appendMsgUI({ role: 'user', text: m.content || '' });
+      } else if (m.role === 'assistant') {
+        if (m.tool_calls && m.tool_calls.length) {
+          for (let i = 0; i < m.tool_calls.length; i++) {
+            const tc = m.tool_calls[i];
+            let argsObj = tc.arguments;
+            if (typeof argsObj === 'string') {
+              try { argsObj = JSON.parse(argsObj); } catch (e) { argsObj = argsObj; }
+            }
+            appendToolCallUI({ id: tc.id, name: tc.name, args: argsObj || {}, done: true });
+          }
+        }
+        if (m.content) appendMsgUI({ role: 'assistant', text: m.content });
+      } else if (m.role === 'tool') {
+        const el = $('#msgBody').querySelector('.tool-call[data-id="' + esc(m.tool_call_id) + '"]');
+        if (el) {
+          const s = el.querySelector('.tool-status');
+          s.className = 'tool-status done';
+          s.textContent = '完成';
+          const content = m.content || '';
+          el.querySelector('.tool-call-body').textContent =
+            content.slice(0, 300) + (content.length > 300 ? '...[truncated]' : '');
+        }
+      }
+    }
+
+    function appendMsgUI(o) {
+      const el = document.createElement('div');
+      el.className = 'msg ' + o.role + (o.error ? ' error' : '') + (o.dots ? ' typing' : '');
+      if (o.dots) {
+        el.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
+      } else if (o.role === 'assistant' && !o.error && window.renderAgentMd) {
+        // assistant 消息渲染 Markdown（2026-09-10；DOMPurify 已净化）
+        el.classList.add('md');
+        el.innerHTML = window.renderAgentMd(o.text);
+      } else {
+        el.textContent = (o.error ? '⚠ ' : '') + (o.text || '');
+      }
+      $('#msgBody').appendChild(el);
+      _scrollBottom();
+      return el;
+    }
+
+    function appendNoticeUI(text, kind) {
+      // 系统提示条（2026-09-09：max_rounds_hit 兜底用；与 assistant/tool_call 视觉区分）
+      const el = document.createElement('div');
+      el.className = 'msg-system-notice ' + (kind || 'warn');
+      el.textContent = text;
+      $('#msgBody').appendChild(el);
+      _scrollBottom();
+      return el;
+    }
+
+    function appendToolCallUI(o) {
+      const el = document.createElement('div');
+      el.className = 'tool-call';
+      el.dataset.id = o.id;
+      el.dataset.status = o.done ? 'done' : 'running';
+      el.innerHTML =
+        '<div class="tool-call-head">' +
+          '<span class="tool-name">⚙ ' + esc(o.name) + '</span>' +
+          '<span class="tool-status ' + (o.done ? 'done' : 'running') + '">' +
+          (o.done ? '完成' : '调用中…') + '</span>' +
+        '</div>' +
+        '<div class="tool-call-body">' + esc(JSON.stringify(o.args || {}, null, 2)) + '</div>';
+      el.querySelector('.tool-call-head').addEventListener('click', () => {
+        el.classList.toggle('expanded');
+      });
+      $('#msgBody').appendChild(el);
+      _scrollBottom();
+      return el;
+    }
+
+    function updateToolCallUI(d) {
+      const el = $('#msgBody').querySelector('.tool-call[data-id="' + d.id + '"]');
+      if (!el) return;
+      el.dataset.status = 'done';
+      const s = el.querySelector('.tool-status');
+      s.className = 'tool-status done';
+      s.textContent = '完成';
+      el.querySelector('.tool-call-body').textContent = d.result_preview || '';
+      _scrollBottom();
+    }
+
+    function appendToken(el, delta) {
+      if (el.classList.contains('typing')) {
+        el.classList.remove('typing');
+        el.textContent = '';
+      }
+      const t = el.querySelector('.typing-dot');
+      if (t) t.remove();
+      el.textContent += delta;
+      _scrollBottom();
+    }
+
+    function _scrollBottom() {
+      const b = $('#msgBody');
+      b.scrollTop = b.scrollHeight;
+    }
+
+    /* ---- 发送 ---- */
+    async function send() {
+      if (state.streaming) return;
+      const text = $('#msgInput').value.trim();
+      if (!text) return;
+      $('#msgInput').value = '';
+      $('#msgInput').style.height = 'auto';
+
+      appendMsgUI({ role: 'user', text });
+
+      if (!state.sessionId) {
+        try {
+          const sess = await window.Agent.Sessions.create({
+            page: 'agent',
+            title: text.slice(0, 30),
+          });
+          state.sessionId = sess.id;
+          history.replaceState(null, '', '#/agent/' + sess.id);
+          // 同步侧栏 active
+          loadSideList();
+        } catch (e) {
+          appendMsgUI({ role: 'assistant', error: '建会话失败：' + e.message });
+          return;
+        }
+      }
+
+      state.streaming = true;
+      $('#btnSend').disabled = true;
+      const assistantEl = appendMsgUI({ role: 'assistant', dots: true });
+      try {
+        for await (const ev of window.Agent.chatStream({
+          session_id: state.sessionId, user_msg: text,
+        })) {
+          if (ev.event === 'token') {
+            appendToken(assistantEl, ev.data.delta || '');
+          } else if (ev.event === 'tool_start') {
+            assistantEl.classList.remove('typing');
+            assistantEl.querySelectorAll('.typing-dot').forEach(t => t.remove());
+            appendToolCallUI({ id: ev.data.id, name: ev.data.name, args: ev.data.args || {}, done: false });
+          } else if (ev.event === 'tool_end') {
+            updateToolCallUI(ev.data);
+          } else if (ev.event === 'done') {
+            assistantEl.classList.remove('typing');
+            assistantEl.querySelectorAll('.typing-dot').forEach(t => t.remove());
+            // 2026-09-10：流式期间纯文本累积，done 后整体渲染 Markdown（一次性，避免逐 token 重排）
+            assistantEl.classList.add('md');
+            assistantEl.innerHTML = window.renderAgentMd(assistantEl.textContent);
+            // 2026-09-09：max_rounds 触发时后端会把兜底文本通过 token 事件推过来；
+            // 这里再补一条系统提示条，确保用户清楚"为何没总结"
+            if (ev.data && ev.data.max_rounds_hit) {
+              const rounds = ev.data.rounds || 5;
+              appendNoticeUI(
+                `⚠️ 已达工具调用上限（${rounds} 轮）。如需完整回答，请把问题拆得更具体，或直接到看板看指标/筛选评论。`,
+                'warn'
+              );
+            }
+            await loadSideList();
+          } else if (ev.event === 'error') {
+            assistantEl.classList.add('error');
+            assistantEl.textContent = '⚠ ' + (ev.data.message || '请求失败');
+          }
+        }
+      } catch (e) {
+        assistantEl.classList.add('error');
+        assistantEl.textContent = '⚠ ' + e.message;
+      } finally {
+        state.streaming = false;
+        $('#btnSend').disabled = false;
+      }
+    }
+
+    /* ---- 绑定 ---- */
+    $('#btnNew').addEventListener('click', () => { location.hash = '#/agent'; });
+    $('#btnExport').addEventListener('click', async () => {
+      try { await window.Agent.exportMarkdown(); }
+      catch (e) { toast(e.message, true); }
+    });
+    $('#btnSend').addEventListener('click', send);
+    $('#msgInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    $('#msgInput').addEventListener('input', () => {
+      $('#msgInput').style.height = 'auto';
+      $('#msgInput').style.height = Math.min($('#msgInput').scrollHeight, 180) + 'px';
+    });
+
+    /* ---- 初始化 ---- */
+    await loadSideList();
+    await loadSession(sessionId);
+  };
+})();

@@ -270,7 +270,8 @@ Routes.dashboard = async function (app) {
       series: [
         { name: '评论量', type: 'line', smooth: true, symbol: 'circle', symbolSize: 5, yAxisIndex: 0,
           data: items.map(i => i.total),
-          lineStyle: { color: p.primary, width: 2.5 }, itemStyle: { color: p.primary } },
+          lineStyle: { color: p.primary, width: 2.5 }, itemStyle: { color: p.primary },
+          areaStyle: { color: p.primary, opacity: .15 } },  // 面积填充（对齐 bilibili 弹幕时间轴样式）
         { name: '推荐率', type: 'line', smooth: true, symbol: 'none', yAxisIndex: 1,
           data: items.map(i => i.recommend_rate), connectNulls: false,  // null 断裂防误导
           lineStyle: { color: p.pos, width: 2, type: 'dashed' },
@@ -503,15 +504,69 @@ Routes.dashboard = async function (app) {
   $('pgPrev').addEventListener('click', () => { if (state.page > 1) { state.page--; refreshList(); } });
   $('pgNext').addEventListener('click', () => { state.page++; refreshList(); });
 
+  /* ---- 跨页上下文（2026-09-09 阶段 8 落地）：供全局 AI 抽屉「引用当前查询」按钮使用 ---- */
+  function setAgentContext() {
+    const cur = ordered.find(t => t.target_id === state.target);
+    const win = windowParams();
+    const label = `${cur?.name || state.target} · ${state.range === 'custom' ? `${state.start}~${state.end}` :
+                   state.range === 'all' ? '累计' : '近' + state.range.replace('d', '') + '天'} · ` +
+                 (state.grain === 'comment' ? '原声' : '观点') +
+                 (state.senti ? ` · ${SENTI_LABEL[state.senti] || state.senti}` : '') +
+                 (state.topic ? ` · ${state.topic}` : '');
+    const params = {
+      target: state.target,
+      grain: state.grain,
+      sentiment: state.senti,
+      topic: state.topic,
+      page: 1, page_size: 50,
+      ...(win.start || win.end ? { start: win.start, end: win.end } : {}),
+    };
+    window.__pageAgentContext = {
+      page: 'dashboard',
+      target_id: state.target,
+      target_name: cur?.name || '',
+      range: state.range,
+      grain: state.grain,
+      sentiment_filter: state.senti,
+      topic_filter: state.topic,
+      label,
+      quick_query: `/api/comments?${new URLSearchParams(Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== '' && v != null)))}`,
+      /* 2026-09-10「引用当前查询」：抽屉引用按钮调用，返回当前查询的聚合摘要（≤2000 字符） */
+      build_summary: async () => {
+        const tw = state.range === 'custom' ? `${state.start}~${state.end}`
+                 : state.range === 'all' ? '累计' : '近' + state.range.replace('d', '') + '天';
+        const enc = encodeURIComponent;
+        const common = (win.start ? `&start=${enc(win.start)}` : '') + (win.end ? `&end=${enc(win.end)}` : '');
+        const o = await API.get(`/api/overview?target=${enc(state.target)}&grain=comment${common}`);
+        const t = await API.get(`/api/topics?target=${enc(state.target)}&level=L1&grain=opinion` +
+          (state.senti ? `&sentiment=${enc(state.senti)}` : '') + common);
+        const s = o.sentiment || {};
+        const tops = (t.slice ? t : (t.topics || t.items || [])).slice(0, 8)
+          .map(x => `${x.topic} ${x.total}(负${x.negative_pct ?? '-'}%)`).join(' / ');
+        return [
+          `页面: dashboard（Steam 单游戏看板）`,
+          `目标: ${o.name || cur?.name || state.target} (${state.target})`,
+          `时间窗: ${tw}`,
+          `情感: 总 ${o.total} 条 · 负 ${s.negative}(${s.negative_pct}%) · 正 ${s.positive}(${s.positive_pct}%) · 中 ${s.neutral} · 推荐率 ${o.recommend_rate ?? '-'}%`,
+          `主题Top8(L1·观点): ${tops || '（无主题数据）'}`,
+        ].join('\n');
+      },
+    };
+  }
+  /* SENTI_LABEL 在本文件下方定义；前置引用在 JS 里合法（函数声明提升） */
+
   /* ---- 刷新编排（竞态守卫） ---- */
   async function refreshCharts() {
     const seq = ++reqSeq;
     try {
       await Promise.all([renderOverview(seq), renderTrend(seq), renderBoardCharts(seq)]);
     } catch (e) { if (seq === reqSeq) toast(e.message, true); }
+    setAgentContext();
   }
   async function refreshList() {
     await renderList();  // renderList 内部用 reqSeq 防过期
+    setAgentContext();
   }
   async function refreshGlobal() {
     state.page = 1;  // 游戏/时间变化 → 列表回第一页
@@ -524,4 +579,5 @@ Routes.dashboard = async function (app) {
   loadTree().then(renderTreedrop).catch(() => { /* 树加载失败不阻塞主看板 */ });
 
   await refreshGlobal();
+  setAgentContext();  // 初始 baseline（即便 tree 加载失败也有 target/range）
 };
