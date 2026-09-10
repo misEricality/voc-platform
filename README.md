@@ -37,7 +37,7 @@
 
 | 模块 | 状态 | 备注 |
 |------|------|------|
-| Steam 评测采集 | ✅ | 官方API + 翻页去重 + 验证页防漏采（主库 **8 款单机**；4 款网游 2026-08-23 已归档，⚠️ 2026-09-10 发现主库仍有同款重复副本，待重新归档） |
+| Steam 评测采集 | ✅ | 官方API + 翻页去重 + 验证页防漏采（主库 **8 款单机**；4 款网游已归档至 `data/archive/online_games_2026-09-10.db`，可单独查询） |
 | **B站采集** | ✅ | 公开 Web 接口（免申请），7 天稳态快照 + 弹幕分片；**5 视频 / 4,241 评论 + 7,359 弹幕**已落库 |
 | SQLite 存储 | ✅ | SQLAlchemy 2.x，冷启动 NULL + 7 天回采机制 |
 | LLM 情感分析 | ✅ | **DeepSeek-V4-Flash 主标注器**（2026-09-08 从 GLM-5.3-Flash 切回；思考可关闭 + 谷时价格优 + 前缀缓存；与 GLM/QWEN 共享 GDT v3.1.1 prompt 集合，不污染 `analyzer_version` 溯源；QWEN-flash 个人 token-plan 模型名 404，2026-08-25 回退） |
@@ -54,7 +54,7 @@
 | 自动化流水线 | ✅ | P6 已落地；**2026-09-02 起切本地直采**（`VOC-Local-Daily-Collect` 02:00 直写 voc.db + 03:00 哨兵补采），GH Actions `collect` job 停用、`test` job 保留作 CI 护栏；silent 失败防御 `verify_release_upload.py` 就位 |
 | **公网部署** | ✅ | **方案 ③ 静态快照已上线**（EdgeOne Pages，三看板只读门面，2026-09-07）；方案 ①b VPS 只读服务待外部资源（VPS / 域名 / 备案）——详见 [DEPLOYMENT_OPTIONS.md](docs/architecture/DEPLOYMENT_OPTIONS.md) |
 
-> 📊 **当前数据**（2026-09-10 收口）：**23,632 条**评论（Steam 单机 ~14.5K + B 站 5 视频 4,241 + ⚠️ 4 款已归档网游 4,916 条疑似回灌主库），已分析 **23,553 条 = 99.7%**（P11 bogus 清理 + 2,519 条重打后），观点级标注 47,505 条，语义向量 22,628 条（单模型 `bge-small-zh-v1.5`，已全量回填），弹幕 7,359 条，库体 144.2 MB。主标注器 `deepseek-v4-flash`（`llm:deepseek-v4-flash@73892f47`）。GDT v3.1.1 词典已扩充（兜底占比 topic 67.6% / opinion 67.4%，重打后待复测），P3 多目标对比已上线，本地直采每日增量入库（7 天回看 + smart_window v2），P10 analyzer_version 溯源已上线（老数据 NULL = 未溯源）。DESIGN_TOKENS v1.0 已落地三原型 v2 迁移版。
+> 📊 **当前数据**（2026-09-10 收口）：**18,716 条**评论（Steam 8 款单机 14,475 + B 站 5 视频 4,241；另有 4 款网游 4,916 条归档在独立 DB），已分析 **18,671 条 = 99.8%**（P11 bogus 清理 + 2,519 条重打后），观点级标注 40,404 条，语义向量 17,713 条（单模型 `bge-small-zh-v1.5`，已全量回填），弹幕 7,359 条，库体 115.7 MB。主标注器 `deepseek-v4-flash`（`llm:deepseek-v4-flash@73892f47`）。GDT v3.1.1 词典已扩充（兜底占比 topic 67.6% / opinion 67.4%，重打后待复测），P3 多目标对比已上线，本地直采每日增量入库（7 天回看 + smart_window v2），P10 analyzer_version 溯源已上线（老数据 NULL = 未溯源）。DESIGN_TOKENS v1.0 已落地三原型 v2 迁移版。
 
 ## 🏷️ L1-L3 三级标签标注管线（方案4）
 

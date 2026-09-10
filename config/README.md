@@ -87,6 +87,7 @@ config/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-10 | `monitoring/targets.yaml` **excluded_targets 段归档库路径更新**：`online_games_2026-08-23.db` → **`online_games_2026-09-10.db`**（4 条 target 的 `reason` + `archived_db`），并补注「首次归档被远端 DB sync 回灌，已停用 VOC sync 任务」的防复发说明 | 4 款网游 2026-09-10 重新归档（主库 23,632 → 18,716 条）；yaml 里指向旧归档库会让后来者找不到正确数据源 |
 | 2026-09-09 | 新建 `agent/tools.yaml`（4 tool OpenAI function calling schema）+ `agent/skills/`（3 个 skill YAML） | 原声分析 Agent 落地 + §3 红线修复（prompt/schema 不写死代码，统一走 config/） |
 | 2026-09-08 | 新建 `wordlists/wordcloud_stopwords.txt`（评论词云停用词表，每行空格分隔多词；加载于 `service._cloud_stopwords`） | compare 页评论词云功能上线：jieba 分词噪声过滤，脏词直接往表里加无需改代码 |
 | 2026-09-07 | `monitoring/targets.yaml` targets 条目新增可选字段 **`release_date_cn`**（北京时间发行日人工校准），已填黑神话 2024-08-20 / 巫师3 2015-05-19 / 文明6 2016-10-21；`service._refresh_game_meta` 刷新时应用覆盖 | 探测核实 Steam appdetails/商店页只提供 Valve 美西口径日期（黑神话=08-19），与北京时间差异因解锁时刻而异（+0/+1 天）无法程序换算，admin「发行时间」列与对比看板同期窗口依赖该日期 |

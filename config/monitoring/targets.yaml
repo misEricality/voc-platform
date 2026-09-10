@@ -14,7 +14,7 @@
 #   继续显示 Steam 口径。2026-09-07 仅黑神话/巫师3/文明6 可确证，其余待人工确认。
 # - 新增目标只需在本文件追加，无需改 Python/workflow
 #
-# 最后更新：2026-09-07（release_date_cn 北京时间校准字段）
+# 最后更新：2026-09-10（excluded_targets 归档库路径 → online_games_2026-09-10.db）
 
 version: 1
 
@@ -22,31 +22,34 @@ version: 1
 # B 站为「发布满 7 天后的稳态快照」，采 1 次即代表该视频口碑，无需每日采集）。
 # 如未来需要 B 站每日趋势，单独评估后再加。
 
-# === 显式排除（2026-08-23 生效）===
-# 这 4 款 Steam 网游的历史数据已归档到 data/archive/online_games_2026-08-23.db，
+# === 显式排除（2026-08-23 首次归档；2026-09-10 重新归档）===
+# 这 4 款 Steam 网游的历史数据已归档到 data/archive/online_games_2026-09-10.db，
 # 从主 DB data/voc.db 移除。日常采集不再覆盖这 4 款。
+# 2026-09-10 二次归档原因：首次归档后，某次远端 DB sync 把归档前的库覆盖回本地主库，
+# 导致 4 款网游重新出现；已重新归档修复，并停用 VOC sync 计划任务（不再有回灌路径）。
 # 理由：
 #   - 网游评论多为「匹配 / 外挂 / 平衡」类短期反馈，对 P9 阶段 2 L3.5 微话题下钻价值低
 #   - 单机游戏反馈更聚焦内容质量，与「用户在吵什么」的核心问题更匹配
 # - 若未来想看网游口碑对比，从归档 DB 单独查询即可
 # - 若想恢复采集，从归档 DB 导入 + 重新加入下方 targets 即可
+# 注：采集目标现以 DB collect_tasks 为权威（本文件已降级为种子源），本段为防御性排除说明
 excluded_targets:
   - target_id: steam:578080
     name: "PUBG: BATTLEGROUNDS"     # 名字含半角冒号必须加引号，否则 YAML 解析失败
-    reason: 已归档到 online_games_2026-08-23.db（PUBG 2571 条 / 2026-07-31~08-16）
-    archived_db: data/archive/online_games_2026-08-23.db
+    reason: 已归档到 online_games_2026-09-10.db（PUBG 2571 条 / 2026-07-31~08-16）
+    archived_db: data/archive/online_games_2026-09-10.db
   - target_id: steam:1172470
     name: Apex Legends
-    reason: 已归档到 online_games_2026-08-23.db（Apex 1452 条 / 2026-07-31~08-16）
-    archived_db: data/archive/online_games_2026-08-23.db
+    reason: 已归档到 online_games_2026-09-10.db（Apex 1452 条 / 2026-07-31~08-16）
+    archived_db: data/archive/online_games_2026-09-10.db
   - target_id: steam:570
     name: Dota 2
-    reason: 已归档到 online_games_2026-08-23.db（Dota 433 条 / 2026-07-31~08-16）
-    archived_db: data/archive/online_games_2026-08-23.db
+    reason: 已归档到 online_games_2026-09-10.db（Dota 433 条 / 2026-07-31~08-16）
+    archived_db: data/archive/online_games_2026-09-10.db
   - target_id: steam:730
     name: Counter-Strike 2
-    reason: 已归档到 online_games_2026-08-23.db（CS2 459 条 / 2026-08-01~08-04）
-    archived_db: data/archive/online_games_2026-08-23.db
+    reason: 已归档到 online_games_2026-09-10.db（CS2 459 条 / 2026-08-01~08-04）
+    archived_db: data/archive/online_games_2026-09-10.db
 
 targets:
   - platform: steam

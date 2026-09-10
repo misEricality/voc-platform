@@ -212,4 +212,5 @@ scripts/
 | 2026-09-02 | 新建 `ops/hash_admin_password.py`（生成 Web 看板 ADMIN_PASSWORD_HASH）+ dev/ 新增 `verify_web_spa_load_order.js`（SPA 加载顺序冒烟） | Web 实时看板（WEB_DASHBOARD.md）落地配套：管理员密码哈希工具 + 前端无浏览器回归防线 |
 | 2026-09-07 | 新建 `dev/verify_dsh_web_smoke.ps1`（DSH web profile 冒烟：临时 DSH_HOME + 临时 cwd + curl 主页 + title 断言 + 进程清理；目的：方案 A「DSH iframe 嵌入 dashboard」阶段 0 验证） | 原声分析 Agent 集成（方案 A vs B vs C）选型落地第一步：先验证 DSH web 壳能在本机起来，**看完 UI 后再决定走 iframe 嵌入 vs 自写 UI** |
 | 2026-09-10 | **P11 bogus 清理执行**：`ops/reset_qwen_flash_bogus.py --commit` 清理 2542 条 QWEN-flash 假标注（6 个 Steam 目标）；`dev/reanalyze_all.py` 补写 `analyzer_version`（重打溯源）+ 以一次性计划任务重打（这些评论在 cron 7 天回看窗之外） | P11 收尾：清掉 8/24-25 模型名 404 留下的 neutral 假数据，让情感/观点统计恢复真实口径 |
+| 2026-09-10 | **重新归档 4 款网游（回灌修复）**：`ops/archive_online_games.py` 二次执行 —— 抽 4,916 条（7,101 观点 / 4,915 向量）到 `data/archive/online_games_2026-09-10.db`，从主库删除 + VACUUM（144.2 → 115.7 MB，steam 目标 13 → 8） | 8/23 首次归档被后续远端 DB sync 回灌到主库；本次修复，并记录「勿再跑 sync 覆盖本地库」的防复发约束 |
 - 不要把 prompt 模板或业务配置写死在脚本里，统一从 `config/` 加载

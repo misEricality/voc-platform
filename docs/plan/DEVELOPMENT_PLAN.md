@@ -135,20 +135,20 @@
 
 | 指标 | 数值 | 业务解读 |
 |---|---|---|
-| 总评论数 | **23,632 条** | ⚠️ 含 4 款已归档网游 4,916 条（疑为 sync 回灌，见下行）+ Steam 单机 ~14.5K + B 站 5 视频 4,241 |
-| Steam 主库覆盖 | 实测 13 个 `target_id`：**单机 8 款** + **4 款网游（4,916 条）** + `steam:999`（1 条噪声） | 单机：黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末：渊虚之羽 / 鬼武者 |
-| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-08-23.db`（4,916 条）** | ⚠️ **主库中仍存在同款 4,916 条**（PUBG/Apex/Dota2/CS2），与 2026-08-23「归档后从主库删除」的记录不符 —— 疑似后续 `sync_local_from_release` / `smart_sync_release` 把归档前的 DB 回灌，**待确认后重新归档** |
+| 总评论数 | **18,716 条** | Steam 单机 14,475 + B 站 5 视频 4,241 |
+| Steam 主库覆盖 | **8 款单机** | 黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末：渊虚之羽 / 鬼武者 |
+| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-09-10.db`（4,916 条 / 7,101 观点 / 4,915 向量，26.2 MB）** | PUBG / Apex / Dota 2 / CS2 + `steam:999` 占位；2026-09-10 **重新归档**（首次 8/23 归档后被远端 DB sync 回灌，已修复）；旧 `online_games_2026-08-23.db` 保留为历史快照（比新库少 12 条观点） |
 | B 站支持 | **5 个视频 / 4,241 评论 + 7,359 弹幕** | `bilibili:video:{aid}` 形态 target；本地 `run-due` 每日调度 |
-| 情感分析覆盖 | **23,553 / 23,632 = 99.7% 已分析** | 剩 79 条未分析（63 Steam「三轮后无观点」+ 16 B站历史遗留）；主标注器 `llm:deepseek-v4-flash@73892f47`（2,819 条）、`glm-5.3-flash@55c003a3`（7,798 条） |
-| 观点级标注 | **47,505 条** | `comment_opinions` 表（程序匹配观点短语；2026-09-10 P11 重打后 +~17K） |
-| 语义向量 | **22,628 条** | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
-| 已支持游戏/视频 | **8 单机 Steam + 5 B 站视频**（+ 4 网游归档副本，主库仍有重复） | 主库应聚焦 8 单机 + 5 B 站 |
+| 情感分析覆盖 | **18,671 / 18,716 = 99.8% 已分析** | 剩 45 条未分析（29 Steam「三轮后无观点」+ 16 B站历史遗留）；主标注器 `llm:deepseek-v4-flash@73892f47`、`glm-5.3-flash@55c003a3` |
+| 观点级标注 | **40,404 条** | `comment_opinions` 表（程序匹配观点短语） |
+| 语义向量 | **17,713 条** | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
+| 已支持游戏/视频 | **8 单机 Steam + 5 B 站视频** | 4 款网游已归档到独立 DB，可单独查询 |
 | 数据截至 | 2026-09-10 | 本地直采 02:00 + 03:00 补采哨兵；7 天回看窗口幂等补齐 |
 | 兜底占比 | topic 67.6% / opinion 67.4%（**2026-09-10 重打后未复测**） | GDT v3.1.1 锁定；复测脚本已归档到 `scripts/dev/archive/one_shot_curate/stage1_report.py` |
 | 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111） |
 | 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）+ 公网静态快照（EdgeOne Pages）** | FastAPI + 原生 SPA 5 页 + Agent 抽屉；Streamlit 并存；方案 ③ 已上线，方案 ①b（VPS 只读服务）待外部资源 |
 | 平台覆盖 | **Steam（单机 8）+ B站（5 视频）** | 微博为下一主扩展 |
-| 数据存储 | SQLite 单文件（`data/voc.db`，**144.2 MB / 2026-09-10**）| WAL 模式；前端服务读 × cron 写并发；GH Actions `collect` job 已停用 |
+| 数据存储 | SQLite 单文件（`data/voc.db`，**115.7 MB / 2026-09-10**）| WAL 模式；前端服务读 × cron 写并发；GH Actions `collect` job 已停用 |
 | 测试门禁 | **pytest 219 例** | 黄金集 + API + 队列 + 每日采集 + 哨兵 + monitored 白名单 + Agent |
 
 ---
@@ -427,7 +427,7 @@
 | 🟢 **LLM 标注降本④项（2026-09-08 立项）**——前置已完成：批量调用（10 条/批）、`reasoning_effort=low`、前缀缓存友好、`update_analysis` flush 修复（见 AGENTS.md 2026-09-08 行） | ① **Batch API 半价**：GLM/通义均支持异步批量（输入输出半价），标注是离线场景完美匹配——把分析阶段改为「积攒待标 → 异步提交 → 次日取结果」或独立批量任务；② **内容去重缓存**：短评重复率高（"好评""111"），按 content hash 复用标注结果（comments 加 hash 列或独立缓存表，analyze 前查重）；③ **短文本走本地模型**：极短/无具体维度评论（约占 2/3）走 `sentiment_local`（零边际成本），LLM 只标长评/高赞——需先用 golden set 评测 local 准确率；④ **Qwen3-8B/14B 评测**：SiliconFlow/百炼免费额度跑 golden set 对比 GLM-5.3-Flash（0.8/2.8 元每百万），达标则成本降至 1/5~1/10——⚠️ 用百炼正式端点，勿用 token-plan 个人版（8/25 模型名 404 事故） | 标注成本（8 游戏 × 每日数百条 + B站千条级首采，LLM 调用为最大可变成本） |
 | 🟠 **Steam 代理断网 → 02:00 采集与 03:00 哨兵同时失效（2026-09-07 发现）** | 本机依赖代理 `127.0.0.1:7877`（Python 不走系统代理）；可选根治：`SteamCollector` 直连失败回落 `STEAM_PROXY` env。**已知局限**：哨兵与主任务仅隔 1h，整夜断网时补采同样失败 | 每日数据完整性（观察中） |
 | 🟠 **本机 Web 服务无守护进程** | uvicorn 靠手动重启（且必须用 `.venv-ml` 解释器，否则 backfill 线程静默 ModuleNotFoundError）；方案 ①b 落地后由 VPS `voc-web.service` 接管 | 本地看板可用性 |
-| 🔴 **4 款网游疑似回灌主库（2026-09-10 发现）** | 主库实测仍有 PUBG/Apex/Dota2/CS2 共 4,916 条，与 `data/archive/online_games_2026-08-23.db` **完全重复**；推测是归档后某次 `sync_local_from_release` / `smart_sync_release` 用归档前的远端 DB 覆盖了本地库。**需先确认，再按 `ops/archive_online_games.py` 重新归档**（删除类操作，未经确认不执行） | 数据口径（「主库聚焦 8 单机」）/ 看板默认目标 |
+| ~~🔴 4 款网游回灌主库（2026-09-10 发现 → 当日修复）~~ | ✅ **已重新归档（2026-09-10）**：`ops/archive_online_games.py` 抽到 `data/archive/online_games_2026-09-10.db`（4,916 条 / 7,101 观点 / 4,915 向量，26.2 MB）后从主库删除 + VACUUM（144.2 → **115.7 MB**）；主库 steam 目标 13 → **8**、网游残留 **0**；操作前备份 `data/backups/voc.pre-rearchive-20260910.db`。**复发防御**：GH Release 上的 `voc-daily-*` asset 仍是归档前 DB，**不要再跑 `sync_local_from_release` / `smart_sync_release` 覆盖本地库**（如需恢复云端累积，先重建 release baseline）；已确认当前无 VOC sync 计划任务 | 数据口径（「主库聚焦 8 单机」）/ 看板默认目标 |
 
 ---
 
