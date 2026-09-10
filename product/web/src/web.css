@@ -439,10 +439,14 @@ input[type="date"] { color-scheme: dark; }
 .backtop:hover { color: var(--primary); border-color: var(--primary); }
 .backtop[hidden] { display: none; }
 
-/* Steam 评级配色（官方色，2026-09-04 用户确认） */
-.r-best, .r-great, .r-good { color: #66c0f4; }
-.r-mixed { color: #b9a470; }
-.r-bad { color: #a34c25; }
+/* Steam 评级配色（DESIGN_TOKENS §2.2 评级五色：一律走 --rating-* 别名，§8 禁裸值）
+   2026-09-10 由裸 hex 改 token 引用：此前 best/great/good 三者同为 #66c0f4，
+   现按 §2.2 归并表分开（best=--primary 蓝 / great=--pos 绿 / good=#9bbf55） */
+.r-best { color: var(--rating-best); }
+.r-great { color: var(--rating-great); }
+.r-good { color: var(--rating-good); }
+.r-mixed { color: var(--rating-mixed); }
+.r-bad { color: var(--rating-bad); }
 
 /* Top 主题对比小图：条距收紧（2026-09-05） */
 .mini-topic { min-width: 0; }

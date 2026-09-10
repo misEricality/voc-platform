@@ -464,7 +464,8 @@ Routes.compare = async function (app) {
     const byTid = {};
     data.items.forEach(it => { byTid[it.target_id] = it; });
     const p = Charts.palette();
-    const colorMap = { positive: p.pos, negative: p.neg, neutral: '#8b95a0' };
+    // 中性词取 --muted（2026-09-10：原裸 hex #8b95a0 平移为 token，§8 禁组件裸值）
+    const colorMap = { positive: p.pos, negative: p.neg, neutral: p.muted };
     sel.forEach((g, i) => {
       const el = $(`cloud${i}`);
       const it = byTid[g.target_id];

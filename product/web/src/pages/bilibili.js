@@ -85,7 +85,9 @@ Routes.bilibili = async function (app) {
 
   const $ = id => document.getElementById(id);
   const fmtSec = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  const RATE_COLOR = { 男: '--primary', 保密: '--muted', 女: '#b07be0' };
+  // 性别环配色：值必须是 **token 名**（供 Charts.token() 读取），不得写 hex
+  // （2026-09-10 修复：原 '女' 传裸 hex 会被 getPropertyValue 解析为空 → 取到 ECharts 默认色）
+  const RATE_COLOR = { 男: '--primary', 保密: '--muted', 女: '--sex-f' };
   // 大数 K/M 压缩（2026-09-05）：≥10 取整、<10 保留 1 位小数，不显示到个位数
   function fmtCompact(v) {
     if (v == null) return '-';
@@ -164,7 +166,7 @@ Routes.bilibili = async function (app) {
     ringChart('chSex', [
       { name: '男', value: s.male, itemStyle: { color: Charts.token(RATE_COLOR['男']) } },
       { name: '保密', value: s.unknown, itemStyle: { color: Charts.token(RATE_COLOR['保密']) } },
-      { name: '女', value: s.female, itemStyle: { color: RATE_COLOR['女'] } },
+      { name: '女', value: s.female, itemStyle: { color: Charts.token(RATE_COLOR['女']) } },
     ]);
   }
   function renderSenti(v) {
@@ -376,7 +378,7 @@ Routes.bilibili = async function (app) {
       $('chDmB').querySelector('.empty')?.remove();
       // 高光排名 → 颜色（2026-09-09）：折线着色方案已放弃（区域填充/折线叠色实测观感均不佳），
       // 仅保留悬停浮层标题与「高光时刻」卡片 Top N 标签的着色
-      const HL_TEXT = ['#d9534f', '#fb8c00', '#fbc02d'];
+      const HL_TEXT = ['var(--rank-1)', 'var(--rank-2)', 'var(--rank-3)'];
       const ranked = (((cur() || {}).highlights || {}).buckets || []).slice().sort((a, b) => b.count - a.count);
       const hlOf = {};  // 桶下标 → 高光排名 0/1/2
       ranked.slice(0, 3).forEach((hb, r) => {
@@ -466,7 +468,7 @@ Routes.bilibili = async function (app) {
   function renderHighlights(v) {
     const buckets = (v.highlights && v.highlights.buckets) || [];
     // 标题恢复原色，前置「Top N」彩色标签（对齐弹幕时间轴折线色，2026-09-09）
-    const HL_TEXT = ['#d9534f', '#fb8c00', '#fbc02d'];
+    const HL_TEXT = ['var(--rank-1)', 'var(--rank-2)', 'var(--rank-3)'];
     const ranked = buckets.slice().sort((a, b) => b.count - a.count);
     $('hlGrid').innerHTML = buckets.length ? buckets.map(b => {
       const r = ranked.indexOf(b);
