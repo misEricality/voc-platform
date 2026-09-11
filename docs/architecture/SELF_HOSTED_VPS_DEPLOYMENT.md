@@ -70,6 +70,13 @@ Steam / B站 采集 + LLM 标注                    ├─ SPA（product/web/，
 - 失败语义：脚本 `exit 1` 且远端不改；`daily_incremental_collect.py` 只记 warning，
   **不影响采集退出码**——本机始终是唯一权威源，VPS 只是展示端，宁可 VPS 旧一天，
   也不能让 02:00 采集被判失败（与 `--publish-snapshot` 同款解耦原则）
+- ⚠️ **单向语义的必然结论：VPS 必须只读**（2026-09-11 收口）。既然是"整库覆盖"，VPS 上
+  任何写入（admin 页建任务、点「立即采集」）都只会被下一次推送抹掉；而「立即采集」还会
+  **真的在 VPS 上跑 pipeline + 花 token**，且 VPS 无生产标注器 Key → `get_analyzer()`
+  回落到 `deepseek` → 写脏 `analyzer_version`。即"看着能采，其实白采还有害"。故做了
+  **代码级收口**（不靠人记住别点），见 §5.5.3「展示端（`DISPLAY_ONLY`）」。
+  反向（VPS → 本地）**没有任何通道**：线上改的任务/线上产生的 Agent 会话都只存在于 VPS，
+  下一次推送即被本地版本覆盖（实测：推送后 VPS `agent_sessions` 比本地多出的那些会消失）。
 - 触发时机：**并入 02:00 采集链路末尾**（`daily_incremental_collect.py --push-db`）。
   不另开计划任务的理由：推送必须等采集**全部跑完**，同进程内顺序天然成立，
   另开任务反而要自己造时序守卫。如需当日更新再另加 10:00/18:00 两次（先跑稳再决定）
@@ -521,14 +528,14 @@ curl -I http://127.0.0.1:8000/api/health   # 应 200 {"ok":true,"comments":N}
 
 ### 步骤 7 · Caddy 反向代理（内测 8443 → 域名 HTTPS）
 
-> **两个阶段**：备案未通过前只用 `:8443` 明文反代、IP 直连自测；备案通过 + DNS 解析就绪后换成域名块，Caddy 自动签发证书。
+> **两个阶段**：备案未通过前用 `:8443` + **自签 TLS**（2026-09-11 起，`default_sni` 必需）、IP 直连自测；备案通过 + DNS 解析就绪后换成域名块，Caddy 自动签发真证书。
 
 **7A · 内测阶段（已落地，2026-09-11）**
 
 > ⚠️ **指令名坑（2026-09-11 实测）**：Caddy **2.6.2（apt/universe 源）里叫 `basicauth`**，`basic_auth` 是 **2.8+ 才有的新名**。照 2.8+ 文档写 `basic_auth` 会 `validate` 失败并报
 > `unrecognized directive: basic_auth`（本站首次部署即踩此坑）。**本手册以下片段统一用 `basicauth`**。
 
-> **外发前先加 P0-1 全站准入**（`basicauth`）。`:8443` 是明文 HTTP，basic_auth 只是 base64 编码——**挡得住扫描器/爬虫，挡不住中间人嗅探**；根本解法是 §5.5.4 的 HTTPS。所以：**能上 TLS 就上**，暂时上不了再接受此过渡态。
+> **外发前先加 P0-1 全站准入**（`basicauth`）。basic_auth 只是 base64 编码——**挡得住扫描器/爬虫，挡不住中间人嗅探**；所以准入**必须**与 TLS 同时具备（2026-09-11 起本站已是 `https://`，见 §5.5.4 / 下方 `tls internal`）。
 
 ```bash
 # ① 生成口令哈希（每人一个账号；对每个内测人员各跑一次，交互输入明文）
@@ -545,7 +552,17 @@ sudo cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%Y%m%d-%H%M%S)
 # 更稳的姿势：先 tee 到 /tmp/Caddyfile.new → validate 通过再 cp 覆盖 →
 # 这样"配置写错"永远不会碰到线上文件（本站 2026-09-11 即用此法，一次写错被完美挡下）
 sudo tee /etc/caddy/Caddyfile <<'EOF'
-http://:8443 {
+{
+    # 【必须有】客户端用 IP 字面量访问时**不发 SNI**（RFC 6066 禁止把 IP 当 SNI），
+    # Caddy 会因此选不到证书，回 TLS alert internal error(80)，浏览器/curl 全部连不上。
+    # default_sni 在 SNI 为空时补上本机 IP，使内部 CA 签出的（含 IP SAN 的）证书能被选中。
+    # 2026-09-11 实测：不加这一行 → 不带 -servername 的 openssl 失败、curl 000；加后正常。
+    default_sni <本机IP>
+}
+
+https://<本机IP>:8443 {
+    tls internal        # 内部 CA 自签（P0-A）：加密强度等同 CA 证书，只是"没花钱买信任"
+
     encode gzip zstd
 
     # P0-5（2026-09-11）：单请求体积上限，挡超大 JSON 直灌 LLM / 写库
@@ -565,6 +582,7 @@ http://:8443 {
     reverse_proxy 127.0.0.1:8000 {
         # P0-2（2026-09-11）：覆盖 X-Forwarded-For，丢弃客户端伪造值。
         # 默认行为是"追加"，客户端可自带 XFF 绕过限流；显式覆盖后应用层拿到的就是真实 IP。
+        # ⚠️ `caddy validate` 会就此行报 "Unnecessary header_up X-Forwarded-For" 警告，是误报，别删。
         header_up X-Forwarded-For {remote_host}
     }
 
@@ -572,11 +590,27 @@ http://:8443 {
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "strict-origin-when-cross-origin"
+
+        # P1-4（2026-09-11）：CSP + Permissions-Policy。白名单来自实测清点，全站外部来源只有 2 处：
+        #   img  → Steam CDN 封面兜底链（compare.js）；frame → B站播放器 iframe（bilibili.js）
+        # script-src 为纯 'self'：唯一的内联事件处理器（<img onerror>）已改为 document 捕获监听；
+        #   vendor 里 ECharts 仅一处 new Function，在 JSON.parse 兜底分支（现代浏览器永不执行）。
+        # style-src 保留 'unsafe-inline'：ECharts 与页面模板大量内联样式，去掉会整片白屏。
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cdn.cloudflare.steamstatic.com; font-src 'self' data:; connect-src 'self'; frame-src https://player.bilibili.com; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=()"
+
+        # 刻意不加 Strict-Transport-Security：IP 字面量 + 自签的组合下，若浏览器记住 HSTS，
+        # 证书警告会变成"不可绕过"，测试者被锁在门外。留到 §7B 换真证书时再加。
         -Server
     }
 
     log {
-        output file /var/log/caddy/voc.log
+        output file /var/log/caddy/voc.log {
+            # P1-3（2026-09-11）：原先无任何轮转 → 单文件无限增长（每行含完整请求头，约 1KB）
+            roll_size 20MiB
+            roll_keep 5
+            roll_keep_for 30d
+        }
     }
 }
 EOF
@@ -585,14 +619,15 @@ sudo caddy validate --config /etc/caddy/Caddyfile   # 应打印 Valid configurat
 sudo systemctl reload caddy                         # reload 平滑；restart 亦可
 
 # ③ 验证准入生效（关键）：不带凭据必须 401，带对凭据才 200
-curl -s -o /dev/null -w 'no-auth=%{http_code}\n' http://127.0.0.1:8443/api/health          # 期望 401
-curl -s -u tester01:'<明文口令>' http://127.0.0.1:8443/api/health                          # 期望 {"ok":true,...}
+#    注意 curl 对 IP 字面量**不发 SNI**，正好等价于"最坏客户端"，必须用它做验收
+curl -sk -o /dev/null -w 'no-auth=%{http_code}\n' https://<本机IP>:8443/api/health          # 期望 401
+curl -sk -u tester01:'<明文口令>' https://<本机IP>:8443/api/health                          # 期望 {"ok":true,...}
 ```
 
-> ⚠️ 必须显式写 `http://:8443`——只写 `:8443` 时 Caddy 可能按「内部 CA 自动 HTTPS」处理并尝试签证书。
 > ⚠️ 云厂商控制台（腾讯云轻量**防火墙**）也要放通 8443/TCP，否则本机 `curl` 通、公网仍打不通。
 > ⚠️ `basicauth` 是全站生效的：浏览器首次访问会弹原生登录框；对内测人员说明「用分配的账号密码」即可。撤销某人只需从 `basicauth` 块删掉那一行并 `systemctl reload caddy`。
-> 💡 明文 HTTP 下 `curl` 的凭据同样可被嗅探；**若已上 §5.5.4 的 HTTPS，请把 `http://:8443` 换成 `https://` 块**。
+> 🚨 **改配置的守卫（2026-09-11 实战教训）**：`/tmp` 是共享的，本站曾因把**上一轮会话遗留的 `/tmp/Caddyfile.new`**（内容是同名但**旧口令哈希**的版本）当成自己的候选文件 `install` 上去，导致 gate 口令被静默回退。现在固定两道守卫：①候选文件用**唯一文件名**（如 `/tmp/p0a_Caddyfile.new`）并校验 `stat -c %U` 属主；②安装前 `diff` 出 `basicauth` 行的哈希与**线上现网值一字不差**，不一致直接中止。
+> 🚨 **行尾**：Windows 端 `write_to_file` 产出的是 CRLF，`sed -i 's/\r$//'` 归一化后再比哈希/装盘 —— 否则 `$2a$14$…\r` 与线上的 `…` 判为不等，守卫会误拦（本站踩过）。
 
 **7A-1 · 实测记录（2026-09-11，照本篇执行的线上结果）**
 
@@ -641,6 +676,30 @@ sudo fail2ban-client status voc-caddy-401
 ```
 
 > 撤销封禁：`sudo fail2ban-client set voc-caddy-401 unbanip <IP>`；查已封：`sudo fail2ban-client status voc-caddy-401`。
+
+**7A-3 · 实测记录（2026-09-11 · P0-A 自签 TLS + P1 收口）**
+
+| 验证项 | 实测结果 |
+|---|---|
+| 证书 | `issuer=CN = Caddy Local Authority - ECC Intermediate`；`SAN: IP Address:134.175.115.248`；有效期 12h（Caddy 内部 CA 默认短周期，到期自动续签） |
+| **无 SNI 客户端** | 加 `default_sni` **前**：不带 `-servername` 的 `openssl s_client` → `tlsv1 alert internal error(80)`、`curl` → `000`；**加后 `curl` 第一次探测即 `200`** |
+| 准入未回退 | 无凭据 → **401**；错口令 → **401**；正确凭据 → **200** |
+| 明文口已关闭 | `http://<IP>:8443/` → **400**（`Client sent an HTTP request to an HTTPS server`） |
+| 公网可达 | 本机（等价测试者机器）`curl -k https://134.175.115.248:8443/api/health` → `{"ok":true,"comments":18916}` |
+| **SSE 未被 h2 缓冲** | 经 Caddy TLS（协商到 **HTTP/2**）`POST /api/agent/chat` → `200`，正常吐 `event: token` + `event: done` 且内容完整；审计行照常落库 |
+| P1-2 文档开关 | `/docs`、`/redoc`、`/openapi.json` → **404**（前一轮为 200）；SPA `/`、`/api/targets`、`/api/overview` 仍 **200** |
+| 安全响应头 | 5 项全命中：CSP / Permissions-Policy / X-Content-Type-Options / X-Frame-Options / Referrer-Policy |
+| Secure cookie | `POST /api/auth/login` → `HTTP/2 200` + `set-cookie: session=…; httponly; samesite=lax; secure`（`COOKIE_SECURE=1` 生效） |
+| ufw | 收口为 **22 + 8443**（v4/v6 各一条），SSH 仍可连 |
+| 日志轮转 | `roll_size 20MiB` / `roll_keep 5` / `roll_keep_for 30d` 已生效（当前 1.3 MB，未触发切分） |
+| fail2ban | 升级 openssh 后仍 `sshd` + `voc-caddy-401` 两 jail active |
+| 系统补丁 | 172 → **5** 可升级（余下为内核/`linux-firmware`/`fwupd`，需 `dist-upgrade` + 重启）；`caddy` 仍 2.6.2、`/etc/caddy/Caddyfile` **未被包内 conffile 覆盖** |
+| 启动自检 | `voc-web` active 且日志**无** `COOKIE_SECURE≠1` 告警 ⇒ `PUBLIC_MODE=1` 自检通过 |
+| 服务开机自启 | `voc-web` / `caddy` / `fail2ban` / `ssh` / `ufw` / `unattended-upgrades` 全部 active + enabled |
+
+> 回滚点（均在 `/root/`）：`Caddyfile.bak-<ts>`（P0-A 各步）、`Caddyfile.preupgrade-<ts>`、`env.preupgrade-<ts>`、`app_rollback_<ts>/{env,main.py,index.html,compare.js}`。
+> 「误装陈旧 `/tmp` 文件」事件处置：`diff` 确认唯一差异是 `basicauth` 两行哈希（= 旧口令）→ 立刻用备份 `install` 还原（md5 与备份一致）→ 新口令验证 `200`、错口令验证 `401`，确认 gate 未被回退。
+> **Caddy 日志不泄露 Basic Auth 口令**：Caddy 默认把 `Authorization` / `Cookie` 头的**值打码成 `[]`**（只留 key 名）。本站实测 `grep -o '"Authorization":\[[^]]*\]'` 取到 `[]`、解码为空 ⇒ 日志外传不泄口令。但 Caddy **会**记 basic-auth **用户名** —— 这正是「一人一账号」能溯源的原因。
 
 **7B · 域名阶段（备案通过后）**
 
@@ -748,26 +807,60 @@ ls -la data/voc.db                          # 应 -rw------- voc voc
   - `user_msg ≤ 4000`、`history ≤ 50 条`、每条 `content ≤ 20000`；`session_id ≤ 64`、`tool_call_id ≤ 128`、`tool_name ≤ 64`；`CreateSessionBody` 的 `page_context ≤ 8000` / `title ≤ 100` / `model ≤ 64`（超限一律 422）。
   - Caddy `request_body { max_size 1MB }`（§7A / §7B）——传输层兜底。
 
-### 5.5.3 P1 建议（内测期）
+### 5.5.3 P1 建议（内测期 · 2026-09-11 代码落地 3/4）
 
-- [ ] **审计日志**：DB 表 `access_log`（ip / anon / path / status / ts）——内测是观察期，不知道谁在用就没法定阈值、出事后无法溯源。
-- [ ] **`PUBLIC_MODE=1` 启动自检**：公网模式下缺 `SESSION_SECRET_KEY` / 准入口令 / 日额度则拒绝启动（扩展 `main.py` 既有的 session key fail-closed）。
-- [ ] **CSP / Permissions-Policy**（Caddy 头，§7）。
-- [ ] **B 站评论 `uid`/`uname` 脱敏**（对外提供个人信息）。
+- [x] **审计日志**（`src/api/access_log.py`）：内测是观察期，不知道谁在用就没法定阈值、出事后无法溯源。实现与原计划的**两处有意偏离**：
+  - **单独 DB 文件** `data/access_log.db`（env `ACCESS_LOG_DB`）而非主库建表 —— 主库每天 02:00 被 `push_db_to_vps.ps1` 整库覆盖到 VPS，审计表放主库**每天被清空**、且每晚 scp 多带这些行。
+  - **列为 `ts / ip / method / path / status / anon / duration_ms`**（原计划 5 列）——多 `method` 以区分 SSE 对话与同路径其它动词，多 `duration_ms` 回答"谁在被刷"。**不记 query string / body**（`/api/agent/chat` 的 body 是提问原文，属体验数据非审计必需）。
+  - 请求路径只写内存 deque，后台每 `ACCESS_LOG_FLUSH_SEC`（默认 5s）批量落库，**落库失败即丢弃**（观测设施不得拖垮业务）；保留 `ACCESS_LOG_RETENTION_DAYS`（默认 30 天）；静态资源与 `/api/health` 不入库。中间件为**纯 ASGI**（不用 `BaseHTTPMiddleware`），避免给 SSE 流多套一层转发。
+  - ⚠️ Caddy `basicauth` 拒绝的 401 **不经过应用** → 该部分由 fail2ban 读 Caddy JSON 日志覆盖（§7A-2）。
+- [x] **`PUBLIC_MODE=1` 启动自检**（`src/api/main.py::_check_public_mode`）：**fail-closed** —— 缺 `SESSION_SECRET_KEY` / `ADMIN_PASSWORD_HASH`、`AGENT_DAILY_CHAT_LIMIT`(或 `_PER_IP`) ≤ 0、或未声明 `ENTRY_AUTH_ENFORCED=1` 时**拒绝启动**（systemd 反复重启 + 日志一句人话，胜过"看着在跑其实全裸"）。仅告警不拦截：`COOKIE_SECURE`（备案前是明文 `:8443`，强设会让 admin 登不上）、`ACCESS_LOG_ENABLED`（关掉只少观测）。
+- [x] **B 站评论脱敏**（`src/api/service.py::_public_comment`，公开端点与 Agent 工具共同经过）：B 站 `author` 是**昵称**、`extra.profile.uname`/`official` 属个人信息。处理：`author` → 稳定伪名（昵称 sha1 前 8 位，同账号跨页可辨认但无法反查）、`profile` 删 `uname`/`official` 保留 `level`/`vip`/`sex`。库里**仍留原文**（本机离线分析要用），脱敏只发生在对外序列化这一层；Steam 侧只落 steamid（匿名 ID）保持不动。`Comment.to_dict()` 不含 `author_id`(mid)，故对外不暴露用户空间链接。
+- [x] **CSP / Permissions-Policy**（Caddy 头，§7A）—— **2026-09-11 落地**（实测见 §7A-3）。要点：`script-src` 已是**纯 `'self'`**（无 `'unsafe-inline'`/`'unsafe-eval'`）——为此刻意去掉前端唯一的内联事件处理器（`compare.js` 的 `<img onerror=…>` 改为 `document` 级**捕获**监听，因 `error` 不冒泡但捕获阶段可达），并核实 vendor 里 ECharts 仅有的一处 `new Function` 位于 `JSON.parse` 的兜底分支（现代浏览器永不执行）。`style-src` 保留 `'unsafe-inline'`（ECharts 与页面模板大量内联样式，去掉会整片白屏）。外链白名单来自**实测清点**，全站只有 2 处：Steam CDN 封面（`img-src`）与 B 站播放器 iframe（`frame-src`）。
+- [x] **公网形态关闭交互文档**（`main.py`，2026-09-11）：`PUBLIC_MODE=1` 时 `docs_url`/`redoc_url`/`openapi_url` 全置 `None` —— 实测带准入口令访问 `/docs`、`/redoc`、`/openapi.json` 原本都是 **200**，等于把全部 admin 端点、参数名、字段约束摊给任何持口令的人。本地/CI（`PUBLIC_MODE≠1`）保持默认便于调试。
 
-### 5.5.4 备案前的 HTTPS 选项（明文是最大残留风险）
+- [x] **展示端收口：不采集、不标注、不改采集任务**（`src/runtime_mode.py` + `src/api/routers.py` + `src/pipeline.py`，2026-09-11）—— 填掉「线上 admin 页看着能采」的陷阱：
+  - **形态判定** `runtime_mode.display_only()`：**默认跟随 `PUBLIC_MODE`**（公网形态本身就是展示端，故 VPS **不需要在 `.env` 里额外记开关** —— 少一个能忘的地方）；本地开发（`PUBLIC_MODE=0`）完全不受影响。确需一台可写的公网实例才显式设 `DISPLAY_ONLY=0`。
+  - **API 层** `routers.require_writable`（挂在 `admin_router`，位于 `require_admin` **之后**）：GET/HEAD/OPTIONS 放行（线上仍能"看"任务列表与 backfill 状态），POST/PATCH/DELETE 一律 **403**；未登录仍是 **401**（不向匿名者透露实例形态）。因为它是**依赖**，对不存在的 id 也返回 403 而非 404 —— 拒绝的理由是"实例只读"，与目标行是否存在无关。
+  - **pipeline 层** `run_pipeline()` 开头直接 `raise`（**采集与标注一起挡**，且连采集器初始化都不进）：即便将来有别的入口触发采集，也拦得住。B 站队列 `runner` 走的是同一个 `run_pipeline`，同样覆盖。
+  - **可见性**：启动时往日志写一行形态声明（`grep 展示模式 logs/web.log` 即可确认这台能不能写/能不能采），不留"以为能采"的暗坑。
+- [x] **修复 `.env` 的 `LOG_LEVEL` 在 Web 端空转**（`main.py::_setup_logging`，2026-09-11）：uvicorn 只给 `uvicorn.*` 配 handler 且 `propagate=False`，root logger **一直没有 handler** → `src/api/*` 的 `log.info` 全被 Python 的 lastResort（只处理 WARNING+）丢弃。实测线上 `logs/web.log` 里**一条 `voc.api` 日志都没有**（只有 uvicorn 访问行），`.env` 写着 `LOG_LEVEL=INFO` 却是空转。修法：`create_app` 在 `load_dotenv` 之后按 `LOG_LEVEL` 配 root（用 `basicConfig`，root 已有 handler 时自动 no-op，不与 uvicorn / pytest 抢配置）。修完 `voc.api` 与 `voc.api.access_log` 的 INFO 都能看到，且未观察到第三方库刷屏。
 
-明文 HTTP 下，basic_auth 口令、admin 密码、Agent 对话全文**均可被中间人嗅探**。备案前有两条路可拿到真 HTTPS：
+> 单测：`tests/test_p1_hardening.py`（**20 例**，覆盖缓冲/落库/失败吞掉/清理/中间件记与跳/崩溃留痕/公网自检四态/**交互文档开关两态**/**展示端形态（拒绝 pipeline + 默认继承 PUBLIC_MODE）**/**日志配置（LOG_LEVEL 不空转）**/B站伪名稳定性与 profile 剥离）；`tests/test_api.py` 另加 **2 例**（展示端下 admin 写 403 而读 200、未登录仍 401）。`tests/conftest.py` 全局默认 `ACCESS_LOG_ENABLED=0` 防测试污染真实审计库。全量 pytest **257 passed / 1 skipped**。
 
-1. **DNS-01 签 `erself.site` 证书**（推荐）：DNS-01 只写 TXT 记录，**不依赖 80/443 连通**，绕开备案阻断；用户访问 `https://erself.site:8443`（非标端口不受阻断），Caddy 用真证书。需要 DNSPod API token（apt 版 Caddy 无 dnspod 模块，需 `xcaddy` 编译或用 `acme.sh` 外部签发）。
-2. **Cloudflare 代理**：域名接 CF 免费版，用户侧直接 HTTPS 且隐藏源站 IP；回源到 8443 需处理端口/协议约束（CF 的 HTTPS 回源端口含 8443，但源站需有证书）。
+> **VPS 已部署并实测通过（2026-09-11）**：上传 `access_log.py`/`main.py`/`service.py`（+2 测试文件）→ `.env` 追加 `PUBLIC_MODE=1`、`ENTRY_AUTH_ENFORCED=1`、`ACCESS_LOG_*` 共 6 项（部署前 `.env` 已备份为 `.env.bak_<时间戳>`，部署脚本自带「起不来即自动回滚 `.env`」）→ `systemctl restart voc-web`。实测结果：
+> 1. `voc-web` **active**，`/api/health` → `{"ok":true,"comments":18916}`；
+> 2. 日志出现 `PUBLIC_MODE=1 但 COOKIE_SECURE≠1` 告警 → 证明 `_check_public_mode` **确已执行且通过**（不满足前置条件会 fail-closed 拒启，服务此刻是 active 即反证）；
+> 3. `data/access_log.db` 已生成（8 列 `id/ts/ip/method/path/status/anon/duration_ms`）；`/api/targets`、`/api/comments`、`/api/agent/*` **入库**，`/api/health` **不入库**（噪声过滤生效）；
+> 4. **B 站脱敏生效**：库内 `author=落花影I` → API 返回 `B站用户ee1a8f6a`，`extra.profile` 仅剩 `level/vip/sex`（`uname`/`official` 已剥离）；
+> 5. **SSE 未被中间件破坏**：`POST /api/agent/chat` → `200` + `content-type: text/event-stream`，正常吐 `event: token`；对应审计行 `duration_ms≈2588` 且 `anon=p1verify` —— 证明纯 ASGI 中间件**等整条流结束才落库、未缓冲流**；
+> 6. 公网 `:8443` 无凭据仍 `401`（Caddy 准入未受影响）。
+>
+> 部署环境约束：`voc-web.service` 的 `ProtectSystem=strict` + `ReadWritePaths=/home/voc/voc-platform/data /home/voc/voc-platform/logs` 已覆盖 `data/access_log.db`；`ACCESS_LOG_DB=data/access_log.db` 相对 `WorkingDirectory=/home/voc/voc-platform` 解析为绝对路径。unit **无 `EnvironmentFile`**，环境变量全部由应用内 `load_dotenv` 读取 → 改 `.env` 后只需 `restart`，无需 `daemon-reload`。
 
-> 两条都不走 = 接受明文。此时**不要对外发 admin 口令**，Agent 对话按「运营商可见」对待。
+### 5.5.4 备案前的 HTTPS：已用「自签 TLS」落地（2026-09-11 · P0-A）
+
+明文 HTTP 下，basic_auth 口令、admin 密码、admin session cookie、Agent 对话全文**均可被中间人嗅探** —— 拿到 gate 口令即全站入口，拿到 admin cookie 即后台。这是唯一"性质级"残留风险，**已修**：
+
+- **已上线**：`https://134.175.115.248:8443`，Caddy `tls internal`（内部 CA 自签，证书含 `IP Address:134.175.115.248` 的 SAN）。加密强度与 CA 证书一致，只是"没花钱买信任"——浏览器首次访问提示不受信任，点「高级 → 继续前往」即可（每个浏览器点一次）。
+- **踩坑（必读）**：客户端用 **IP 字面量**访问时**不发 SNI**（RFC 6066 禁止把 IP 当 SNI），Caddy 因此选不到证书 → 直接回 `TLS alert internal error(80)`，**浏览器与 curl 全部连不上**；而带 `-servername` 的 `openssl s_client` 却能握手成功，极易误判成"证书没问题"。解法：全局块加 `default_sni <本机 IP>`。详见 §7A-3。
+- **刻意不加 HSTS**：IP 字面量 + 自签的组合下，若浏览器真记住 HSTS，证书警告会变成"不可绕过"，测试者就被锁在门外。留到 §7B 换真证书时再加（§7B 片段已含 HSTS 行）。
+- **仍可选（想要"无警告"的绿锁）**：
+  1. 把内部 CA 根证书分发给测试者导入一次：`/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt`（导入后不再弹警告；私钥不出服务器）；
+  2. **DNS-01 签 `erself.site` 真证书**：只写 TXT 记录、**不依赖 80/443 连通**，绕开备案阻断；用户访问 `https://erself.site:8443`（非标端口不受阻断）。需 DNSPod API token（apt 版 Caddy 无 dnspod 模块，需 `xcaddy` 编译或用 `acme.sh` 外部签发）；
+  3. **Cloudflare 代理**：域名接 CF 免费版，用户侧直接 HTTPS 且隐藏源站 IP。
+- **备案通过后**：按 §7B 换域名 + Let's Encrypt 真证书 + 加 HSTS；`.env` 的 `COOKIE_SECURE` 保持 `1`。
+
+> ⚠️ 上了 TLS 后 `http://` 打 8443 会返回 **400**（`Client sent an HTTP request to an HTTPS server`），这是正常的。**发给内测人员的链接必须是 `https://`**。
 
 ### 5.5.5 必做运维配置（非代码）
 
-- [x] **fail2ban** 安装 + 给 Caddy 加 jail（防 basic_auth 爆破）（2026-09-11 落地，`sshd` + `voc-caddy-401` 两 jail active；配置见 §7A-2）。
-- [ ] **ufw / 云防火墙**：8443 收敛；SSH `AllowUsers voc`；密钥登录（已做）。
+- [x] **fail2ban** 安装 + 给 Caddy 加 jail（防 basic_auth 爆破）（2026-09-11 落地，`sshd` + `voc-caddy-401` 两 jail active；配置见 §7A-2）。实测参数：`voc-caddy-401` = 20 次 / 10 分钟 → 封 1 小时；`sshd` = 5 次 / 10 分钟 → 封 10 分钟。
+- [x] **ufw 收敛**（2026-09-11）：只放通 **22 + 8443**。原先还开着 80/443，但**没有任何进程监听**（纯暴露面，等 §7B 域名阶段再按需开），已删规则。密钥登录已做（`PasswordAuthentication no`）。
+- [x] **系统补丁 + 重启**（2026-09-11）：内测前积压 **172 个可升级包（115 个来自 security 源）** → ①`apt-get upgrade` 装掉 167（`--force-confold` 保住 `/etc/caddy/Caddyfile`，否则 caddy 包内 conffile 会盖掉我们的配置）；②余 5 个（内核 / `linux-firmware` / `fwupd`）再 `apt-get dist-upgrade`（**0 删除、27 新装**，新装的全是 `linux-firmware-*` 拆分包）→ **剩余可升级 0**；③`reboot`：运行内核 `6.8.0-124` → **`6.8.0-139`**，`reboot-required`（`libc6`/`apparmor`/`linux-base`）清零。升级前把 `Caddyfile` 与 `.env` 备份到 `/root/`。**重启后复验**：6 个服务全 active + enabled、`https` 无凭据仍 401 / 有凭据 200、`/docs` 仍 404、内部 CA 证书**复用未重签**（时间戳不变 ⇒ 测试者不会因重启看到新的证书警告）、主库 `comments=18916` 与审计库行数均完好。
+- [x] **Caddy 访问日志轮转**（2026-09-11）：原先 `output file` 无任何轮转 → 单文件无限增长（每行含完整请求头，约 1KB）。已加 `roll_size 20MiB` / `roll_keep 5` / `roll_keep_for 30d`。
+- [x] **SSH `PermitRootLogin` 收敛**（2026-09-11）：原为 `yes`（root 无 `authorized_keys`、密码登录又关，实际登不进来，属潜在风险）。改法用 **drop-in** `/etc/ssh/sshd_config.d/99-voc-hardening.conf` —— Ubuntu 的 `sshd_config` 在**顶部** `Include` 该目录，sshd 取"**先出现者生效**"，故 drop-in 里的值能覆盖主文件里的 `PermitRootLogin yes`，且不受包升级 conffile 影响。流程：写 drop-in → `sshd -t` 语法校验（不过则删掉回退）→ `systemctl reload ssh`（不重启、不断连接）→ 实测 `sshd -T` 输出 `permitrootlogin without-password`（`prohibit-password` 的别名），`PasswordAuthentication no` 保持不变。
+- [ ] **一人一个 gate 账号**：当前 `tester01/tester02` 两人共享，出问题无法定位到人。Caddy 日志**会**记 basic-auth 用户名（口令值被 Caddy 默认打码成 `[]`，已实测解码验证），故给每人加一行即可溯源，成本≈0。
 - [ ] **备份加密**：`backups/voc-*.db` 含 B 站用户数据。
 
 ---
@@ -915,16 +1008,17 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 **VPS 端**
 - [x] §4 步骤 1–5：voc 用户 / 系统包 / 代码 / `.env`（600）/ data 目录（2026-09-11）
 - [x] §6.5 `voc-web.service`（uvicorn `127.0.0.1:8000`，enabled + active）+ systemd 加固（**ProtectHome 必须 read-only**）
-- [x] §7 Caddy 反代：apt 2.6.2，`:8443` 内测阶段已上线（域名 HTTPS 待备案后切 §7B）
-- [x] §5 安全清单：ufw 已启用（22/80/443/8443）、DB 600、`.env` 600、SSH 密钥登录；**fail2ban 已装**（`sshd` + `voc-caddy-401` 两 jail active，见 §7A-2）
-- [x] 确认 VPS 不装 ML 依赖；确认 `/data/voc.db`、`/.env` 公网 404（2026-09-11 实测）
+- [x] §7 Caddy 反代：apt 2.6.2，`:8443` 已上线；**2026-09-11 起为自签 TLS**（`tls internal` + `default_sni`，见 §7A / §7A-3；域名真证书待备案后切 §7B）
+- [x] §5 安全清单：ufw 已启用并**收口为 22 + 8443**（原 80/443 无监听，已删）、DB 600、`.env` 600、SSH 密钥登录（`PasswordAuthentication no`）；**fail2ban 已装**（`sshd` + `voc-caddy-401` 两 jail active，见 §7A-2）
+- [x] 确认 VPS 不装 ML 依赖；确认 `/data/voc.db`、`/.env`、`/data/access_log.db` 公网 404（2026-09-11 实测）
+- [x] §5.5.3 四条 P1 全部落地：审计日志 / `PUBLIC_MODE` 自检 / B站脱敏 / **CSP+Permissions-Policy**；另有**公网关交互文档**、**Caddy 日志轮转**、**系统补丁 172→5**
 
 **验收**
-- [x] 内测（HTTP）`http://134.175.115.248:8443/` 打开看板；`/api/health` 返回 `{"ok":true,...}`（2026-09-11）
+- [x] 内测（**HTTPS**）`https://134.175.115.248:8443/` 打开看板；`/api/health` 返回 `{"ok":true,"comments":18916}`（2026-09-11，自签证书需在浏览器点一次「继续前往」）
 - [ ] 域名 HTTPS 打开三看板（待备案通过 + §7B）；**数据一致已达成**：`push_db_to_vps.ps1` 实测推送后远端 `comments=18916` 与本地一致（2026-09-11）
-- [x] `/api/agent/chat` 流式对话可用：公网 `:8443` SSE 实测收到 `token` + `done`、会话落库 `['user','assistant']`（DeepSeek Key 生效，见 §7A-1）；本地另验 tool 调用链 + 归属护栏
-- [x] admin 登录 + 采集任务增删改（CRUD）：本地 TestClient（真实 app + 真实库）验收 **9/9** 通过（2026-09-11）
-- [x] `http://134.175.115.248:8443/data/voc.db` → 404；`/.env` → 404（2026-09-11 实测）
+- [x] `/api/agent/chat` 流式对话可用：公网 `:8443` SSE 实测收到 `token` + `done`、会话落库 `['user','assistant']`；**2026-09-11 在 TLS/HTTP-2 下复测仍为真流式**（未被反代缓冲），见 §7A-3
+- [x] admin 登录 + 采集任务增删改（CRUD）：本地 TestClient（真实 app + 真实库）验收 **9/9** 通过（2026-09-11）；线上登录返回 `httponly; samesite=lax; secure` cookie
+- [x] `https://134.175.115.248:8443/data/voc.db` → 404；`/.env` → 404；`/docs` · `/redoc` · `/openapi.json` → **404**（2026-09-11 实测）
 - [ ] 静态快照站（EdgeOne）与 VPS 版并存互不影响，手册交叉引用
 
 ---
@@ -933,6 +1027,11 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-11 | **展示端代码级收口（填「看着能采」陷阱）+ 修 Web 端 `LOG_LEVEL` 空转**：①新增 `src/runtime_mode.py::display_only()`，**默认跟随 `PUBLIC_MODE`** → 公网形态自动成为展示端，**VPS 无需在 `.env` 加键**（少一个能忘的开关）；本地开发不受影响；确需可写公网实例才显式 `DISPLAY_ONLY=0`。②`routers.require_writable` 挂 `admin_router`（在 `require_admin` 之后）：GET/HEAD/OPTIONS 放行、写操作 **403**、未登录仍 **401**、对不存在 id 也 403（依赖先于 handler）。③`run_pipeline()` 开头 `raise`，**采集与标注一起挡**（含 B 站 runner 路径）。④启动日志写一行形态声明，可用 `grep 展示模式 logs/web.log` 确认。⑤顺带修：uvicorn 只配 `uvicorn.*` 且 `propagate=False` → root 无 handler → 应用自身 `log.info` 全被 lastResort 丢弃（**实测线上一条 `voc.api` 日志都没有**，`LOG_LEVEL=INFO` 空转）→ `create_app` 按 `LOG_LEVEL` 配 root。⑥测试 +5 → 全量 **257 passed / 1 skipped**。⑦VPS 零副作用实测：读 200 / 写 403 / 未登录 401 / `collect_tasks` 仍 8 行 / `/docs` 仍 404。**关键坑（TLS 段）**：`default_sni` 让展示端在 IP 直连下也能握手。详见 §0.5 末条 + §5.5.3 两条新勾选 | 工程师「把这个陷阱填掉……VPS 不要采集，也不要标注」 |
+| 2026-09-11 | **内测前收尾：补丁清零 + 重启换内核 + SSH root 收敛**：①`apt-get dist-upgrade` 装掉余下 5 个（内核 / `linux-firmware` / `fwupd`，**0 删除、27 新装**，新装的全是 `linux-firmware-*` 拆分包）→ **剩余可升级 0**；②`reboot` 后运行内核 `6.8.0-124` → **`6.8.0-139`**，`reboot-required`（`libc6` / `apparmor` / `linux-base`）清零；③`PermitRootLogin` 由 `yes` 改为 **drop-in** `/etc/ssh/sshd_config.d/99-voc-hardening.conf`（`sshd_config` 顶部 `Include` 该目录、**先出现者生效**，故能覆盖主文件里的 `yes` 且不怕包升级 conffile）→ `sshd -t` → `reload ssh`，实测 `permitrootlogin without-password`（= `prohibit-password`）；④**重启后复验**：6 个服务全 active + enabled、无凭据 401 / 有凭据 200 / `/docs` 404 / 明文 `:8443` 400 / 5 项安全头仍在、**内部 CA 证书复用未重签**（时间戳不变 ⇒ 测试者不会因重启看到新的证书警告）、主库 `comments=18916`、审计库 180 行、公网侧（本机 curl）同样通过。§5.5.5 勾选同步 | 工程师「1. 重启，现在。2. 改。」 |
+| 2026-09-11 | **P0-A 自签 TLS 上线 + P1 五项收口（VPS 实测）**：①**P0-A**：Caddyfile 由 `http://:8443` 切 `https://134.175.115.248:8443` + `tls internal`（内部 CA 自签，证书 SAN = 本机 IP）。**关键坑**：客户端用 IP 字面量访问**不发 SNI**（RFC 6066 禁止），Caddy 因此选不到证书 → 回 `TLS alert internal error(80)`，`curl`/浏览器全连不上；而带 `-servername` 的 `openssl s_client` 却能握手，极易误判"证书没问题"→ **解法：全局块 `default_sni <IP>`**，加后 `curl` 首探测即 `200`。刻意**不加 HSTS**（IP 字面量 + 自签下，若被浏览器记住 HSTS，证书警告会变"不可绕过"，测试者被锁在门外）。②**P1-2**：`PUBLIC_MODE=1` 时关 `/docs`/`/redoc`/`/openapi.json`（实测带 gate 口令原本 **200**，等于把全部 admin 端点/参数名/字段约束摊开）→ `main.py` 增 `_is_public_mode()`，线上转 **404**，本地/CI 保持可用。③**P1-4 CSP/Permissions-Policy**：为让 `script-src` 做到**纯 `'self'`**（无 `unsafe-inline`/`unsafe-eval`），去掉前端唯一内联事件处理器（`compare.js` 的 `<img onerror>` → `document` 级**捕获**监听，因 `error` 不冒泡），`index.html` 缓存串 bump `compare.js?v=20260911a`；核实 ECharts 仅一处 `new Function` 位于 `JSON.parse` 兜底分支；`style-src` 保留 `'unsafe-inline'`；`img-src`/`frame-src` 白名单由实测清点得出（Steam CDN 封面 + B站播放器 iframe）。④**P1-3** 日志轮转 `roll_size 20MiB`/`roll_keep 5`/`roll_keep_for 30d`（原先无轮转、单文件无限增长）。⑤**P1-5** ufw 收口 **22 + 8443**（80/443 无监听）。⑥**P1-1** 系统补丁 **172 → 5**（含 115 个 security 源），用 `--force-confold` 保住 `/etc/caddy/Caddyfile`。⑦`COOKIE_SECURE=1` → 线上登录返回 `httponly; samesite=lax; **secure**` cookie。⑧`.env.example` 更新 `COOKIE_SECURE` / `PUBLIC_MODE` 注释。**回归**：SSE 在 **HTTP/2** 下仍真流式（`event: token`/`done` 完整）、审计照常落库（174 行）、`voc-web`/`caddy`/`fail2ban`/`ufw`/`ssh`/`unattended-upgrades` 全 active+enabled、5 项安全响应头全命中；pytest **252 passed / 1 skipped**。**过程中的事故与纠正**：把上一轮会话遗留的 `/tmp/Caddyfile.new`（同名但**旧 gate 口令哈希**）误当候选文件 `install`，导致准入口令短暂回退 → `diff` 定位后立即用备份还原（md5 一致）+ 新旧口令双向验证，并给手册补了两道守卫（候选文件唯一名 + 属主校验 + 哈希与线上逐字比对；CRLF 必须 `sed -i 's/\r$//'` 后再比）。**未提交 git**。详见 **§5.5.4 / §5.5.5 / §7A / §7A-3** | 工程师「开始P0-A方案，接着做P1」：把"明文传输"这一唯一性质级风险从"待办"推到"线上加密 + 端到端实测"，并收口 P1 五项 |
+| 2026-09-11 | **§5.5.3 P1 部署到 VPS + 端到端实测（6/6 通过）**：`install` 部署 `access_log.py`/`main.py`/`service.py` + 2 测试到 `/home/voc/voc-platform/`（属主 `voc:voc`）；`.env` 追加 `PUBLIC_MODE=1`、`ENTRY_AUTH_ENFORCED=1`、`ACCESS_LOG_ENABLED/DB/RETENTION_DAYS/FLUSH_SEC`（部署脚本先备份 `.env`，失败自动回滚 + 重启）；`restart voc-web`。**实测**：①active + `/api/health` `{"ok":true,"comments":18916}`；②日志 `PUBLIC_MODE=1 但 COOKIE_SECURE≠1` = 自检已执行且未 fail-closed；③审计库 8 列生成，业务路径入库、`/api/health` 与静态资源不入库；④B 站 `落花影I`→`B站用户ee1a8f6a`、`profile` 剥离 `uname/official`；⑤SSE `200`+`text/event-stream` 正常吐 token，审计行 `duration_ms≈2588`（未缓冲流）；⑥公网 `:8443` 无凭据 `401`。详见 **§5.5.3 末尾「VPS 已部署并实测通过」**。**未提交 git**。 | 工程师「1. VPS执行」：把 P1 从"代码就绪"推到"线上启用 + 实测" |
+| 2026-09-11 | **§5.5.3 P1 代码落地（3/4）+ `.env.example` 同步**：①**审计日志** `src/api/access_log.py` —— 与原计划两处有意偏离：**单独 DB** `data/access_log.db`（主库每晚被 ①b 整库覆盖，审计表放主库会被清空）+ 列为 7 个（增 `method`/`duration_ms`，不记 query/body）；请求路径仅写内存 deque、后台 5s 批量落库、**失败即丢弃**（不拖垮业务）、30 天保留、静态资源与 `/api/health` 不入库；中间件为**纯 ASGI**（避 `BaseHTTPMiddleware` 给 SSE 多套转发）。②**`PUBLIC_MODE=1` 启动自检** `main.py::_check_public_mode` —— fail-closed 缺件拒启（`SESSION_SECRET_KEY`/`ADMIN_PASSWORD_HASH`/额度>0/`ENTRY_AUTH_ENFORCED=1`）；`COOKIE_SECURE`、`ACCESS_LOG_ENABLED` 仅告警。③**B 站脱敏** `service.py::_public_comment` —— `author` 昵称→sha1 前 8 位稳定伪名、`extra.profile` 删 `uname`/`official` 留 `level`/`vip`/`sex`、库里留原文只脱对外层；`Comment.to_dict()` 无 `author_id` 故不泄 mid。④**CSP 留待做**。⑤`tests/test_p1_hardening.py` 15 例 + `tests/conftest.py` 全局默认关审计（防污染真实库）；全量 pytest **250 passed / 1 skipped**。⑥`.env.example` 增 P1 段（`PUBLIC_MODE`/`ENTRY_AUTH_ENFORCED`/`ACCESS_LOG_*`） | 工程师「三、都做」：把 §5.5.3 的 P1 从"建议"推到"代码就绪 + 单测覆盖 + 文档一致" |
 | 2026-09-11 | **①b 数据通道落地（E 项）+ 内测功能验收（C/D 项）**：①新增 `scripts/ops/push_db_to_vps.ps1`——5 步（本地 `wal_checkpoint(TRUNCATE)` + `VACUUM INTO` 快照 → 本地 SHA256 → `scp` 到 `/tmp/voc.db.new` → 远端 SHA256 + `integrity_check` + 评论数校验 → 远端**原位** `sqlite3.Connection.backup()` 回灌）；**有意偏离原设计**：原写「远端 `mv` 原子替换」对本站不安全（uvicorn 连接池持旧 inode → 静默读旧库不报错），改为原位 `.backup()` 逐页重写 + `busy_timeout=60000` 兜并发；参数 `-DbPath`/`-Remote`/`-RemoteDb`/`-Identity`/`-DryRun`/`-RestartService`（默认关）。②`daily_incremental_collect.py` 新增 `push_db_to_vps()`（任何失败 → warning + 返回 False，**不改采集退出码**）+ `--push-db`（默认关）；`register_local_collect_task.ps1` 的 02:00 任务追加 `--push-db` + `-NoPushDb` 退回开关。③`tests/test_daily_incremental_collect.py` +8 例（默认关 / 传 flag 推一次 / 顺序 collect→summary→push / 失败不改退出码 / 脚本缺失 / 非零 rc / 无 powershell / 显式 utf-8 解码）。④**端到端实测**：dry-run 快照 `integrity=ok` / `comments=18916` / 116.9 MB；真实推送两端 SHA256 一致（`1423887f…`）、远端 `RESTORE_OK`、`live_comments_after=18916`；推送后 `/api/health` 仍 `{"ok":true,"comments":18916}`、`voc-web` active、DB 600、无临时文件残留；全量 pytest **236 passed**。⑤**C 项**（admin 登录 + 采集任务 CRUD）本地 TestClient（真实 app + 真实库）**9/9 通过**；**D 项**（Agent SSE / tool 调用 / 落库 / 归属护栏）通过。⑥§0.5 同步 5 步流程 + `mv` 偏离警告 + 失败语义 + 触发时机 + 参数；§11 开发/验收勾选 | 工程师「C,D,E 都做」：把 ①b 的「本地→VPS」数据通道从设计变为可用脚本并并入 02:00 链路，同时完成内测功能验收 |
 | 2026-09-11 | **§7A 手册与线上实测对齐（Caddy 2.6.2 指令名坑 + 实测记录表 + fail2ban jail）**：①**指令名坑**——Caddy **2.6.2（apt/universe）里是 `basicauth`**，`basic_auth` 是 **2.8+ 新名**；照 2.8+ 文档写会 `validate` 失败并报 `unrecognized directive: basic_auth`（本站首次部署即踩），§7A 片段统一改 `basicauth` 并加警告；②§7A 补「先备份 + 先 `validate` 再覆盖」安全操作法（改写 `/tmp/Caddyfile.new` → 验证 → 覆盖），`restart`→`reload`；③新增 **§7A-1 实测记录表**：no-auth→**401** / with-auth→**200**；**130 次伪造 XFF 连打 → 200=120 / 429=10，首个 429 恰在 #121**（P0-2+P0-3 同时生效）；200KB→**422**；2MB→**502**（含"为何不改回 413"说明：`expression` 匹配 `Content-Length` 无法兜 chunked）；SSE `ttfb≈1.2s/total≈2.6s` 收到 `token`+`done` 且落库 `['user','assistant']`（P0-4 不阻塞流式）；④新增 **§7A-2 fail2ban jail**（filter 匹配 Caddy JSON 日志 `"status":401`，jail `voc-caddy-401`，`-t` 先测再重启）；⑤§5.5.2 P0-4/P0-5 与 §5.5.5 fail2ban 勾选、§11 fail2ban 由「待装」改「已装」 | 工程师「把你能替我做的都做好」：把本轮实测结论固化进手册，消除"文档写的 Caddy 指令在线上跑不通 / fail2ban 一直待装"类不一致 |
 | 2026-09-11 | **§5.5 安全加固 P0-1/2/3/4 落地**：①**P0-2**（代码）`auth.client_ip()` 由 XFF **首段**改取**末段**（反代追加的真实 IP；首段可被客户端伪造 → 原限流可被"每次换一个随机 XFF"绕过）；§7A/§7B Caddyfile 均加 `header_up X-Forwarded-For {remote_host}` 覆盖；新增 2 例回归。②**P0-1**（VPS 配置）§7A 重写为 `caddy hash-password` + `basic_auth { 每人一行 }` 全站准入，含"不带凭据必须 401"验证与撤人步骤。③**P0-3**（代码）通用 `_rate_check` 抽离，新增 `check_public_rate`/`public_rate_limit` 并挂 `public_router`（一处覆盖 11 个公开只读端点，默认 120/min/IP）；`/api/health` 不受影响；新增回归 1 例。④**P0-4**（代码）新增日额度熔断 `AGENT_DAILY_CHAT_LIMIT`(300)/`AGENT_DAILY_CHAT_LIMIT_PER_IP`(50)（UTC+8 自然日、归属校验后扣减）、`AGENT_MAX_TOKENS`(2048) 传入 LLM、并发闸 `AGENT_MAX_CONCURRENCY`(2)+`AGENT_QUEUE_WAIT_SEC`(20)（`stream_chat_guarded` 包装，满则发 `error(busy)`）；新增回归 5 例。`.env.example` 同步 7 个新 env | 工程师「继续」：把 §5.5 的 P0 清单从"待办"变成"已落地代码 + 待执行 VPS 配置" |

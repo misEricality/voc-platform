@@ -26,6 +26,7 @@ from src.collectors.steam import SteamCollector
 from src.collectors.bilibili import BilibiliCollector
 from src.storage.db import Danmaku, init_db, CommentRepository
 from src.analyzers import get_analyzer
+from src.runtime_mode import display_only
 from src.analyzers.embedder import get_embedder, MODEL_NAME
 
 logging.basicConfig(
@@ -217,6 +218,15 @@ def run_pipeline(
     Returns:
         执行报告字典
     """
+    # 展示端（VPS）拒绝采集与标注（2026-09-11「看着能采」陷阱收口）：
+    # 放在最前面 —— 连采集器初始化都不进，日志里只留一句人话给线上排查。
+    # 判定见 src/runtime_mode.py；展示端的形态由 PUBLIC_MODE 默认继承。
+    if display_only():
+        raise RuntimeError(
+            "本实例是展示端（DISPLAY_ONLY=1 / PUBLIC_MODE=1），不执行采集与标注。"
+            "采集任务请在本地看板增删改，再运行 scripts/ops/push_db_to_vps.ps1 把 DB 推过来。"
+        )
+
     if platform not in COLLECTORS:
         raise ValueError(f"暂不支持的平台: {platform}，可选: {list(COLLECTORS.keys())}")
 

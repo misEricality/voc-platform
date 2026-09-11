@@ -55,6 +55,16 @@ Routes.compare = async function (app) {
       img.closest('.gc-cover').classList.add('noimg');
     }
   };
+  // 2026-09-11（CSP）：原先靠 `<img onerror="__gcImgError(this)">` 内联属性触发，而内联事件
+  // 处理器同属「内联脚本」，被 Content-Security-Policy 的 script-src 'self' 拦掉 → 封面
+  // 兜底链会静默失效。改为 document 级**捕获**监听（error 事件不冒泡，但捕获阶段可达）。
+  if (!window.__gcImgErrorBound) {
+    window.__gcImgErrorBound = true;
+    document.addEventListener('error', e => {
+      const el = e.target;
+      if (el && el.tagName === 'IMG' && el.dataset && el.dataset.appid) window.__gcImgError(el);
+    }, true);
+  }
 
   app.innerHTML = `
     <div class="page-head">
@@ -124,7 +134,7 @@ Routes.compare = async function (app) {
       return `
       <div class="game-card ${selected.has(g.target_id) ? 'selected' : ''}" data-tid="${esc(g.target_id)}">
         <div class="gc-cover" data-name="${esc(g.name)}">
-          ${m.cover_file || m.release_date ? `<img src="/covers/${esc(appid)}.jpg" data-appid="${esc(appid)}" alt="${esc(g.name)}" onerror="__gcImgError(this)">` : '<div class="gc-loading">…</div>'}
+          ${m.cover_file || m.release_date ? `<img src="/covers/${esc(appid)}.jpg" data-appid="${esc(appid)}" alt="${esc(g.name)}">` : '<div class="gc-loading">…</div>'}
           <div class="gc-tip">
             <span class="gc-tip-name">${esc(g.name)}</span>
             <span class="gc-tip-meta">${date} · ${rating}</span>

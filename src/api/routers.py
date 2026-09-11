@@ -31,6 +31,7 @@ from src.api.auth import (
     require_admin,
     verify_password,
 )
+from src.runtime_mode import display_only
 from src.storage.db import (
     BilibiliQueue,
     CollectTask,
@@ -41,13 +42,42 @@ from src.storage.db import (
 
 log = logging.getLogger("voc.api")
 
+
+def require_writable(request: Request) -> None:
+    """展示端（VPS）拒绝 admin 写操作（2026-09-11「看着能采」陷阱收口）
+
+    放行 GET/HEAD/OPTIONS —— 线上 admin 页仍可**看**任务列表与 backfill 状态；
+    POST/PATCH/DELETE 一律 403：允许写就等于允许在线上建任务、点「立即采集」
+    （真在 VPS 上跑 pipeline + 花 token），而那些改动与结果次日会被整库推送覆盖（白干）。
+
+    形态判定见 `src/runtime_mode.py`：默认跟随 `PUBLIC_MODE`，故 VPS 无需额外配置。
+
+    注意：这是**依赖**，在 handler 之前执行 —— 故对不存在的 id 也返回 403（而非 404），
+    这是刻意的：拒绝的理由是"实例只读"，与目标行是否存在无关。
+    """
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    if display_only():
+        raise HTTPException(
+            403,
+            "展示模式：本实例只读。采集任务请在本地看板修改；"
+            "需要立即生效请在本地运行 scripts/ops/push_db_to_vps.ps1 把 DB 推过来",
+        )
+
+
 public_router = APIRouter(
     prefix="/api",
     tags=["public"],
     # P0-3（2026-09-11）：公开只读端点统一限流（默认 120 req/min/IP，PUBLIC_RATE_LIMIT_PER_MIN 可调）
     dependencies=[Depends(public_rate_limit)],
 )
-admin_router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+# /api/admin/*：登录校验在前、只读校验在后 —— 未登录仍先得 401（不向匿名者透露实例形态），
+# 已登录但实例是展示端才得 403。
+admin_router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin), Depends(require_writable)],
+)
 auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 

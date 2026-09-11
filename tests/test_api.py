@@ -227,6 +227,44 @@ def test_login_flow(seeded_db, client):
     assert r.status_code == 401
 
 
+def test_display_only_blocks_admin_writes_but_keeps_reads(seeded_db, client, monkeypatch):
+    """展示端形态（VPS）：admin 写操作 403、读操作保留（2026-09-11「看着能采」陷阱收口）
+
+    背景：线上 admin 页的「立即采集 / backfill」会**真的在 VPS 上跑 pipeline**（含 LLM
+    标注），而结果次日会被整库推送覆盖 —— 白干还烧 token。故在依赖层直接拒写。
+    """
+    client.post("/api/auth/login", json={"password": "test-pass-123"})
+    assert client.get("/api/admin/tasks").status_code == 200   # 基线：本地形态可读可写
+
+    monkeypatch.setenv("DISPLAY_ONLY", "1")
+
+    # 读：线上仍能"看"
+    assert client.get("/api/admin/tasks").status_code == 200
+    assert client.get("/api/admin/backfill-status").status_code == 200
+
+    # 写：一律 403。对不存在的 id 也是 403 —— 依赖先于 handler，拒绝理由与行是否存在无关
+    r = client.post("/api/admin/tasks/steam", json={"url_or_id": "292030", "backfill_days": 7})
+    assert r.status_code == 403
+    assert "只读" in r.json()["detail"]
+    assert client.patch("/api/admin/tasks/steam/1", json={"enabled": False}).status_code == 403
+    assert client.delete("/api/admin/tasks/steam/1").status_code == 403
+    assert client.post("/api/admin/tasks/bilibili",
+                       json={"url_or_id": "BV1NEWVIDEO", "backfill": True}).status_code == 403
+    assert client.patch("/api/admin/tasks/bilibili/1", json={"action": "pause"}).status_code == 403
+
+    # 不受影响：公开只读端点、探活、登出（内测人员与登录流程照常）
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/targets").status_code == 200
+    assert client.post("/api/auth/logout").status_code == 200
+
+
+def test_display_only_still_401_without_login(seeded_db, client, monkeypatch):
+    """未登录仍先得 401：不向匿名者透露"这台实例是展示端"这件事"""
+    monkeypatch.setenv("DISPLAY_ONLY", "1")
+    assert client.get("/api/admin/tasks").status_code == 401
+    assert client.post("/api/admin/tasks/steam", json={"url_or_id": "292030"}).status_code == 401
+
+
 # ==================== Steam 任务管理 ====================
 
 def test_steam_task_create_duplicate_and_pause(seeded_db, client, monkeypatch):

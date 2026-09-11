@@ -23,6 +23,7 @@ negative_pain_points 等），缺的查询（overview / trends / comments 分页
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -606,6 +607,37 @@ def _parse_extra(raw: str | None) -> dict:
         return {}
 
 
+def _public_comment(d: dict) -> dict:
+    """B 站评论**对外**脱敏（P1 · 2026-09-11）
+
+    B 站的 `author` 是用户**昵称**、`author_id` 是 **mid**（可直接跳个人空间），
+    `extra.profile.uname` / `official` 同理 —— 都属个人信息，公开只读看板不该原样透出。
+    Steam 侧采集时只落 steamid（匿名 ID、无昵称），保持不动。
+
+    处理：
+    - `author` → 稳定伪名（昵称 sha1 前 8 位）：同一账号跨页面仍可辨认，但无法反查昵称；
+    - `extra.profile` 删掉 `uname` / `official`，保留 `level` / `vip` / `sex`（分桶特征）。
+
+    ⚠️ 库里**仍保留原文**（本机离线分析要用），脱敏只发生在对外序列化这一层；
+    公开端点 `comments_payload` / `opinions_payload` 与 Agent 工具
+    （`src/agent/tools.py` 复用前者）都从这里过。
+    """
+    if d.get("platform") != "bilibili":
+        return d
+    out = d
+    author = out.get("author")
+    if author:
+        digest = hashlib.sha1(str(author).encode("utf-8")).hexdigest()[:8]
+        out = {**out, "author": f"B站用户{digest}"}
+    extra = out.get("extra")
+    if isinstance(extra, dict):
+        profile = extra.get("profile")
+        if isinstance(profile, dict) and ({"uname", "official"} & set(profile)):
+            cleaned = {k: v for k, v in profile.items() if k not in ("uname", "official")}
+            out = {**out, "extra": {**extra, "profile": cleaned}}
+    return out
+
+
 def comments_payload(
     session: Session,
     *,
@@ -690,12 +722,12 @@ def comments_payload(
         "page": page,
         "page_size": page_size,
         "items": [
-            {
+            _public_comment({
                 **r.to_dict(),
                 "name": _meta_name(r.extra_meta, r.target_id),
                 "extra": _parse_extra(r.extra_json),
                 "opinions": op_map.get(r.id, []),
-            }
+            })
             for r in rows
         ],
     }
@@ -753,11 +785,11 @@ def opinions_payload(
         c = c_map.get(r.comment_id)
         items.append({
             **r.to_dict(),
-            "comment": None if c is None else {
+            "comment": None if c is None else _public_comment({
                 **c.to_dict(),
                 "name": _meta_name(c.extra_meta, c.target_id),
                 "extra": _parse_extra(c.extra_json),
-            },
+            }),
         })
     return {"total": int(total), "page": page, "page_size": page_size, "items": items}
 
