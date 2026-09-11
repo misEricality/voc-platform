@@ -40,12 +40,12 @@ scripts/
 └── ops/                            ⚙️ 运维脚本
     ├── refresh_likes.py                ✅ 7 天后回采脚本（已实现）
     ├── backfill_embeddings.py          ✅ 评论向量回填 / 换模型全量重算（已实现）
-    ├── daily_incremental_collect.py    ✅ P6 每日增量采集编排入口（GitHub Actions 调用）
-    ├── verify_release_upload.py        ✅ P6 静默失败防御：校验 GH Release asset 上传状态（2026-08-27）
-    ├── smart_sync_release.py           ✅ 本地自动 sync GH Release → voc.db（幂等 + 文件锁处理，2026-08-28）
+    ├── daily_incremental_collect.py    ✅ P6 每日增量采集编排入口（**本地计划任务**调用；原 GH Actions 调用方 2026-09-11 已删）
+    ├── verify_release_upload.py        ⚠️ 已停用调用方：P6 静默失败防御，校验 GH Release asset 上传状态（2026-08-27）
+    ├── smart_sync_release.py           ⚠️ 已停用：本地自动 sync GH Release → voc.db（幂等 + 文件锁处理，2026-08-28）
     ├── reset_qwen_flash_bogus.py       ✅ P11 清理 QWEN-flash 404 假数据（dry-run 默认；--commit 真正清，2026-08-27）
-    ├── sync_local_from_release.py      ✅ 本地从 GH Release asset 拉 DB 对齐（release 路径，2026-08-24）
-    ├── sync_local_from_artifact.py     ✅ 本地从 GH Actions artifact 拉 DB 对齐（artifact 兜底，2026-08-24；当前 release upload bug 期间实际可用路径）
+    ├── sync_local_from_release.py      ⚠️ 已停用：本地从 GH Release asset 拉 DB 对齐（release 路径，2026-08-24）
+    ├── sync_local_from_artifact.py     ⚠️ 已停用：本地从 GH Actions artifact 拉 DB 对齐（artifact 兜底，2026-08-24）
     ├── dual_annotate_qwen_flash.py     ✅ DEEPSEEK vs QWEN-flash 双标注对比（backup + compare 两阶段，2026-08-25；产物已归档）
     ├── archive_online_games.py         ✅ 一次性：4 款 Steam 网游数据归档 + 主库清理（2026-08-23）
     ├── push_via_api.py                 ✅ sandbox 屏蔽 git push 时走 GH REST API 兜底（2026-08-31）
@@ -69,8 +69,8 @@ scripts/
 | **smoke_test.py** | 每次新增模块后跑一次 | 项目骨架回归测试 |
 | **ops/refresh_likes.py** | 发布满 7 天的评论回采点赞/回复/开发者回复 | `python -m scripts.refresh_likes --platform steam --target <appid>` |
 | **ops/backfill_embeddings.py** | 评论语义向量回填 / 换模型全量重算 | `python scripts/ops/backfill_embeddings.py --limit 100`（增量）；`--force`（清空重算，单事务原子切换） |
-| **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调用 + 本地直采计划任务）；2026-09-05 起内置 B站队列 run-due（`run_bilibili_queue`，默认跑，`--skip-bilibili` 关闭，`--bili-limit 5` 防风控）；2026-09-11 起 `--push-db`（默认关）在整条链末尾把本地 DB 推自建 VPS（变体 ①b），推送失败只告警、**不改采集退出码** | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地直采计划任务用）；`--push-db`（本机 02:00 任务用，见 `register_local_collect_task.ps1`）；测试：`tests/test_bilibili_queue.py` 编排 2 例 + `tests/test_daily_incremental_collect.py` 推库 8 例 |
-| **ops/verify_release_upload.py** | P6 静默失败防御：daily collect 跑完后用 `gh release view` 检查 `voc.db` asset 实际状态（size > 1KB + state=uploaded），失败 exit 1 让 workflow 标红。详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3` | GH Actions workflow 自动调用；也可 `--tag voc-daily-YYYY-MM-DD` 手动验证；测试：`tests/test_verify_release_upload.py` 8 例 |
+| **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（**本地直采计划任务**；原 GitHub Actions 调用方已于 2026-09-11 随采集 workflow 删除）；2026-09-05 起内置 B站队列 run-due（`run_bilibili_queue`，默认跑，`--skip-bilibili` 关闭，`--bili-limit 5` 防风控）；2026-09-11 起 `--push-db`（默认关）在整条链末尾把本地 DB 推自建 VPS（变体 ①b），推送失败只告警、**不改采集退出码** | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地直采计划任务用）；`--push-db`（本机 02:00 任务用，见 `register_local_collect_task.ps1`）；测试：`tests/test_bilibili_queue.py` 编排 2 例 + `tests/test_daily_incremental_collect.py` 推库 8 例 |
+| **ops/verify_release_upload.py** | P6 静默失败防御：daily collect 跑完后用 `gh release view` 检查 `voc.db` asset 实际状态（size > 1KB + state=uploaded），失败 exit 1 让 workflow 标红。详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3` | ⚠️ **调用方已随 workflow 删除消失**（2026-09-11）——现在只能手动 `--tag voc-daily-YYYY-MM-DD` 验证；仅当将来恢复云端采集 / `--upload` 通道时才需重新接线；测试：`tests/test_verify_release_upload.py` 8 例 |
 | **ops/smart_sync_release.py** | 本地自动 sync GH Release → `data/voc.db`（幂等）：①今天 release 未上传 → 安静 exit 0（专为"10:00 早跑，workflow 还没好"场景设计）②本地比远端新 → noop exit 0 ③远端比本地新 → 下载 + 安全 rename 替换 → exit 0 ④文件锁（Streamlit 打开）→ exit 1 + 提示"关仪表盘" | `python scripts/ops/smart_sync_release.py`（默认 today UTC）或 `--date 2026-08-28` 指定日期。注册到 Windows Task Scheduler 见 `register_sync_tasks.ps1`（4 task 错开 10:00/13:00/18:00/22:00） |
 | **ops/register_sync_tasks.ps1** | 注册 Windows Task Scheduler 任务：4 个 daily VOC-Sync-Release-* 任务，分别 10:00 / 13:00 / 18:00 / 22:00，每天跑 `smart_sync_release.py` | **需以管理员身份运行 PowerShell**：`powershell -ExecutionPolicy Bypass -File scripts\ops\register_sync_tasks.ps1`。卸载：`... -Uninstall`。DSH agent 无 admin 权限，不能自动注册。⚠️ **2026-09-10 起不建议注册**：远端 `voc-daily-*` release DB 是**归档前的旧快照**，sync 回灌主库会带回已归档的 4 款网游（2026-09-10 已实际发生一次并修复）；且数据链路已切本地直采，sync 不再必要 |
 | **ops/register_local_collect_task.ps1** | 注册 4 个本地计划任务：`VOC-Local-Daily-Collect`（北京 02:00 采集）+ `VOC-Local-Daily-Collect-Check` 哨兵（03:00）+ `VOC-Local-Agent-Prune`（03:30）+ **`VOC-Local-Publish-Snapshot`（04:30 导出静态快照 + 发布 EdgeOne Pages，2026-09-10 新增）**；采集跑 `daily_incremental_collect.py --no-download --no-upload --lookback-days 7 --push-db` 直接写 `data/voc.db` 并把成品库推自建 VPS（变体 ①b，2026-09-11 起），前端直读零延迟；错过补跑（StartWhenAvailable）+ 日志落 `logs/` | `powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1`（当前用户注册，**无需管理员**）；可传 `-PublishAt "05:00" -SnapshotProject "voc-platform"`；`-NoPushDb` 注册「不带推库」版本；卸载 `... -Uninstall`（含发布任务）。⚠️ 机器关机 >2 天会有数据缺口，恢复后加 `--full-replay` 手动补 |
@@ -90,7 +90,7 @@ scripts/
 | `python -m src.queue add BV [BV ...]` | 录入 BV 号到待采清单（自动识别 pubdate） |
 | `python -m src.queue list [--status X]` | 列出条目（默认全部） |
 | `python -m src.queue due [--limit N]` | 列今天到期的任务 |
-| `python -m src.queue run-due [--limit N] [--dry-run]` | 立即触发今天的采集（本地调试 / workflow cron 都用） |
+| `python -m src.queue run-due [--limit N] [--dry-run]` | 立即触发今天的采集（本地调试；原 workflow cron 调用方 2026-09-11 已删除） |
 | `python -m src.queue skip BV --reason X` | 跳过某个 BV（标记 failed） |
 | `python -m src.queue remove BV` | 删除条目（仅 pending/scheduled/failed） |
 | `python -m src.queue show BV` | 显示详情（JSON） |
@@ -108,7 +108,7 @@ scripts/
 | `verify_collect.py` | 采集结果落库验证 |
 | `verify_smart_window_e2e.py` | `daily_incremental_collect.smart_window` v2 端到端验证（mock run_pipeline，看 posted_after/Before 传递是否正确；不联网不污染主库） |
 | `verify_glm_5_3_flash.py` | `glm-5.3-flash` provider 接通验证（用真实 key 跑一条样本评论，确认 analyzer_version=llm:glm-5.3-flash@xxx + 标注结果合法；切默认标注器后跑一次回归用） |
-| `verify_today_collect.py` | 一键验证今日 workflow 跑通后本地数据（自动 sync release + 检查 posted_at 分布/analyzer_version=v2 时间窗/6 款游戏采集率/情感分布；切默认标注器后验证端到端用） |
+| `verify_today_collect.py` | ⚠️ **已停用**（依赖 GH Release sync 与 workflow 跑批，2026-09-11 后不适用）：一键验证今日 workflow 跑通后本地数据（自动 sync release + 检查 posted_at 分布/analyzer_version=v2 时间窗/6 款游戏采集率/情感分布）。现役等价做法：直接查本地权威库 + `scripts/ops/check_daily_collect.py` |
 | `verify_web_spa_load_order.js` | Web 前端冒烟：用 node `vm` 按 index.html 顺序模拟求值 `product/web/src/*.js`，断言 5 个页面全部注册进 `Routes`（防 TDZ / 加载顺序回归；无需浏览器） |
 | **`verify_dsh_web_smoke.ps1`** | **DSH web profile 冒烟**：本机起 `dsh web --port 3081 --no-open`（DSH_HOME 临时指项目内 `.dsh-home-smoke/`，避免污染 `~/.dsh`；cwd 指 `$TEMP` 避免 DSH env loader 误读项目 `.env`），解析 stdout 拿 URL → curl 主页 → 断言 HTTP 200/401 + title 含 `Harness` → 杀进程 + 清理临时目录。**目的：方案 A「DSH iframe 嵌入 dashboard」阶段 0 验证用，跑通即代表 DSH web 壳能起，可进浏览器手动看 UI 是否能接受。**退出码 0=通过；非 0=失败（带日志路径）。`-KeepHome` 保留 `.dsh-home-smoke` 便于复现 | `powershell -ExecutionPolicy Bypass -File scripts/dev/verify_dsh_web_smoke.ps1`；失败调试看 `logs/verify_dsh_web_<timestamp>.log.stderr`（常见：DSH port 被占 / Node.js 版本不匹配 / token cookie 与 loopback host 不一致） |
 | `e2e_lifecycle.py` | 首次采集 + 回采全链路 E2E（独立测试 DB，不污染主库） |

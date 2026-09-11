@@ -37,7 +37,11 @@ log = logging.getLogger("voc.sync_artifact")
 
 DEFAULT_DB_PATH = ROOT / "data" / "voc.db"
 DEFAULT_REPO = "misEricality/voc-platform"
-WF_NAME = "daily-collect.yml"
+# ⚠️ 已停用（2026-09-11）：原上游 workflow `daily-collect.yml` 已删除（云端采集链路整体移除，
+#    数据链路为本地直采，见 docs/architecture/AUTOMATION_PIPELINE.md §0）。现在**没有任何
+#    workflow 会产生 `voc-db-*` artifact**，本脚本必然报"找不到 artifact"——保留仅为
+#    历史兜底/速查，不要再当成现役通道。要恢复：先恢复云端采集 workflow。
+WF_NAME = "daily-collect.yml（已删除）"
 ARTIFACT_GLOB = "voc-db-"
 
 

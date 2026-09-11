@@ -750,7 +750,9 @@ curl https://voc.example.com/.env           # 应 404
 ls -la data/voc.db                          # 应 -rw------- voc voc
 
 # 8.4 关停 GitHub Actions cron（避免重复跑造成数据冲突）
-# 在 GitHub 仓库 Settings → Actions → 关闭 daily-collect.yml + bilibili-daily.yml
+# （2026-09-11 起）GitHub Actions 里已无采集 workflow —— 原 daily-collect.yml / bilibili-daily.yml
+# 已删除，仓库只剩 ci.yml（pytest 门禁）。原先「关掉云端采集」这一步已无需执行；
+# 若要连 CI 也停掉：Settings → Actions → General → Disable
 # 或删除 .github/workflows/ 下的两个文件（推荐）
 ```
 

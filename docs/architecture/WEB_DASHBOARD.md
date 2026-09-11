@@ -109,7 +109,7 @@ main():
     targets = load_targets_from_db() or (seed + retry) or load_targets(yaml)
 ```
 
-> GH Actions 过渡期影响（已接受）：网页端新增/修改的任务只存在于本地 DB，不会同步到 workflow 云端运行；VPS 形态 A（GH Actions 关停）下无此问题。
+> ~~GH Actions 过渡期影响~~（**2026-09-11 消失**）：云端采集 workflow 已删除（仓库只留 `.github/workflows/ci.yml` 回归门禁），网页端新增/修改的任务只存在于本地权威 DB —— 已不存在「云端跑的是另一份库」这回事。
 
 ## 4. API 设计
 

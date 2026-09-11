@@ -1,7 +1,12 @@
 """P6 自动化采集编排入口
 
-每日增量采集的主入口。被 .github/workflows/daily-collect.yml 调用，
+每日增量采集的主入口。**现由本机计划任务调用**（Windows Task Scheduler
+`VOC-Local-Daily-Collect`，北京 02:00，见 scripts/ops/register_local_collect_task.ps1），
 也可本地手动运行做调试或离线补采。
+
+（历史：2026-08-19 ~ 2026-09-01 由 GitHub Actions 的 `daily-collect.yml` 调用；该 workflow
+已于 2026-09-11 连同 `bilibili-daily.yml` 一起删除——数据链路早已切为本地直采，
+云端采集属重复劳动。详见 docs/architecture/AUTOMATION_PIPELINE.md）
 
 核心职责：
 1. 加载监控目标清单（config/monitoring/targets.yaml）

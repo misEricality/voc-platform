@@ -85,7 +85,7 @@ tests/
 | **覆盖** | `src/analyzers/embedder.py` bge-small-zh-v1.5 加载 + 向量化 + `semantic_search` |
 | **用例数** | 1（**无 ML 环境时自动 skip**） |
 | **更新** | 2026-08-11 |
-| **注** | CI 端（`.github/workflows/daily-collect.yml` 的 `test:` job）不装 torch / sentence-transformers；本地有 ML 环境时跑全量 |
+| **注** | CI 端（`.github/workflows/ci.yml` 的 `test:` job）不装 torch / sentence-transformers；本地有 ML 环境时跑全量 |
 
 ### `test_analyzer_version.py` · P10 analyzer_version 溯源 ⭐
 
@@ -196,7 +196,7 @@ pytest tests/ --deselect tests/test_embedding.py
 pytest tests/ && python scripts/smoke_test.py
 ```
 
-CI 在 `.github/workflows/daily-collect.yml` 的 `test:` job 自动跑（push / cron 双触发）。
+CI 在 `.github/workflows/ci.yml` 的 `test:` job 自动跑（**push / pull_request 双触发** + 手动 dispatch —— 2026-09-11 起；此前是 `daily-collect.yml` 的 cron 触发，那两个采集 workflow 已删除）。
 
 ---
 

@@ -1,6 +1,11 @@
 """P6 辅助：把 GH Release 上的 voc.db 同步到本地 data/voc.db。
 
-背景：
+⚠️ **已停用（2026-09-11）**：数据链路自 2026-09-02 起为**本地直采**（本地 `data/voc.db`
+即单一权威源），产出 release 的云端 workflow（`daily-collect.yml`）也已删除。把**归档前的
+旧快照**灌回本地库会带回已归档数据 —— 2026-09-10 实际发生过一次并已修复（见
+`register_sync_tasks.ps1` 头部的警告）。保留仅为历史兜底，勿当现役通道使用。
+
+历史背景：
 - daily-collect.yml 跑在 GitHub Actions ubuntu-latest runner 上，**不会**写到
   本机的 data/voc.db。每次自动采集成功后的"线上 DB"只活在 GH Release asset 里。
 - 本脚本给开发者一个手动对齐本地与线上 DB 的工具。

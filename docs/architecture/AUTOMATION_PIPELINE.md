@@ -8,14 +8,18 @@
 > - 存储层：[DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
 > - P6 决策与风险历史：本文档 §8（2026-08-22 从 `plan/P6_AUTOMATION_PIPELINE.md` 合并，原文件已删）
 >
-> **最后更新**：2026-09-02
-> **状态**：⚠️ **云端采集已停用（2026-09-02）**——数据链路切换为**本地直采**（Task Scheduler `VOC-Local-Daily-Collect`，北京 02:00，`daily_incremental_collect.py --no-download --no-upload`），本地 `data/voc.db` 即单一权威源，前端直读。workflow `collect` job 置 `if: false`（恢复：删该行），`test` job 保留作 CI 回归门禁。历史（GH Release 累积模式）见下文与版本记录；目标加载 DB 优先见 [WEB_DASHBOARD.md §3.4](./WEB_DASHBOARD.md)
+> **最后更新**：2026-09-11
+> **状态**：🔴 **云端采集链路已彻底移除（2026-09-11）**——数据链路自 2026-09-02 起为**本地直采**（Task Scheduler `VOC-Local-Daily-Collect`，北京 02:00，`daily_incremental_collect.py --no-download --no-upload --lookback-days 7 --push-db`），本地 `data/voc.db` 即单一权威源，前端直读，每日链末尾把成品库推给只读展示端 VPS（变体 ①b）。
+>
+> **workflow 现状**：原两个采集 workflow（`daily-collect.yml` / `bilibili-daily.yml`）**已删除**，仓库只留 **`.github/workflows/ci.yml`**（pytest 回归门禁，`push` / `pull_request` / 手动触发）。删除理由：本地直采已覆盖同样的采集（含 B站 `run-due`），云端那套的产物只进 GH artifact（30 天）与 `voc-daily-bootstrap` release，**不回流**本地权威源 —— 纯烧 GLM 标注 token + 多一次 B站风控暴露。
+>
+> 历史（GH Release 累积模式、silent 失败防御等）见 §8 与版本记录；目标加载 DB 优先见 [WEB_DASHBOARD.md §3.4](./WEB_DASHBOARD.md)
 
 ---
 
 ## 0. 一句话总览
 
-**现役（2026-09-02 起）**：本机 Task Scheduler 每天北京 02:00 跑 `daily_incremental_collect.py --no-download --no-upload --lookback-days 7`，直接把**近 7 个北京日历日**的 Steam 评论增量写进本地 `data/voc.db`（WAL 模式），Web 看板/FastAPI 直读该库。GH Release 累积库停更于 2026-08-30（云备份待装 gh CLI 后可用 `--no-download` 模式恢复）。
+**现役（2026-09-02 起）**：本机 Task Scheduler 每天北京 02:00 跑 `daily_incremental_collect.py --no-download --no-upload --lookback-days 7 --push-db`，直接把**近 7 个北京日历日**的 Steam 评论增量写进本地 `data/voc.db`（WAL 模式），Web 看板/FastAPI 直读该库；同一条链还跑 **B站队列 `run-due`**（2026-09-05 接入，见 [BILIBILI_AUTOMATION.md](./BILIBILI_AUTOMATION.md)），末尾把成品库推给 VPS（变体 ①b）。GH Release 累积库停更于 2026-08-30（云备份待装 gh CLI 后可用 `--no-download` 模式恢复；`--upload` 通道本身不依赖 workflow）。
 
 > **回看窗 2 天 → 7 天（2026-09-03）**：Steam `filter=recent` 游标流是**非确定性采样**（同窗口每次爬取子集不同，单次漏 5-20%，实测 6 游戏 123 条）——无法根治，靠多日重叠回看 + upsert 幂等 + analyzed-skip 使覆盖率随多遍采样收敛；增量成本仅分页加深（~7 页/游戏）。附带效果：漏采缺口会在后续 7 天内自动补上（如底特律 8/31 缺口于 9/4 02:00 自愈）。
 
@@ -23,7 +27,7 @@
 
 > **cron 时间变更**：2026-08-27 把 daily-collect cron 从 `0 0 * * *` UTC（= 北京 08:00）改为 `0 17 * * *` UTC（= 北京次日凌晨 1:00）—— GH Actions schedule 历史上最多延迟 ~8 小时，0:00 UTC 配延迟会让 workflow 在北京下午 4 点才跑完，太晚；17:00 UTC 即便延迟 8 小时也只到次日上午 9 点 BJT。详见 §8.5。
 
-> **目标加载变更（2026-09-02）**：`daily_incremental_collect.py` 改为**优先读 `collect_tasks` 表**（DB，由 Web 看板「系统管理」增删改）；表为空时自动从 `targets.yaml` 种子化（幂等），仍空则回退 yaml。**GH Actions 过渡期影响**：网页端改的任务只存在于本地/累积 DB，不随 git 同步到云端 workflow（云端跑的是 release 累积 DB，含 collect_tasks）；VPS 形态 A（GH Actions 关停）下无此问题。详见 [WEB_DASHBOARD.md §3.4](./WEB_DASHBOARD.md)。
+> **目标加载变更（2026-09-02）**：`daily_incremental_collect.py` 改为**优先读 `collect_tasks` 表**（DB，由 Web 看板「系统管理」增删改）；表为空时自动从 `targets.yaml` 种子化（幂等），仍空则回退 yaml。**（2026-09-11）** 当时记的「GH Actions 过渡期影响」（网页端改的任务只存在于本地/累积 DB、不随 git 同步到云端 workflow）**已随之消失** —— 云端采集 workflow 整个删除，`collect_tasks` 只存在于本地权威库。详见 [WEB_DASHBOARD.md §3.4](./WEB_DASHBOARD.md)。
 
 ---
 
@@ -116,7 +120,7 @@
 
 | 文件 | 角色 |
 |---|---|
-| `.github/workflows/daily-collect.yml` | cron + setup + 调用 Python 入口 + artifact fallback |
+| `.github/workflows/ci.yml` | **唯一保留的 workflow**：pytest 回归门禁（`push` / `pull_request` / 手动）；原 `daily-collect.yml`（cron + 调用 Python 入口 + artifact fallback）与 `bilibili-daily.yml` 已于 2026-09-11 删除 |
 | `scripts/ops/daily_incremental_collect.py` | 主入口：拉/推 release + 跑各 target + 写摘要 |
 | `config/monitoring/targets.yaml` | 监控目标清单（6 款 Steam 单机游戏） |
 | `tests/test_daily_incremental_collect.py` | 10 个回归用例（空库起步/时间窗/不擦旧数据/单失败容错/gh 容错/smart_window 4 场景） |
@@ -232,6 +236,7 @@ sync 当天 release 后查 DB：873 条评论的 fetched_at **全部**落在 #30
 - 新增 `scripts/ops/verify_release_upload.py`：daily collect 完成后立即用 `gh release view` 检查 `voc.db` asset（存在 + state=uploaded + size > 1KB）；失败 exit 1 让 GH Actions 步骤标红 → 邮件告警
 - 配套 8 例 pytest：`tests/test_verify_release_upload.py` 覆盖 happy + 4 种失败（资产缺失/大小过小/state 非 uploaded/release 不存在）+ gh 缺失 + 兼容网页端上传的后缀
 - 集成到 `.github/workflows/daily-collect.yml` 的「校验今日 Release asset」步骤（`if: always()`，在 collect 失败时也跑）
+  - ⚠️ **已失效（2026-09-11）**：该 workflow 已删除，此防御**不再自动运行**。脚本本身保留（`--tag voc-daily-YYYY-MM-DD` 手动仍可用），仅当将来恢复云端采集或 `--upload` 通道时才需要重新接线。
 
 **blocker 现状**：手工 `voc-daily-bootstrap` release 已建（2026-08-23），bootstrap 累积有效。剩下风险：每次 scheduled run 仍可能因 GH 平台偶发问题静默失败 —— 新 defense 后**至少会派工单**。
 
@@ -298,3 +303,4 @@ sync 当天 release 后查 DB：873 条评论的 fetched_at **全部**落在 #30
 | 2026-08-22 | §8 决策与风险历史新增；合并 `plan/P6_AUTOMATION_PIPELINE.md`；§7 故障排查加「release 存在但 assets 空」；更新「最后更新」日期 | 洁癖收口：消除两份 P6 文档重复；记录 A1 已知问题（每日 release asset 为空，累积 DB 未生效） |
 | 2026-08-27 | §8.3 A1 升级：补真实案例（8/27 #29 silent 失败 UI success 但 0 数据）+ 上线防御（`scripts/ops/verify_release_upload.py` + GH Actions step + 8 例 pytest） | P6 silent 失败实战解锁工程师告警链路 |
 | 2026-08-31 | **每日时间窗策略 v2**：§2.4 升级（以北京日历日为准 + 当天严格不采）；§8.5 新增设计记录；§3/§4 用例数 6→10；D4 决策标注 v1 弃用；新增 4 个 pytest；`scripts/ops/daily_incremental_collect.py` 加 `smart_window()` 函数（30 行） | 解决 v1 两个痛点：①窗口永远落后 1-2 天（昨天 release 的 max 通常是前天 23:xx UTC）；②每天混入 10.9% 当天数据 |
+| 2026-09-11 | **云端采集链路彻底移除**：`daily-collect.yml` 与 `bilibili-daily.yml` **已删除**，仓库只留 `.github/workflows/ci.yml`（pytest 门禁，push / PR / 手动）—— 本地直采（2026-09-02 起，含 2026-09-05 接入的 B站 `run-due`）已覆盖同一采集，云端产物只进 30 天 artifact、不回流权威源，纯烧标注 token + 多一次 B站风控暴露。同步：§0 现役段重写（含 B站与 `--push-db`）、顶部状态改「已彻底移除」、§3 文件清单换为 `ci.yml`、§8.3「校验今日 Release asset」步骤标注**已失效**（脚本保留、仅手动可用）。**吞吐变化**：B站单日上限由云端 `--limit 50` 降为本地 `limit=5`（防风控），超 5 条顺延次日 | 工程师「如果GitHub workflow采集已经用不着，把它们取消掉」 |

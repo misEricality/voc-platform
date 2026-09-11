@@ -215,7 +215,7 @@ def main():
         return 0
     final_by_path = {e['path']: e['sha'] for e in final_tree['tree'] if e['type'] == 'blob'}
     verify_paths = [
-        '.github/workflows/daily-collect.yml',
+        '.github/workflows/ci.yml',
         'src/analyzers/sentiment_llm.py',
         'src/pipeline.py',
         'scripts/ops/daily_incremental_collect.py',

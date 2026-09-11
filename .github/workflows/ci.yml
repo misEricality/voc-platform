@@ -1,0 +1,49 @@
+name: CI
+
+# 为什么只剩这一个 workflow（2026-09-11）
+# ----------------------------------------
+# 原有两个 workflow 已删除：
+#   - daily-collect.yml   ：Steam 每日采集（其 collect job 早在 2026-09-02 就置了 `if: false`，
+#                           但文件与 schedule 一直留着 → 每天仍会触发一次 test）
+#   - bilibili-daily.yml  ：B站每日 run-due（**没有** if:false，配置层面每天 UTC 17:30 仍被调度）
+#
+# 删除理由：数据链路自 2026-09-02 起切换为「**本地直采**」——Windows 计划任务
+# `VOC-Local-Daily-Collect`（北京 02:00，`scripts/ops/register_local_collect_task.ps1`，
+# 含 B站 `run-due`，2026-09-05 接入）。本地 `data/voc.db` 即唯一权威源（每日 02:00 末尾
+# 经 `push_db_to_vps.ps1` 推给只读展示端 VPS）。云端采集属明确重复劳动：
+#   ① 烧 GLM 标注 token；② B站多一次风控暴露；③ 产物只进 GH artifact（30 天保留）与
+#   `voc-daily-bootstrap` release，**不回流**本地权威源，纯丢弃。
+#
+# 保留的东西：原两处各有**一份完全相同**的 test job（回归门禁），现合并为下面这一个。
+# 触发条件也从「只有 schedule + workflow_dispatch」改为 push / PR —— 原文件注释写着
+# 「push 时也能早期发现回归」，但 `on:` 里根本没有 push，属空头承诺，一并修正。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 只装 requirements-core.txt（不含 torch / transformers / sentence-transformers）：
+      # ML 相关用例在 CI 自动 skip，embedder 降级跳过由用例自身保证。
+      - name: 安装核心依赖
+        run: |
+          pip install -r requirements-core.txt
+
+      - name: 跑 pytest
+        run: |
+          python -m pytest tests/ -v

@@ -148,7 +148,7 @@
 | 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111） |
 | 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）+ 公网静态快照（EdgeOne Pages，每日 04:30 自动发布）+ VPS 只读服务（①b，内测上线）** | FastAPI + 原生 SPA 5 页 + Agent 抽屉；Streamlit 并存；方案 ③ 已上线并自动化（`VOC-Local-Publish-Snapshot`）；方案 ①b 已落地：VPS `voc-web.service` + Caddy `:8443` 内测，DB 每日随 02:00 采集推库（`--push-db`） |
 | 平台覆盖 | **Steam（单机 8）+ B站（5 视频）** | 微博为下一主扩展 |
-| 数据存储 | SQLite 单文件（`data/voc.db`，**117.2 MB / 2026-09-11**）| WAL 模式；前端服务读 × cron 写并发；GH Actions `collect` job 已停用；①b 每日 `VACUUM INTO` 快照推 VPS（远端原位 `.backup()`） |
+| 数据存储 | SQLite 单文件（`data/voc.db`，**117.2 MB / 2026-09-11**）| WAL 模式；前端服务读 × cron 写并发；GH Actions 采集 workflow **已删除**（2026-09-11，仓库仅留 `ci.yml` 回归门禁）；①b 每日 `VACUUM INTO` 快照推 VPS（远端原位 `.backup()`） |
 | 测试门禁 | **pytest 236 例** | 黄金集 + API + 队列 + 每日采集（含推库 8 例）+ 哨兵 + monitored 白名单 + Agent |
 
 ---
@@ -272,7 +272,7 @@
 
 ### ✅ P6 · 自动化流水线（代码完成 2026-08-20；运行态失效发现 2026-08-22；运行态收口 2026-08-23）
 
-**现状（代码层）**：`.github/workflows/daily-collect.yml` 已重写为薄编排（cron + setup + Python 入口，含 `test` job 与 `collect` job 并列），调用 `scripts/ops/daily_incremental_collect.py`，由 `config/monitoring/targets.yaml` 驱动 6 款 Steam 单机游戏（2026-08-25 起 `count: null` auto 模式，按时间窗耗尽替代原「每款 30 条/天，共 180 条/天」硬上限）增量采集。架构文档：[AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md)。
+**现状（代码层，2026-09-11 修正）**：云端 workflow **已删除**（原 `daily-collect.yml` 是「cron + setup + Python 入口 + artifact fallback」的薄编排，`collect` job 早在 2026-09-02 就置了 `if: false`）。采集改由**本机计划任务** `VOC-Local-Daily-Collect`（北京 02:00）调用 `scripts/ops/daily_incremental_collect.py`，目标**优先读 `collect_tasks` 表**（空表回落 `config/monitoring/targets.yaml`，2026-08-25 起 `count: null` auto 模式，按时间窗耗尽替代原「每款 30 条/天，共 180 条/天」硬上限）增量采集，链末尾推库给 VPS。仓库仅剩 `.github/workflows/ci.yml`（pytest 门禁）。架构文档：[AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md)。
 
 **现状（运行态 — 2026-08-23 实测）**：
 - `voc-daily-bootstrap` release 已建立（id 375081991，含本地 76 MB / 11333 条评论 DB 作为 baseline asset）
@@ -379,7 +379,7 @@
 3. ✅ ~~CI 补 pytest + analyzer_version 溯源~~：已于 2026-08-21 落地（详见 P10）；A3 推送后 CI 已真正启用
 4. ✅ ~~**P8 时间序列趋势图**~~：已于 2026-09-02 在 Web 看板一并交付（`/api/trends` + 时间序列页）
 5. **✅ Web 实时看板（WEB_DASHBOARD，2026-09-02 阶段 1-5 完成 + 2026-09-07 收尾）**：`src/api/` FastAPI（公开只读端点 + 管理员鉴权 + 任务 CRUD）+ `product/web/` 原生 SPA（主看板/游戏对比/B站视频/数据管理/系统管理 5 页）+ `collect_tasks` 表（Steam 目标迁入 DB）+ SQLite WAL + `bilibili_queue` paused 状态；Streamlit 并存不动。阶段 5 收口已完成（VPS 文档 + 登记四件套 + AGENTS.md 版本记录）；对抗审查 P1×4 + P2×3 已修（resume 守卫 / lifespan 无导入副作用 / 异步外部调用 / fail-closed secret / API no-store / backfill 可观测 / 前端容错 / 登录限流）。✅ **前端融合已完成（2026-09-03~05）**：三看板按用户线框图重写 + 系统管理子模块化。详见 [architecture/WEB_DASHBOARD.md](../architecture/WEB_DASHBOARD.md)
-6. **✅ 本地直采 + 补采哨兵（2026-09-07）**：`VOC-Local-Daily-Collect` 02:00 直写 voc.db，`VOC-Local-Daily-Collect-Check` 03:00 检查失败/未跑并补采；GH Actions `collect` job 已停用，`test` job 保留作 CI 护栏
+6. **✅ 本地直采 + 补采哨兵（2026-09-07）**：`VOC-Local-Daily-Collect` 02:00 直写 voc.db，`VOC-Local-Daily-Collect-Check` 03:00 检查失败/未跑并补采；GH Actions 采集 workflow **已于 2026-09-11 整体删除**（仓库仅留 `ci.yml` CI 护栏）
 6. **P9 阶段 2 L3.5 微话题聚类**：`l35_cluster.py` 骨架已就绪；P6 解锁时序后，对新评论可周期性下钻
 7. ~~**CS2（appid 730）补采复查**~~：已于 2026-08-23 关闭（CS2 与其他 3 款网游归档到 `data/archive/online_games_2026-08-23.db`）
 8. **🆕 B 站自动化（阶段 0）**：2026-08-23 落地 — `bilibili_queue` 表 + CLI（`python -m src.queue ...`）+ workflow `bilibili-daily.yml`；工程师手输 BV 号入清单，系统识别投稿时间后自动计算第 7 天，每日 cron 触发采集；Web 看板「系统管理」已可网页增删改（2026-09-02）；详见 [architecture/BILIBILI_AUTOMATION.md](../architecture/BILIBILI_AUTOMATION.md)

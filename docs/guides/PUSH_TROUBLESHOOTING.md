@@ -78,7 +78,7 @@ $env:GITHUB_TOKEN = 'github_pat_...'
 
 **症状**：
 - 脚本输出 `[/] OK xxx` 但 commit 的 tree 里子目录改动全部丢失
-- 验证显示 root 下的目录（如 `.github/workflows/daily-collect.yml`）SHA 没变
+- 验证显示 root 下的目录（如 `.github/workflows/ci.yml`）SHA 没变
 - 子目录里明明改了文件但远端没生效
 
 **根因**：
@@ -188,7 +188,7 @@ new_subdir_trees[d] = new_sha  # d = 完整路径
 ### 坑 2：fine-grained PAT 涉及 .github/ workflow 必须加 `workflows:write` scope（2026-08-25）
 
 **症状**：
-- `POST /repos/.../contents/.github/workflows/daily-collect.yml` 403
+- `POST /repos/.../contents/.github/workflows/ci.yml` 403（示例文件名已随 2026-09-11 的 workflow 收敛更新为 `ci.yml`；坑位本身与文件名无关）
 - `POST /git/blobs` + 嵌套 tree 也 403
 - 错误信息 `Resource not accessible by personal access token`
 

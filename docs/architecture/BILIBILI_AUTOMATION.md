@@ -56,18 +56,24 @@
 
 索引：`ix_biliq_status_due (status, due_date)` —— cron 查询的核心路径
 
-### 1.3 cron 行为
+### 1.3 调度行为（现役：本地计划任务）
 
-```yaml
-# .github/workflows/bilibili-daily.yml
-schedule:
-  - cron: '30 17 * * *'  # 每天 UTC 17:30（北京次日凌晨 1:30）
-                          # 比 Steam daily（UTC 17:00）晚 30 分钟，避免同时打 GH API
-                          # 2026-08-27 改：避开 GH Actions schedule 最多 8h 延迟 → 17:00 UTC 即便延迟也只到次日上午 9 点 BJT
-```
+**目前由本机 Task Scheduler 驱动**：`VOC-Local-Daily-Collect`（北京 02:00）在同一条采集链里
+跑 `run_due_collection()`（`daily_incremental_collect.py` 的 `run_bilibili_queue`，2026-09-05
+接入；`--skip-bilibili` 可关、`--bili-limit` 可调，默认 **5**）。
+
+> ⚠️ **吞吐变化（2026-09-11）**：原云端 workflow 的 `--limit 50` 随 workflow 一起消失，
+> 现在单日上限是 **5 个视频/天**（`limit=5` 是为防风控留的余量：5 个最坏 ~15 分钟）。
+> 到期任务若超过 5 条，队列会按 `due_date` 顺延到次日；需要更快就手动
+> `python -m src.queue run-due --limit N`，或调大计划任务里的 `--bili-limit`。
+
+> 历史（**已删除 2026-09-11**）：`.github/workflows/bilibili-daily.yml`，`cron: '30 17 * * *'`
+> UTC（北京次日 01:30；2026-08-27 由 `0:30` 改到 `17:30` UTC，以避开 GH Actions schedule
+> 最多 8h 的延迟）。删除原因：本地直采已覆盖同一采集，云端产物只进 GH artifact（30 天）
+> 不回流权威源 —— 纯烧标注 token + 多一次风控暴露。
 
 逻辑：
-1. 查 `status='scheduled' AND due_date <= today` ORDER BY due_date LIMIT 50
+1. 查 `status='scheduled' AND due_date <= today` ORDER BY due_date LIMIT &lt;单次上限&gt;
 2. 逐个标 `fetching` → 调 `src.pipeline.run_pipeline(platform='bilibili', target_id=bv_id)`
 3. 成功 → 标 `fetched`，记 comment/danmaku 数
 4. 失败 → fail_count += 1；< 3 次回 scheduled 重试；≥ 3 次 dead-letter
@@ -204,7 +210,7 @@ MAX_FAIL_COUNT = 3   # 单视频失败 3 次后入 dead-letter
 | `bilibili_queue` 表 + ORM 模型 | ✅ |
 | CLI（add / list / due / run-due / skip / remove / show） | ✅ |
 | Runner（`src.queue.runner.run_due_collection`） | ✅ |
-| workflow（`.github/workflows/bilibili-daily.yml`） | ✅ |
+| 调度（2026-08-23 云端 workflow → **2026-09-11 起本地计划任务**，见 §1.3） | ✅ |
 | 单元测试（`tests/test_bilibili_queue.py` 6 例） | ✅ |
 | 设计文档（本文件） | ✅ |
 
