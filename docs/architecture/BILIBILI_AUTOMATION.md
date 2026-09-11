@@ -1,13 +1,13 @@
 # B 站自动化采集设计（Bili Automation · 2026-08-23）
 
-> **状态**：✅ 阶段 0 设计 + 落地（2026-08-23）｜ **执行方**：`python -m src.queue ...` 或 Web 看板「系统管理」（2026-09-02 起可网页增删改）
+> **状态**：✅ 阶段 0 设计 + 落地（2026-08-23）｜ **调度**：本机计划任务 `VOC-Local-Daily-Collect`（北京 02:00，**单日上限 5 个视频**，见 §1.3.1）｜ **执行方**：`python -m src.queue ...` 或 Web 看板「系统管理」（2026-09-02 起可网页增删改）
 > **关联**：[BILIBILI_COLLECTION.md](./BILIBILI_COLLECTION.md)（采集规格） · [AUTOMATION_PIPELINE.md](./AUTOMATION_PIPELINE.md)（P6 通用架构） · [WEB_DASHBOARD.md](./WEB_DASHBOARD.md)（系统管理页 §4.3）
 
 ---
 
 ## 一、需求与设计
 
-工程师手动加 BV 号到「待采清单」，系统识别投稿时间后自动计算第 7 天 = 采集日，每天 cron 扫今天到期的视频触发采集。已采过的标 fetched 并记时间。Web 看板「系统管理」可网页增删改 + 暂停/恢复（2026-09-02）。
+工程师手动加 BV 号到「待采清单」，系统识别投稿时间后自动计算第 7 天 = 采集日，**每天由本机计划任务（北京 02:00）扫今天到期的视频触发采集，单次最多 5 个**（见 §1.3.1）。已采过的标 fetched 并记时间。Web 看板「系统管理」可网页增删改 + 暂停/恢复（2026-09-02）。
 
 ### 1.1 状态机
 
@@ -54,40 +54,52 @@
 | `revisit` | BOOL | high-value 重采标记 |
 | `note` | TEXT | 工程师备注 |
 
-索引：`ix_biliq_status_due (status, due_date)` —— cron 查询的核心路径
+索引：`ix_biliq_status_due (status, due_date)` —— 每日扫描查询的核心路径
 
-### 1.3 调度行为（现役：本地计划任务）
+### 1.3 调度行为（现役：本机计划任务）
 
-**目前由本机 Task Scheduler 驱动**：`VOC-Local-Daily-Collect`（北京 02:00）在同一条采集链里
-跑 `run_due_collection()`（`daily_incremental_collect.py` 的 `run_bilibili_queue`，2026-09-05
-接入；`--skip-bilibili` 可关、`--bili-limit` 可调，默认 **5**）。
+**驱动方**：本机 Task Scheduler `VOC-Local-Daily-Collect`（北京 02:00，注册脚本
+`scripts/ops/register_local_collect_task.ps1`）。B站采集是**该任务链上的一个阶段**，不是独立任务 ——
+由 `daily_incremental_collect.py` 的 `run_bilibili_queue()` 调用（2026-09-05 接入；
+`--skip-bilibili` 关闭、`--bili-limit` 调参）。
 
-> ⚠️ **吞吐变化（2026-09-11）**：原云端 workflow 的 `--limit 50` 随 workflow 一起消失，
-> 现在单日上限是 **5 个视频/天**（`limit=5` 是为防风控留的余量：5 个最坏 ~15 分钟）。
-> 到期任务若超过 5 条，队列会按 `due_date` 顺延到次日；需要更快就手动
-> `python -m src.queue run-due --limit N`，或调大计划任务里的 `--bili-limit`。
+#### 1.3.1 每日吞吐上限：5 个视频/天 ⭐
 
-> 历史（**已删除 2026-09-11**）：`.github/workflows/bilibili-daily.yml`，`cron: '30 17 * * *'`
-> UTC（北京次日 01:30；2026-08-27 由 `0:30` 改到 `17:30` UTC，以避开 GH Actions schedule
-> 最多 8h 的延迟）。删除原因：本地直采已覆盖同一采集，云端产物只进 GH artifact（30 天）
-> 不回流权威源 —— 纯烧标注 token + 多一次风控暴露。
+| 项 | 值 / 行为 | 依据 |
+|---|---|---|
+| **单次上限** | **5** | 参数 `--bili-limit`（代码默认 `run_bilibili_queue(limit=5)`；计划任务**未覆盖**该参数 → 实际走默认 5） |
+| **为什么是 5** | 防风控 + 时长预算 | 单视频 1–3 分钟 → 最坏 ~15 分钟，为计划任务的 150 分钟上限留足余量；B站风控对短时高频请求敏感 |
+| **查询与排序** | `status='scheduled' AND due_date <= today` **ORDER BY `due_date` ASC LIMIT 5** | 先到期的先采 |
+| **超额怎么办** | **只顺延、不丢弃** | 今天没轮到的**仍是 `scheduled`**（不改状态），次日或下一次运行继续 —— 不会跳过、不会漏采 |
+| **连续大批量录入** | 线性顺延 | 一次录 20 条 ≈ 4 天消化完；要当天清走下面的加速手段 |
+| **加速手段** | ① 手动 `python -m src.queue run-due --limit N`（临时）；② 调大计划任务的 `--bili-limit`（持久，注意风控与 150 分钟预算） | — |
+| **观测方法** | `python -m src.queue due`（今天到期，含被顺延的）；`python -m src.queue list --status scheduled`（看积压总量） | — |
 
-逻辑：
-1. 查 `status='scheduled' AND due_date <= today` ORDER BY due_date LIMIT &lt;单次上限&gt;
+> ⚠️ **队列持续积压时先分清原因**：是单日上限卡住（`due` 输出 > 5 条），还是单条反复失败进了
+> `failed`（看 `fail_count` / `fail_reason`）—— 两者的处置完全不同（前者调上限，后者查风控/接口）。
+
+> 📌 **历史沿革（2026-09-11）**：云端 workflow 原本用 `run-due --limit 50`，随
+> `.github/workflows/bilibili-daily.yml` 一并删除（实测它在 2026-09-03 ~ 09-10 **每天真跑一次**）。
+> 删除后单日上限由 50 降为 5 —— 这是**为换取「不重复采集、不白烧标注 token」而有意接受的
+> 吞吐回退**，不是 bug。
+
+#### 1.3.2 单条任务的执行逻辑
+
+1. 查 `status='scheduled' AND due_date <= today` ORDER BY `due_date` LIMIT 5（见 §1.3.1）
 2. 逐个标 `fetching` → 调 `src.pipeline.run_pipeline(platform='bilibili', target_id=bv_id)`
 3. 成功 → 标 `fetched`，记 comment/danmaku 数
-4. 失败 → fail_count += 1；< 3 次回 scheduled 重试；≥ 3 次 dead-letter
+4. 失败 → `fail_count += 1`；< 3 次回 `scheduled` 重试；≥ 3 次 dead-letter（`failed`，永久）
 
-### 1.4 与 P6 Steam daily 的对比
+### 1.4 与 Steam daily 的对比
 
 | 维度 | Steam daily | B 站 daily |
 |---|---|---|
-| 触发 | cron（UTC 17:00 北京次日凌晨 1:00） | cron（UTC 17:30 北京次日凌晨 1:30） |
-| 采集目标来源 | `config/monitoring/targets.yaml` | `bilibili_queue` 表（动态） |
-| 数量 | 6 款 Steam（固定） | ≤ 50 视频/天（动态） |
-| 新增目标方式 | 改 yaml + commit | `python -m src.queue add BV...` |
-| 失败重试 | 单 target try/except | fail_count 计数 |
-| 历史 release | `voc-daily-YYYY-MM-DD` | 共用 Steam 的 release |
+| 触发 | 本地计划任务 `VOC-Local-Daily-Collect`（北京 02:00） | **同一条链的后置阶段**（`run_bilibili_queue`，2026-09-05 接入） |
+| 采集目标来源 | `collect_tasks` 表（空表回落 `config/monitoring/targets.yaml`） | `bilibili_queue` 表（动态；Web 看板可增删改） |
+| 数量 | 6 款 Steam 单机（固定） | **≤ 5 视频/天**（`--bili-limit`，见 §1.3.1） |
+| 新增目标方式 | Web 看板「系统管理」或改 yaml | `python -m src.queue add BV...` 或 Web 看板 |
+| 失败重试 | 单 target try/except，仅记 warning | `fail_count` 计数，≥ 3 次 dead-letter |
+| 数据落点 | 同一个 `data/voc.db`，链末尾 `--push-db` 推 VPS | 同左 |
 
 ---
 

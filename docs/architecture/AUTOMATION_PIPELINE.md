@@ -19,7 +19,7 @@
 
 ## 0. 一句话总览
 
-**现役（2026-09-02 起）**：本机 Task Scheduler 每天北京 02:00 跑 `daily_incremental_collect.py --no-download --no-upload --lookback-days 7 --push-db`，直接把**近 7 个北京日历日**的 Steam 评论增量写进本地 `data/voc.db`（WAL 模式），Web 看板/FastAPI 直读该库；同一条链还跑 **B站队列 `run-due`**（2026-09-05 接入，见 [BILIBILI_AUTOMATION.md](./BILIBILI_AUTOMATION.md)），末尾把成品库推给 VPS（变体 ①b）。GH Release 累积库停更于 2026-08-30（云备份待装 gh CLI 后可用 `--no-download` 模式恢复；`--upload` 通道本身不依赖 workflow）。
+**现役（2026-09-02 起）**：本机 Task Scheduler 每天北京 02:00 跑 `daily_incremental_collect.py --no-download --no-upload --lookback-days 7 --push-db`，直接把**近 7 个北京日历日**的 Steam 评论增量写进本地 `data/voc.db`（WAL 模式），Web 看板/FastAPI 直读该库；同一条链还跑 **B站队列 `run-due`**（2026-09-05 接入，**单日上限 5 个视频**，见 [BILIBILI_AUTOMATION.md §1.3.1](./BILIBILI_AUTOMATION.md)），末尾把成品库推给 VPS（变体 ①b）。GH Release 累积库停更于 2026-08-30（云备份待装 gh CLI 后可用 `--no-download` 模式恢复；`--upload` 通道本身不依赖 workflow）。
 
 > **回看窗 2 天 → 7 天（2026-09-03）**：Steam `filter=recent` 游标流是**非确定性采样**（同窗口每次爬取子集不同，单次漏 5-20%，实测 6 游戏 123 条）——无法根治，靠多日重叠回看 + upsert 幂等 + analyzed-skip 使覆盖率随多遍采样收敛；增量成本仅分页加深（~7 页/游戏）。附带效果：漏采缺口会在后续 7 天内自动补上（如底特律 8/31 缺口于 9/4 02:00 自愈）。
 

@@ -17,7 +17,7 @@ docs/
 │   ├── DATA_FIELDS.md              字段四级分类（A/B/C/D 前缀约定，D=本地模型派生向量）
 │   ├── DATA_STORAGE_DESIGN.md      数据分层架构 + 表设计（设计稿，含目标迁移路径）
 │   ├── BILIBILI_COLLECTION.md      B 站采集规格（接口/数据映射/采样策略，开发交接文档）
-│   ├── BILIBILI_AUTOMATION.md      B 站自动化采集设计（待采清单 + cron + CLI；2026-08-23 落地）
+│   ├── BILIBILI_AUTOMATION.md      B 站自动化采集设计（待采清单 + 计划任务调度（**单日上限 5**，§1.3.1）+ CLI；2026-08-23 落地，2026-09-11 云端 cron 删除）
 │   ├── DESIGN_TOKENS.md            设计 Token 规范 v1.0（色彩/字体/组件/图标/图表/双主题 + 三页迁移映射，前端执行依据）
 │   ├── WEB_DASHBOARD.md            Web 实时看板架构（FastAPI + 原生 SPA + collect_tasks 表 + 管理员鉴权；2026-09-01 立项）
 │   ├── ORIGINAL_VOICE_ANALYSIS_AGENT.md 原声分析 Agent（FastAPI SSE + function calling + 4 tool + skill 系统 + 悬浮球两段式抽屉（小窗/大窗历史栏，一级页已下线）+ 引用当前查询 + 30 天保留 + Markdown 导出；2026-09-08 设计蓝本 + 2026-09-09 落地 + 2026-09-10 两段式重构，见文档顶部现役修正）
