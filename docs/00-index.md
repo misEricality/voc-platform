@@ -9,6 +9,7 @@
 ```
 docs/
 ├── 00-index.md             ⬅ 你在这里：文档地图
+├── CHANGELOG.md            📋 项目变更记录（原 AGENTS.md「版本记录」全量史；AGENTS.md 只留最近 3 条）
 ├── architecture/           🏗️ 架构设计（给工程师看的"系统是怎么搭的"）
 │   ├── ANNOTATION_PIPELINE.md      方案4 标注流程（GDT v3.1.1：观点短语→程序匹配）
 │   ├── AUTOMATION_PIPELINE.md      P6 自动化流水线落地架构（GH Release 累积 DB + 多目标驱动 + 故障排查）
@@ -65,6 +66,7 @@ docs/
 | **国内外 VoC 平台都在做什么** | [research/VOC_COMPETITOR_RESEARCH.md](./research/VOC_COMPETITOR_RESEARCH.md) |
 | **src/ 代码模块结构（pipeline / analyzers / collectors / queue / storage / visualizer 的职责）** | [../src/README.md](../src/README.md) |
 | **tests/ 测试用例索引（219 例 pytest + 黄金集门禁 + ML skip）** | [../tests/README.md](../tests/README.md) |
+| **某次改动的来龙去脉 / 项目变更历史** | [CHANGELOG.md](./CHANGELOG.md)（原 AGENTS.md 版本记录；AGENTS.md 只留最近 3 条） |
 
 ---
 
