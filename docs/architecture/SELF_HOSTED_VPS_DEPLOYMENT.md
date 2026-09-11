@@ -509,7 +509,10 @@ curl -I http://127.0.0.1:8000/api/health   # 应 200 {"ok":true,"comments":N}
 
 **7A · 内测阶段（已落地，2026-09-11）**
 
-> **外发前先加 P0-1 全站准入**（`basic_auth`）。`:8443` 是明文 HTTP，basic_auth 只是 base64 编码——**挡得住扫描器/爬虫，挡不住中间人嗅探**；根本解法是 §5.5.4 的 HTTPS。所以：**能上 TLS 就上**，暂时上不了再接受此过渡态。
+> ⚠️ **指令名坑（2026-09-11 实测）**：Caddy **2.6.2（apt/universe 源）里叫 `basicauth`**，`basic_auth` 是 **2.8+ 才有的新名**。照 2.8+ 文档写 `basic_auth` 会 `validate` 失败并报
+> `unrecognized directive: basic_auth`（本站首次部署即踩此坑）。**本手册以下片段统一用 `basicauth`**。
+
+> **外发前先加 P0-1 全站准入**（`basicauth`）。`:8443` 是明文 HTTP，basic_auth 只是 base64 编码——**挡得住扫描器/爬虫，挡不住中间人嗅探**；根本解法是 §5.5.4 的 HTTPS。所以：**能上 TLS 就上**，暂时上不了再接受此过渡态。
 
 ```bash
 # ① 生成口令哈希（每人一个账号；对每个内测人员各跑一次，交互输入明文）
@@ -520,6 +523,11 @@ sudo caddy hash-password            # 输出形如 $2a$14$xxxxxxxx...
 # ② Caddy 由 apt 安装（Ubuntu 24.04 universe 源，2.6.2）；日志目录需先建好
 sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
 
+# 改配置前先备份（tee 会原地覆盖；写坏了靠它回滚）
+sudo cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%Y%m%d-%H%M%S)
+
+# 更稳的姿势：先 tee 到 /tmp/Caddyfile.new → validate 通过再 cp 覆盖 →
+# 这样"配置写错"永远不会碰到线上文件（本站 2026-09-11 即用此法，一次写错被完美挡下）
 sudo tee /etc/caddy/Caddyfile <<'EOF'
 http://:8443 {
     encode gzip zstd
@@ -532,7 +540,8 @@ http://:8443 {
 
     # P0-1（2026-09-11）：全站准入，覆盖 SPA + 全部 API。每行一个内测人员。
     # 用 caddy hash-password 生成的 bcrypt 哈希替换下方占位；不要写明文口令。
-    basic_auth {
+    # 指令名：Caddy 2.6.2 => basicauth；2.8+ => basic_auth（写错直接 validate 失败）
+    basicauth {
         tester01 $2a$14$REPLACE_WITH_HASH_1
         tester02 $2a$14$REPLACE_WITH_HASH_2
     }
@@ -556,8 +565,8 @@ http://:8443 {
 }
 EOF
 
-sudo caddy validate --config /etc/caddy/Caddyfile   # 应 Valid configuration
-sudo systemctl restart caddy
+sudo caddy validate --config /etc/caddy/Caddyfile   # 应打印 Valid configuration
+sudo systemctl reload caddy                         # reload 平滑；restart 亦可
 
 # ③ 验证准入生效（关键）：不带凭据必须 401，带对凭据才 200
 curl -s -o /dev/null -w 'no-auth=%{http_code}\n' http://127.0.0.1:8443/api/health          # 期望 401
@@ -566,8 +575,56 @@ curl -s -u tester01:'<明文口令>' http://127.0.0.1:8443/api/health           
 
 > ⚠️ 必须显式写 `http://:8443`——只写 `:8443` 时 Caddy 可能按「内部 CA 自动 HTTPS」处理并尝试签证书。
 > ⚠️ 云厂商控制台（腾讯云轻量**防火墙**）也要放通 8443/TCP，否则本机 `curl` 通、公网仍打不通。
-> ⚠️ basic_auth 是全站生效的：浏览器首次访问会弹原生登录框；对内测人员说明「用分配的账号密码」即可。撤销某人只需从 `basic_auth` 块删掉那一行并 `systemctl reload caddy`。
+> ⚠️ `basicauth` 是全站生效的：浏览器首次访问会弹原生登录框；对内测人员说明「用分配的账号密码」即可。撤销某人只需从 `basicauth` 块删掉那一行并 `systemctl reload caddy`。
 > 💡 明文 HTTP 下 `curl` 的凭据同样可被嗅探；**若已上 §5.5.4 的 HTTPS，请把 `http://:8443` 换成 `https://` 块**。
+
+**7A-1 · 实测记录（2026-09-11，照本篇执行的线上结果）**
+
+| 验证项 | 实测结果 |
+|---|---|
+| `basicauth` 准入 | 无凭据 `GET /api/health` → **401**；错口令 → **401**；正确凭据 → **200** + `{"ok":true,"comments":18916}`；SPA `/` → **200** |
+| 公网真实路径 | `http://134.175.115.248:8443/api/health` → 401（无凭据）/ 200（有凭据）；首页 200 |
+| P0-2 + P0-3 | 连打 `/api/targets` **130 次**，每次换一个伪造 `X-Forwarded-For: 9.9.9.N` → `200=120 / 429=10`，**第 121 次开始 429** ⇒ 伪造 XFF 不产生新桶，Caddy 覆盖 XFF 与应用层取末段**同时**生效 |
+| P0-5（应用层） | 200KB 报文（过 Caddy）→ **422**，被 `ChatBody.user_msg` 长度上限拦下 |
+| P0-5（传输层） | 2MB 报文 → **502**（原因见下）；Caddy 日志 `"status":502,"size":0,duration≈3ms`，**应用 `web.log` 里查不到这条请求** ⇒ 报文根本没进应用 |
+| P0-4（SSE） | 建会话后 `POST /api/agent/chat`：`ttfb≈1.2s / total≈2.6s`，收到 `event: token` + `event: done`，会话落库 `['user','assistant']` ⇒ **并发闸没有阻塞流式** |
+| fail2ban | `sshd` + 新增 `voc-caddy-401` 两个 jail 均 active（见 §7A-2） |
+
+> ⚠️ **2MB 超限回 502（而非 413）是预期行为，不是故障**：Caddy 的 `request_body` 处理器会在**流式转发请求体**时发现超限，该错误由 `reverse_proxy` 上报，于是被映射成 `502 Bad Gateway`（3ms 内返回、`size:0`、上游无感知）。
+> 安全效果等价——超大报文**进不了应用**，内存与 LLM 成本都守住了；只是状态码语义不精确（浏览器/`curl` 看到 502 不会误判为成功）。
+> **不建议**改回 413：那需要在 `reverse_proxy` 之前用 `expression` 匹配 `Content-Length`，而 **chunked 请求（无 `Content-Length`）会绕过它**，反而更不安全。`request_body` 能兜住 chunked，故保留。
+
+**7A-2 · 给 Caddy 加 fail2ban jail（防 `basicauth` 爆破）**
+
+```bash
+sudo tee /etc/fail2ban/filter.d/caddy-voc.conf <<'EOF'
+[Definition]
+# Caddy JSON 访问日志：basic auth 失败记为 status 401
+failregex = ^.*"remote_ip":"<HOST>".*"status":401.*$
+            ^.*"status":401.*"remote_ip":"<HOST>".*$
+ignoreregex =
+EOF
+
+sudo tee -a /etc/fail2ban/jail.local <<'EOF'
+
+[voc-caddy-401]
+enabled  = true
+port     = 8443
+filter   = caddy-voc
+logpath  = /var/log/caddy/voc.log
+maxretry = 20
+findtime = 10m
+bantime  = 1h
+# 回环豁免：本机 curl 自测会产生 401，先把自己豁免掉；给自己固定出口 IP 也建议加进来
+ignoreip = 127.0.0.1/8 ::1
+EOF
+
+sudo fail2ban-client -t          # 先做配置测试，OK 再重启（失败则线上不受影响）
+sudo systemctl restart fail2ban
+sudo fail2ban-client status voc-caddy-401
+```
+
+> 撤销封禁：`sudo fail2ban-client set voc-caddy-401 unbanip <IP>`；查已封：`sudo fail2ban-client status voc-caddy-401`。
 
 **7B · 域名阶段（备案通过后）**
 
@@ -576,6 +633,13 @@ sudo tee /etc/caddy/Caddyfile <<'EOF'
 erself.site {
     encode gzip zstd
     request_body { max_size 1MB }             # P0-5：单请求体积上限
+    # ⚠️ 切域名阶段**不要把准入一起丢掉**：P0-1 的 basicauth 必须一并搬过来，
+    #    否则 HTTPS 只解决了"明文可被嗅探"，站点又变回对全网裸奔（§5.5.1 要求 SPA 层有准入）。
+    #    哈希沿用 §7A 生成的即可（同一哈希可跨配置复用）；2.6.2 用 basicauth。
+    basicauth {
+        tester01 $2a$14$REPLACE_WITH_HASH_1
+        tester02 $2a$14$REPLACE_WITH_HASH_2
+    }
     reverse_proxy 127.0.0.1:8000 {
         header_up X-Forwarded-For {remote_host}   # P0-2：覆盖伪造 XFF
     }
@@ -648,7 +712,7 @@ ls -la data/voc.db                          # 应 -rw------- voc voc
 
 | 层级 | 端点 | 整改前防护 | 整改后 |
 |---|---|---|---|
-| SPA | `/`（5 页看板） | 无 | Caddy basic_auth |
+| SPA | `/`（5 页看板） | 无 | Caddy `basicauth`（已上线） |
 | 公开只读 API | `/api/targets` `/overview` `/topics` `/comments` `/opinions` `/compare` `/trends` `/wordcloud` `/bilibili/videos` `/danmaku` `/games/meta` | **零限流** | 120 req/min/IP |
 | Agent API | `/api/agent/sessions`(CRUD) `/chat`(SSE) `/search` `/export` | 60 req/min/IP（**XFF 可伪造绕过**） | 30 req/min/IP + 日额度 + 并发上限 |
 | 管理 API | `/api/admin/*` | admin session（fail-closed） | 不变 |
@@ -656,15 +720,15 @@ ls -la data/voc.db                          # 应 -rw------- voc voc
 
 ### 5.5.2 P0 必做清单（逐项勾选，缺一不外发）
 
-- [ ] **P0-1 全站准入**：Caddy `basic_auth`（bcrypt），覆盖全站含 API。**建议每人一个账号**——否则口令泄漏后无法定位、只能全员封禁。配置见 §7A。
-- [ ] **P0-2 修复 XFF 伪造绕过限流**：`auth.client_ip()` 原取 `X-Forwarded-For` **首段**，而 Caddy 反代把真实 IP 追加在**末尾**且不覆盖客户端自带值 → 攻击者自带伪造头即可每次换 IP，绕过全部限流。修复：①Caddy `header_up X-Forwarded-For {remote_host}`（覆盖，丢弃伪造值）；②应用层取**末段**。
-- [ ] **P0-3 公开只读端点限流**：`/api/wordcloud` 是 jieba + 跨游戏 TF-IDF **重算**、`/compare`/`/trends` 亦为 CPU 密集，2C2G 单机一个循环脚本即可打满。整改：通用 `Depends` 限流器挂 `public_router`（一处生效，覆盖全部公开只读端点），阈值分级（读端点 `PUBLIC_RATE_LIMIT_PER_MIN`，默认 120；Agent `AGENT_RATE_LIMIT_PER_MIN`，默认 30）。`/api/health` 挂在 app 上不受影响（供监控探活）。
-- [ ] **P0-4 Agent 成本熔断**：原仅 per-IP 计数，无全局日额度、无 `max_tokens`、无并发上限。`chat.py` 单次最多 5 轮 tool，每轮全量 messages 重发（token 近 O(轮数²)）→ 一天可烧干余额。整改（均已落地于 `src/api/auth.py` + `src/agent/chat.py`）：
+- [x] **P0-1 全站准入**：Caddy `basicauth`（bcrypt，**2.6.2 的指令名**；2.8+ 才叫 `basic_auth`），覆盖全站含 API。**建议每人一个账号**——否则口令泄漏后无法定位、只能全员封禁。配置见 §7A，实测见 §7A-1。
+- [x] **P0-2 修复 XFF 伪造绕过限流**：`auth.client_ip()` 原取 `X-Forwarded-For` **首段**，而 Caddy 反代把真实 IP 追加在**末尾**且不覆盖客户端自带值 → 攻击者自带伪造头即可每次换 IP，绕过全部限流。修复：①Caddy `header_up X-Forwarded-For {remote_host}`（覆盖，丢弃伪造值）；②应用层取**末段**。
+- [x] **P0-3 公开只读端点限流**：`/api/wordcloud` 是 jieba + 跨游戏 TF-IDF **重算**、`/compare`/`/trends` 亦为 CPU 密集，2C2G 单机一个循环脚本即可打满。整改：通用 `Depends` 限流器挂 `public_router`（一处生效，覆盖全部公开只读端点），阈值分级（读端点 `PUBLIC_RATE_LIMIT_PER_MIN`，默认 120；Agent `AGENT_RATE_LIMIT_PER_MIN`，默认 30）。`/api/health` 挂在 app 上不受影响（供监控探活）。
+- [x] **P0-4 Agent 成本熔断**（2026-09-11 上线，SSE 实测不阻塞流式）：原仅 per-IP 计数，无全局日额度、无 `max_tokens`、无并发上限。`chat.py` 单次最多 5 轮 tool，每轮全量 messages 重发（token 近 O(轮数²)）→ 一天可烧干余额。整改（均已落地于 `src/api/auth.py` + `src/agent/chat.py`）：
   - `AGENT_DAILY_CHAT_LIMIT`（默认 300）+ `AGENT_DAILY_CHAT_LIMIT_PER_IP`（默认 50）——自然日（UTC+8）额度，超限 429；额度在**会话归属校验之后**扣减，避免被越权请求刷爆。
   - `AGENT_MAX_TOKENS`（默认 2048）——单轮输出上限，直接传给 LLM。
   - `AGENT_MAX_CONCURRENCY`（默认 2）+ `AGENT_QUEUE_WAIT_SEC`（默认 20）——全局并发闸，满时短时排队、超时发 `error(busy)` 事件（SSE 已开始，无法再返 429）。
   - ⚠️ 计数在进程内（uvicorn 单 worker），**重启即清零**；持久化随 P1 审计日志一起做。
-- [ ] **P0-5 请求体大小限制**：`ChatBody.user_msg` / `history` 原无长度上限，可塞超大 JSON 直灌 LLM（按 token 计费）或写库。整改（已落地 `src/api/routers_agent.py`）：
+- [x] **P0-5 请求体大小限制**（2026-09-11 上线，实测 200KB→422 / 2MB→502）：`ChatBody.user_msg` / `history` 原无长度上限，可塞超大 JSON 直灌 LLM（按 token 计费）或写库。整改（已落地 `src/api/routers_agent.py`）：
   - `user_msg ≤ 4000`、`history ≤ 50 条`、每条 `content ≤ 20000`；`session_id ≤ 64`、`tool_call_id ≤ 128`、`tool_name ≤ 64`；`CreateSessionBody` 的 `page_context ≤ 8000` / `title ≤ 100` / `model ≤ 64`（超限一律 422）。
   - Caddy `request_body { max_size 1MB }`（§7A / §7B）——传输层兜底。
 
@@ -686,7 +750,7 @@ ls -la data/voc.db                          # 应 -rw------- voc voc
 
 ### 5.5.5 必做运维配置（非代码）
 
-- [ ] **fail2ban** 安装 + 给 Caddy 加 jail（防 basic_auth 爆破）——§5 承诺但一直未落地。
+- [x] **fail2ban** 安装 + 给 Caddy 加 jail（防 basic_auth 爆破）（2026-09-11 落地，`sshd` + `voc-caddy-401` 两 jail active；配置见 §7A-2）。
 - [ ] **ufw / 云防火墙**：8443 收敛；SSH `AllowUsers voc`；密钥登录（已做）。
 - [ ] **备份加密**：`backups/voc-*.db` 含 B 站用户数据。
 
@@ -836,7 +900,7 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 - [x] §4 步骤 1–5：voc 用户 / 系统包 / 代码 / `.env`（600）/ data 目录（2026-09-11）
 - [x] §6.5 `voc-web.service`（uvicorn `127.0.0.1:8000`，enabled + active）+ systemd 加固（**ProtectHome 必须 read-only**）
 - [x] §7 Caddy 反代：apt 2.6.2，`:8443` 内测阶段已上线（域名 HTTPS 待备案后切 §7B）
-- [x] §5 安全清单：ufw 已启用（22/80/443/8443）、DB 600、`.env` 600、SSH 密钥登录；⚠️ **fail2ban 待装**
+- [x] §5 安全清单：ufw 已启用（22/80/443/8443）、DB 600、`.env` 600、SSH 密钥登录；**fail2ban 已装**（`sshd` + `voc-caddy-401` 两 jail active，见 §7A-2）
 - [x] 确认 VPS 不装 ML 依赖；确认 `/data/voc.db`、`/.env` 公网 404（2026-09-11 实测）
 
 **验收**
@@ -853,6 +917,7 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-11 | **§7A 手册与线上实测对齐（Caddy 2.6.2 指令名坑 + 实测记录表 + fail2ban jail）**：①**指令名坑**——Caddy **2.6.2（apt/universe）里是 `basicauth`**，`basic_auth` 是 **2.8+ 新名**；照 2.8+ 文档写会 `validate` 失败并报 `unrecognized directive: basic_auth`（本站首次部署即踩），§7A 片段统一改 `basicauth` 并加警告；②§7A 补「先备份 + 先 `validate` 再覆盖」安全操作法（改写 `/tmp/Caddyfile.new` → 验证 → 覆盖），`restart`→`reload`；③新增 **§7A-1 实测记录表**：no-auth→**401** / with-auth→**200**；**130 次伪造 XFF 连打 → 200=120 / 429=10，首个 429 恰在 #121**（P0-2+P0-3 同时生效）；200KB→**422**；2MB→**502**（含"为何不改回 413"说明：`expression` 匹配 `Content-Length` 无法兜 chunked）；SSE `ttfb≈1.2s/total≈2.6s` 收到 `token`+`done` 且落库 `['user','assistant']`（P0-4 不阻塞流式）；④新增 **§7A-2 fail2ban jail**（filter 匹配 Caddy JSON 日志 `"status":401`，jail `voc-caddy-401`，`-t` 先测再重启）；⑤§5.5.2 P0-4/P0-5 与 §5.5.5 fail2ban 勾选、§11 fail2ban 由「待装」改「已装」 | 工程师「把你能替我做的都做好」：把本轮实测结论固化进手册，消除"文档写的 Caddy 指令在线上跑不通 / fail2ban 一直待装"类不一致 |
 | 2026-09-11 | **§5.5 安全加固 P0-1/2/3/4 落地**：①**P0-2**（代码）`auth.client_ip()` 由 XFF **首段**改取**末段**（反代追加的真实 IP；首段可被客户端伪造 → 原限流可被"每次换一个随机 XFF"绕过）；§7A/§7B Caddyfile 均加 `header_up X-Forwarded-For {remote_host}` 覆盖；新增 2 例回归。②**P0-1**（VPS 配置）§7A 重写为 `caddy hash-password` + `basic_auth { 每人一行 }` 全站准入，含"不带凭据必须 401"验证与撤人步骤。③**P0-3**（代码）通用 `_rate_check` 抽离，新增 `check_public_rate`/`public_rate_limit` 并挂 `public_router`（一处覆盖 11 个公开只读端点，默认 120/min/IP）；`/api/health` 不受影响；新增回归 1 例。④**P0-4**（代码）新增日额度熔断 `AGENT_DAILY_CHAT_LIMIT`(300)/`AGENT_DAILY_CHAT_LIMIT_PER_IP`(50)（UTC+8 自然日、归属校验后扣减）、`AGENT_MAX_TOKENS`(2048) 传入 LLM、并发闸 `AGENT_MAX_CONCURRENCY`(2)+`AGENT_QUEUE_WAIT_SEC`(20)（`stream_chat_guarded` 包装，满则发 `error(busy)`）；新增回归 5 例。`.env.example` 同步 7 个新 env | 工程师「继续」：把 §5.5 的 P0 清单从"待办"变成"已落地代码 + 待执行 VPS 配置" |
 | 2026-09-11 | **新增 §5.5 内测期安全加固**：备案前外发链接前的 P0 清单（全站准入 basic_auth / XFF 伪造修复 / 公开端点限流 / Agent 成本熔断 / 请求体上限）+ P1（审计日志 / 公网模式自检 / CSP / B站用户信息脱敏）+ 备案前 HTTPS 两条路（DNS-01 签 `erself.site` / Cloudflare 代理）+ 必做运维配置 | 工程师「备案前要给内测人员访问」：把安全整改固化为可勾选清单，避免"裸 IP + 无鉴权 + 明文"外发 |
 | 2026-09-11 | **VPS 内测上线：systemd 常驻 + Caddy 反代**：①`voc-web.service` 落地（`uvicorn src.api.main:app --host 127.0.0.1 --port 8000`，`User=voc`，`Restart=always`，`enable` 开机自启）——**实测坑**：手册原写的 `ProtectHome=true` 会导致 `status=203/EXEC`（`/home` 被挂成空目录、venv 二进制无法解析），已改为 `ProtectHome=read-only` 并同步修正 §6 / §6.5 两处 unit；②Caddy 由 apt 装（2.6.2 / universe 源），§7 重写为「7A 内测 `:8443` 明文反代（**必须显式 `http://:8443`**，否则可能走内部 CA）+ 7B 域名块（`erself.site` 自动 HTTPS）」；③安全加固：`ufw` 启用（22/80/443/8443，先放 22 再 `enable` 保证 SSH 不断）、DB/`.env` 均 600、SSH 密钥登录（有效私钥 `~/.ssh/k_lynx_web.pem`）；**fail2ban 因审批未落地，待装**；④实测：公网 `http://134.175.115.248:8443/api/health` → `{"ok":true,"comments":18916}`、SPA 首页 200、`/data/voc.db` 与 `/.env` → 404；⑤§11 勾选同步 | 工程师「继续任务」：把临时 `nohup uvicorn` 固化为 systemd 常驻服务并接 Caddy 反代 |
