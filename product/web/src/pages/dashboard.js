@@ -578,21 +578,45 @@ Routes.dashboard = async function (app) {
   }
   /* SENTI_LABEL 在本文件下方定义；前置引用在 JS 里合法（函数声明提升） */
 
-  /* ---- 刷新编排（竞态守卫） ---- */
+  /* ---- 刷新编排（竞态守卫 + 在途合并）----
+     reqSeq 只丢弃**过期响应**，并不阻止**重复请求**：原实现每来一次触发就发满一轮
+     （overview+trends+topics[+comments]）。线上审计库实测「1 秒内 10 次 refreshCharts」，
+     即连续操作把 120 req/min/IP 撞穿 → 前端弹「请求过于频繁」。
+     2026-09-11 加"在途合并"：一轮进行中再来触发只记一个标记，结束后**补跑一次**（而不是
+     补跑 N 次）。快速连点/连续切筛选不再放大请求数；补跑时会重新读取最新 state。 */
+  let chartBusy = false, chartQueued = false;
   async function refreshCharts() {
-    const seq = ++reqSeq;
+    if (chartBusy) { chartQueued = true; return; }
+    chartBusy = true;
     try {
-      await Promise.all([renderOverview(seq), renderTrend(seq), renderBoardCharts(seq)]);
-    } catch (e) { if (seq === reqSeq) toast(e.message, true); }
-    setAgentContext();
+      do {
+        chartQueued = false;
+        const seq = ++reqSeq;
+        try {
+          await Promise.all([renderOverview(seq), renderTrend(seq), renderBoardCharts(seq)]);
+        } catch (e) { if (seq === reqSeq) toast(e.message, true); }
+        setAgentContext();
+      } while (chartQueued);
+    } finally { chartBusy = false; }
   }
+
+  let listBusy = false, listQueued = false;
   async function refreshList() {
-    await renderList();  // renderList 内部用 reqSeq 防过期
-    setAgentContext();
+    if (listBusy) { listQueued = true; return; }
+    listBusy = true;
+    try {
+      do {
+        listQueued = false;
+        await renderList();  // renderList 内部用 reqSeq 防过期
+        setAgentContext();
+      } while (listQueued);
+    } finally { listBusy = false; }
   }
+
   async function refreshGlobal() {
     state.page = 1;  // 游戏/时间变化 → 列表回第一页
-    await Promise.all([refreshCharts(), renderList()]);
+    // 走 refreshList（而非 renderList）以便共用同一套在途合并
+    await Promise.all([refreshCharts(), refreshList()]);
   }
 
   $('selGame').addEventListener('change', e => { state.target = e.target.value; refreshGlobal(); });

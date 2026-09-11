@@ -42,10 +42,33 @@ async function snapshotGet(path) {
 }
 
 const API = (() => {
-  async function request(path, opts = {}) {
+  /* ---- 在途去重（2026-09-11）----
+     同一 method+path 若已有请求在飞，直接复用同一个 Promise，不再多发一次。
+     动机：一次刷新会并发多条请求，页面切换 / 连续筛选时同一 URL 会被重复发起；线上审计库
+     实测出现「1 秒内 10 次 /api/overview」，把 120 req/min/IP 的闸门撞穿后前端拿到 429
+     （用户侧看到「加载失败：请求过于频繁」）。
+     **只在「在途」期间合并**：settle 后立刻从表里移除 —— 不产生任何缓存，实时语义不变
+     （下一条同 URL 请求一定是新请求）。非 GET 一律不合并。 */
+  const inflight = new Map();
+
+  function request(path, opts = {}) {
     if (window.STATIC_SNAPSHOT && (!opts.method || opts.method === 'GET')) {
       return snapshotGet(path);
     }
+    const method = opts.method || 'GET';
+    if (method !== 'GET') return doFetch(path, opts);
+
+    const key = method + ' ' + path;
+    const hit = inflight.get(key);
+    if (hit) return hit;                    // 复用在途请求
+    const p = doFetch(path, opts);
+    inflight.set(key, p);
+    // 无论成败都要摘掉，否则失败会永久"粘住"这个 URL
+    p.then(() => inflight.delete(key), () => inflight.delete(key));
+    return p;
+  }
+
+  async function doFetch(path, opts) {
     const r = await fetch(path, {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
