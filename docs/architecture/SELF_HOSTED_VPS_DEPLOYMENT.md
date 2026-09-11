@@ -9,8 +9,8 @@
 > - 字段与存储设计：[DATA_FIELDS.md](./DATA_FIELDS.md) / [DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
 > - 安全与隐私声明：[SECURITY.md](../SECURITY.md)（如存在）
 >
-> **最后更新**：2026-09-10
-> **状态**：🟡 落地准备中——**启用变体 ①b**（本机采集 + DB 同步 + VPS 只读服务，见 §0.5），待 VPS/域名/备案到位
+> **最后更新**：2026-09-11
+> **状态**：🟢 内测已上线——VPS 跑 `voc-web.service`（uvicorn `127.0.0.1:8000`，systemd 常驻 + 开机自启）+ Caddy `:8443` 反代，公网 `http://134.175.115.248:8443` 可访问；变体 ①b（本机采集 + DB 同步 + VPS 只读服务，见 §0.5）；域名 HTTPS 待 ICP 备案通过后切 §7B
 
 ---
 
@@ -167,21 +167,6 @@ Steam / B站 采集 + LLM 标注                    ├─ SPA（product/web/，
 
 > 同价位替代：阿里云轻量应用服务器（流程几乎一致）。有既有云账号的优先用已注册那家，省一次实名。
 
-**购买界面逐项选择（2026-09-10 对照实际控制台）**
-
-| 界面项 | 选什么 | 为什么 |
-|---|---|---|
-| 镜像类型 | **基于操作系统镜像** | ⚠️ 不要选「使用应用镜像」（Hermes Agent / WordPress 等预设栈）——本项目要自己装 Ubuntu + Python + Caddy，选应用镜像等于预装一堆没用的东西，后续还得重装系统 |
-| 操作系统 | **Ubuntu 24.04 LTS** | 本文档 §4 部署步骤全按 Ubuntu 写的；ARM/x86 均可 |
-| 地域 | **中国香港**（免备案、当天上线）或 **上海/广州**（需 ICP 备案、延迟最低） | 见上文地域对比；内测阶段建议香港。⚠️ 界面若显示「企业」等专区标签，点开确认可选到目标地域 |
-| 套餐 | **2 核 2G**，系统盘 ≥40 GB SSD，带宽 ≥3 Mbps，月流量 ≥2000 GB | 本项目常驻 300–500 MB、DB 129 MB、日增 2–10 MB；4 核 8G 属于浪费。同价位优先选磁盘/带宽更大的档 |
-| 时长 | **1 年** | 新客折扣最大（首年常见 ¥60–120）；按月买性价比差 |
-| 登录方式 | **SSH 密钥对**（新建密钥 → 下载并妥善保存私钥） | 最安全，直接满足 §5「SSH 仅密钥登录」红线；也可以先设密码，部署时再换密钥 |
-| 实例名称 | 如 `voc-web` | 便于后续多实例区分 |
-| 自动续费 | 可选；若不确定长期用，先**不勾** | 避免忘记后自动扣费 |
-
-> 下单后请提供：**公网 IP**、**SSH 端口**（默认 22）、**登录用户**（Ubuntu 镜像默认 `ubuntu`）、以及 SSH 公钥是否已绑定——即可进入 §4 部署。
-
 **地域怎么选（决定能否立刻上线）**
 
 | 地域 | 备案要求 | 上线速度 | 国内访问延迟 | 建议 |
@@ -200,6 +185,21 @@ Steam / B站 采集 + LLM 标注                    ├─ SPA（product/web/，
 
 **成本小结（首年）**：轻量 ¥60–120 + 域名 ¥30–80 = **约 ¥100–200/年**（免备案走香港节点可当天上线）。
 
+**购买界面逐项选择（2026-09-10 对照实际控制台）**
+
+| 界面项 | 选什么 | 为什么 |
+|---|---|---|
+| 镜像类型 | **基于操作系统镜像** | ⚠️ 不要选「使用应用镜像」（Hermes Agent / WordPress 等预设栈）——本项目要自己装 Ubuntu + Python + Caddy，选应用镜像等于预装一堆用不上的东西，后续还得重装系统 |
+| 操作系统 | **Ubuntu 24.04 LTS** | 本文档 §4 部署步骤全按 Ubuntu 写 |
+| 地域 | **中国香港**（免备案、当天上线）或 **上海/广州**（需 ICP 备案、延迟最低） | 见上文地域对比；内测建议香港。⚠️ 界面若显示「企业」等专区标签，点开确认可选到目标地域 |
+| 套餐 | **2 核 2G**，系统盘 ≥40 GB SSD，带宽 ≥3 Mbps，月流量 ≥2000 GB | 本项目常驻 300–500 MB、DB 129 MB、日增 2–10 MB；4 核 8G 属浪费。同价位优先选磁盘/带宽更大的档 |
+| 时长 | **1 年** | 新客折扣最大（首年常见 ¥60–120）；按月买性价比差 |
+| 登录方式 | **SSH 密钥对**（新建密钥 → 下载并妥善保存私钥） | 最安全，直接满足 §5「SSH 仅密钥登录」红线；也可先设密码，部署时再换密钥 |
+| 实例名称 | 如 `voc-web` | 便于后续多实例区分 |
+| 自动续费 | 可选；不确定长期用则先**不勾** | 避免忘记后自动扣费 |
+
+> 下单后请提供：**公网 IP**、**SSH 端口**（默认 22）、**登录用户**（Ubuntu 镜像默认 `ubuntu`）、SSH 公钥是否已绑定——即可进入 §4 部署。
+
 **下一步无需等你完全准备好**：VPS 一到手即可按 §4 步骤 1–5 初始化（装环境 / 建 voc 用户 / 配 .env），域名与备案可并行推进；Caddy 证书在域名生效后一步到位。
 
 ### 3.4 香港 → 大陆 迁移路径（2026-09-10 确认）
@@ -208,18 +208,79 @@ Steam / B站 采集 + LLM 标注                    ├─ SPA（product/web/，
 
 | 问题 | 答案 |
 |---|---|
-| 能改地域吗？ | ❌ 轻量实例地域固定，不支持原地切换 |
-| 要再花钱吗？ | ✅ 需再买一台大陆实例；香港那台按下方处置 |
-| 要重新配环境吗？ | ❌ 不必——官方支持**自定义镜像跨地域复制**：香港实例制作自定义镜像 → 复制到大陆目标地域 → 用该镜像新建实例 |
-| 香港那台怎么办？ | 购买后 **5 天内可无理由自助退还**（每个主体 × 每个套餐类型**仅限首次**）；超过 5 天则**到期不续**（损失可控：约 ¥102/年） |
-| 域名要换吗？ | ❌ 不变；只需改 DNS 解析到新 IP（切换前把 TTL 调短，如 300s）；Caddy 在新机自动重签证书 |
-| 备案要重做吗？ | 大陆节点**首次上线必须 ICP 备案**（这一步省不掉）；同账号同域名后续换机器走「接入备案/变更」，比首次快得多 |
+| 能改地域吗 | ❌ 轻量实例地域固定，不支持原地切换 |
+| 要再花钱吗 | ✅ 需再买一台大陆实例；香港那台按下方处置 |
+| 要重新配环境吗 | ❌ 不必——官方支持**自定义镜像跨地域复制**：香港实例制作自定义镜像 → 复制到大陆目标地域 → 用该镜像新建实例 |
+| 香港那台怎么办 | 购买后 **5 天内可无理由自助退还**（每个主体 × 每个套餐类型**仅限首次**）；超过 5 天则**到期不续**（损失可控：约 ¥102/年） |
+| 域名要换吗 | ❌ 不变；只需改 DNS 解析到新 IP（切换前把 TTL 调短，如 300s）；Caddy 在新机自动重签证书 |
+| 备案要重做吗 | 大陆节点**首次上线必须 ICP 备案**（这步省不掉）；同账号同域名后续换机器走「接入备案/变更接入」，比首次快得多 |
 
 **两条采购策略（按能否等备案选）**
 
 - **策略 A（省钱，只买一台）**：直接买**大陆**节点 + 立即提交 ICP 备案；备案期间（1–3 周）用 `http://<IP>:8443` 做内测，备案通过后解析域名 + Caddy 自动 HTTPS。
-- **策略 B（当天可用，推荐内测）**：先买**香港**节点，当天上线给内测用户；同时并行提交备案；备案通过后按「自定义镜像跨地域复制」迁到大陆，香港机 5 天内退或到期不续。
+- **策略 B（当天可用，内测推荐）**：先买**香港**节点，当天上线给内测用户；同时并行提交备案；备案通过后按「自定义镜像跨地域复制」迁到大陆，香港机 5 天内退或到期不续。
   - 迁移耗时：脚本化部署后约 **30–60 分钟**（镜像复制 + 新建实例 + 改 DNS + DB 同步一次）。
+
+### 3.5 域名规划（一个域名能放多少站点/页面 · 2026-09-11）
+
+**结论**：一个域名可承载**不限数量**的页面与服务，限制不在域名本身，而在「怎么把请求路由到不同后端」。
+
+四种区分方式（由推荐到不推荐）：
+
+| 方式 | 示例 | 数量 | 说明 |
+|---|---|---|---|
+| **同域名下按路径** | `voc.example.com/compare`、`/api/*` | 无限 | 本项目 VPS 版即此形态：一个 uvicorn 同时托管 SPA 5 页 + 全部 API + Agent 抽屉（hash 路由 `#/compare` 不进服务端） |
+| **子域名** | `voc.example.com`（VPS）、`snapshot.example.com`（EdgeOne 静态站） | 理论无限 | 区分「不同站点」最干净的方式；DNS 各加一条记录即可 |
+| **端口** | `voc.example.com:8443` | 受端口限制 | 仅用于临时/内测（如备案期自测）；浏览器默认只走 80/443，不友好 |
+| **多 IP** | 同一域名解析到多台机 | 不限 | 属负载均衡，**不能按路径分流**；按路径/Host 分流必须靠反向代理（Caddy/Nginx） |
+
+**本项目推荐映射**（与 §0.5 架构对应）：
+
+```
+voc.example.com        → VPS（Caddy → uvicorn:8000）：实时查询 + Agent 对话 + admin
+snapshot.example.com   → EdgeOne Pages（CNAME 到平台分配域名）：静态快照门面，永不宕机
+```
+
+**五条容易踩的配套约束**：
+
+1. **HTTPS 证书**：Caddy 对每个域名自动申请；子域多时可用一张通配符 `*.example.com`（DNS-01 挑战）。通配符只覆盖一级子域（不含 `a.b.example.com`）。
+2. **CORS / 同源**：不同子域 = 不同源。若把静态前端放 `static.` 而后端 API 在 `voc.`，跨源调用需配 CORS——**当前方案不涉及**（前端由 uvicorn 同源托管）。
+3. **Cookie 域**：admin session 若要跨子域共享需设 `domain=.example.com`；不需要就保持默认（更安全）。
+4. **备案（大陆节点）**：ICP 备案按**主域名**登记网站，其子域名一般随主域名一并可用，无需逐个备案；换接入商时做「接入备案」。香港节点无此约束。
+5. **别让同一主机名同时指向两处**：主域解析到 VPS、静态站用子域——不要用 A 记录把同一主机名指向两台不同用途的机器（会随机分流，证书与业务都会乱）。
+
+### 3.6 备案操作顺序与时间线（2026-09-11 · 已购大陆域名）
+
+**结论：先买轻量服务器，再走备案**（顺序不能反）。
+
+两个硬性前置（官方文档核实）：
+
+1. **备案必须挂在一个已购买的大陆境内云资源上**——腾讯云轻量文档明确：需先购买**中国内地地域**轻量实例，**包年包月**且**购买时长 > 3 个月**；备案服务码从该实例申请（买 1 年即满足）。
+2. **域名实名认证后需等 3 个自然日**（非腾讯云注册的域名需满 3 个工作日）才能提交备案，且**实名信息必须与备案主体一致**。
+
+**最优时间线（部署与备案并行，不互相等）**
+
+| 时间 | 做什么 | 依赖 |
+|---|---|---|
+| Day 0 | 买大陆轻量（包年包月 ≥3 个月，建议 1 年）→ 拿到 IP | — |
+| Day 0 | **不等备案**：按 §4 步骤 1–5 部署，用 `http://<IP>:8443` 自测（非标端口不受未备案阻断） | 有 IP |
+| Day 0 | 确认域名实名认证已通过（注册商处） | 域名已买 |
+| Day 0–3 | 等实名数据同步工信部（3 个自然日） | 实名通过 |
+| Day 3+ | 轻量控制台申请**备案服务码** → 提交**首次 ICP 备案**（主体 + 网站 + 域名） | 实例 + 同步完成 |
+| Day 4–6 | 腾讯云初审（1–2 个工作日） | 提交完成 |
+| Day 6–20 | 通信管理局审核（一般 1–2 周，最长 20 工作日） | 初审通过 |
+| 通过后 | DNS A 记录指向 VPS → Caddy 自动申请 HTTPS → 域名正式上线 | 备案号下发 |
+| 通过后 30 日内 | 完成**公安联网备案**（全国互联网安全管理服务平台） | ICP 备案号 |
+
+> ⚠️ 备案期间**不要让域名对外提供 web 服务**（未备案的域名解析到大陆 IP 会被拦），但用 `IP:8443` 自测完全没问题——这正是「部署先行、域名后切」的价值。
+
+**备案常见坑（提前规避）**
+
+1. **网站名称/性质**：个人备案不能写「平台 / 论坛 / 官网」等词，建议写「个人技术学习笔记 / 数据分析学习记录」这类中性名称；避免经营性表述。
+2. **交互式服务风险**：本项目含 Agent 对话（用户输入）与留言式交互，个人备案审核可能关注这一点——**内测阶段建议限制访问**（admin 口令 / 白名单 / 不公开分享），对外描述保持「数据分析展示」。
+3. **域名后缀**：需为工信部批复后缀（`.cn` `.com` `.net` `.top` 等可以；部分新后缀不可备案）——购买前确认。
+4. **主体一致性**：域名持有者、备案主体、网站负责人三者信息必须一致（个人备案 = 身份证信息），否则驳回。
+5. **接入商**：必须与实际托管服务商一致（我们就是腾讯云，一致）。
 
 ---
 
@@ -369,10 +430,12 @@ StandardOutput=append:/home/voc/voc-platform/logs/streamlit.log
 StandardError=append:/home/voc/voc-platform/logs/streamlit.log
 
 # 安全加固
+# ⚠️ ProtectHome 只能用 read-only：=true 会把 /home 挂成空目录，venv 里的
+#    streamlit 二进制无法解析 → systemd 报 status=203/EXEC 起不来（2026-09-11 实测）
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 ReadWritePaths=/home/voc/voc-platform/data /home/voc/voc-platform/logs
 
 [Install]
@@ -422,10 +485,11 @@ StandardOutput=append:/home/voc/voc-platform/logs/web.log
 StandardError=append:/home/voc/voc-platform/logs/web.log
 
 # 安全加固（同 §6.1）
+# ⚠️ ProtectHome 只能用 read-only：=true → /home 空目录 → 203/EXEC（2026-09-11 实测）
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 ReadWritePaths=/home/voc/voc-platform/data /home/voc/voc-platform/logs
 
 [Install]
@@ -439,21 +503,87 @@ curl -I http://127.0.0.1:8000/api/health   # 应 200 {"ok":true,"comments":N}
 
 > Caddy 反代目标由 `8501`（Streamlit）改为 `8000`（Web 看板）即可——二选一，或继续并存各自绑端口。
 
-### 步骤 7 · Caddy 反向代理 + 自动 HTTPS（3 分钟）
+### 步骤 7 · Caddy 反向代理（内测 8443 → 域名 HTTPS）
+
+> **两个阶段**：备案未通过前只用 `:8443` 明文反代、IP 直连自测；备案通过 + DNS 解析就绪后换成域名块，Caddy 自动签发证书。
+
+**7A · 内测阶段（已落地，2026-09-11）**
+
+> **外发前先加 P0-1 全站准入**（`basic_auth`）。`:8443` 是明文 HTTP，basic_auth 只是 base64 编码——**挡得住扫描器/爬虫，挡不住中间人嗅探**；根本解法是 §5.5.4 的 HTTPS。所以：**能上 TLS 就上**，暂时上不了再接受此过渡态。
 
 ```bash
-# 7.1 编辑 Caddyfile（假设域名 voc.example.com）
+# ① 生成口令哈希（每人一个账号；对每个内测人员各跑一次，交互输入明文）
+sudo caddy hash-password            # 输出形如 $2a$14$xxxxxxxx...
+#  非交互（注意 shell history 会留痕，生成后清 history）：
+#  caddy hash-password --plaintext '一行随机口令'
+
+# ② Caddy 由 apt 安装（Ubuntu 24.04 universe 源，2.6.2）；日志目录需先建好
+sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
+
 sudo tee /etc/caddy/Caddyfile <<'EOF'
-voc.example.com {
-    reverse_proxy 127.0.0.1:8501
+http://:8443 {
     encode gzip zstd
+
+    # P0-5（2026-09-11）：单请求体积上限，挡超大 JSON 直灌 LLM / 写库
+    # （SPA 正常请求为几十 KB 级，1MB 有充裕余量；应用层另有逐字段长度校验）
+    request_body {
+        max_size 1MB
+    }
+
+    # P0-1（2026-09-11）：全站准入，覆盖 SPA + 全部 API。每行一个内测人员。
+    # 用 caddy hash-password 生成的 bcrypt 哈希替换下方占位；不要写明文口令。
+    basic_auth {
+        tester01 $2a$14$REPLACE_WITH_HASH_1
+        tester02 $2a$14$REPLACE_WITH_HASH_2
+    }
+
+    reverse_proxy 127.0.0.1:8000 {
+        # P0-2（2026-09-11）：覆盖 X-Forwarded-For，丢弃客户端伪造值。
+        # 默认行为是"追加"，客户端可自带 XFF 绕过限流；显式覆盖后应用层拿到的就是真实 IP。
+        header_up X-Forwarded-For {remote_host}
+    }
+
     header {
-        # 安全头
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    log {
+        output file /var/log/caddy/voc.log
+    }
+}
+EOF
+
+sudo caddy validate --config /etc/caddy/Caddyfile   # 应 Valid configuration
+sudo systemctl restart caddy
+
+# ③ 验证准入生效（关键）：不带凭据必须 401，带对凭据才 200
+curl -s -o /dev/null -w 'no-auth=%{http_code}\n' http://127.0.0.1:8443/api/health          # 期望 401
+curl -s -u tester01:'<明文口令>' http://127.0.0.1:8443/api/health                          # 期望 {"ok":true,...}
+```
+
+> ⚠️ 必须显式写 `http://:8443`——只写 `:8443` 时 Caddy 可能按「内部 CA 自动 HTTPS」处理并尝试签证书。
+> ⚠️ 云厂商控制台（腾讯云轻量**防火墙**）也要放通 8443/TCP，否则本机 `curl` 通、公网仍打不通。
+> ⚠️ basic_auth 是全站生效的：浏览器首次访问会弹原生登录框；对内测人员说明「用分配的账号密码」即可。撤销某人只需从 `basic_auth` 块删掉那一行并 `systemctl reload caddy`。
+> 💡 明文 HTTP 下 `curl` 的凭据同样可被嗅探；**若已上 §5.5.4 的 HTTPS，请把 `http://:8443` 换成 `https://` 块**。
+
+**7B · 域名阶段（备案通过后）**
+
+```bash
+sudo tee /etc/caddy/Caddyfile <<'EOF'
+erself.site {
+    encode gzip zstd
+    request_body { max_size 1MB }             # P0-5：单请求体积上限
+    reverse_proxy 127.0.0.1:8000 {
+        header_up X-Forwarded-For {remote_host}   # P0-2：覆盖伪造 XFF
+    }
+    header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "strict-origin-when-cross-origin"
-        # 隐藏 Streamlit 默认标识
         -Server
     }
     log {
@@ -462,13 +592,9 @@ voc.example.com {
 }
 EOF
 
-# 7.2 DNS 解析 voc.example.com → VPS IP（A 记录）
-
-# 7.3 重启 Caddy（自动申请 Let's Encrypt 证书）
+# DNS 加 A 记录 erself.site → 134.175.115.248；确认 80/443 已放通
 sudo systemctl reload caddy
-
-# 7.4 验证
-curl -I https://voc.example.com   # 应 200 + HSTS
+curl -I https://erself.site     # 应 200 + HSTS（证书自动申请）
 ```
 
 ### 步骤 8 · 验收（5 分钟）
@@ -509,6 +635,60 @@ ls -la data/voc.db                          # 应 -rw------- voc voc
 > - [ ] **Streamlit 鉴权**：在 `app.py` 顶部加 `st.experimental_user` 或 `st.auth`（Streamlit 1.30+）
 > - [ ] **DB 加密备份**：用 `age` 或 `gpg` 加密 `backups/voc-*.db` 后再推到对象存储
 > - [ ] **告警脚本**：`scripts/ops/healthcheck.sh` 配 cron + Telegram / 邮件告警
+
+---
+
+## 5.5 内测期安全加固（备案前 · 2026-09-11）
+
+> **背景**：备案未通过前只能用 `http://<IP>:8443` 明文 + 非标端口自测，但 IP 一旦对外分发就会被扫描器收录。本节是「把链接发给内测人员之前必须做完」的清单——**不修完不要外发**。
+>
+> **关联**：代码整改见 `src/api/auth.py`（限流 / IP 取信）、`src/api/main.py`（启动自检）；Caddy 配置见 §7A。
+
+### 5.5.1 暴露面盘点（整改前）
+
+| 层级 | 端点 | 整改前防护 | 整改后 |
+|---|---|---|---|
+| SPA | `/`（5 页看板） | 无 | Caddy basic_auth |
+| 公开只读 API | `/api/targets` `/overview` `/topics` `/comments` `/opinions` `/compare` `/trends` `/wordcloud` `/bilibili/videos` `/danmaku` `/games/meta` | **零限流** | 120 req/min/IP |
+| Agent API | `/api/agent/sessions`(CRUD) `/chat`(SSE) `/search` `/export` | 60 req/min/IP（**XFF 可伪造绕过**） | 30 req/min/IP + 日额度 + 并发上限 |
+| 管理 API | `/api/admin/*` | admin session（fail-closed） | 不变 |
+| 传输 | 8443 | **明文 HTTP** | 备案后 §7B 上 TLS |
+
+### 5.5.2 P0 必做清单（逐项勾选，缺一不外发）
+
+- [ ] **P0-1 全站准入**：Caddy `basic_auth`（bcrypt），覆盖全站含 API。**建议每人一个账号**——否则口令泄漏后无法定位、只能全员封禁。配置见 §7A。
+- [ ] **P0-2 修复 XFF 伪造绕过限流**：`auth.client_ip()` 原取 `X-Forwarded-For` **首段**，而 Caddy 反代把真实 IP 追加在**末尾**且不覆盖客户端自带值 → 攻击者自带伪造头即可每次换 IP，绕过全部限流。修复：①Caddy `header_up X-Forwarded-For {remote_host}`（覆盖，丢弃伪造值）；②应用层取**末段**。
+- [ ] **P0-3 公开只读端点限流**：`/api/wordcloud` 是 jieba + 跨游戏 TF-IDF **重算**、`/compare`/`/trends` 亦为 CPU 密集，2C2G 单机一个循环脚本即可打满。整改：通用 `Depends` 限流器挂 `public_router`（一处生效，覆盖全部公开只读端点），阈值分级（读端点 `PUBLIC_RATE_LIMIT_PER_MIN`，默认 120；Agent `AGENT_RATE_LIMIT_PER_MIN`，默认 30）。`/api/health` 挂在 app 上不受影响（供监控探活）。
+- [ ] **P0-4 Agent 成本熔断**：原仅 per-IP 计数，无全局日额度、无 `max_tokens`、无并发上限。`chat.py` 单次最多 5 轮 tool，每轮全量 messages 重发（token 近 O(轮数²)）→ 一天可烧干余额。整改（均已落地于 `src/api/auth.py` + `src/agent/chat.py`）：
+  - `AGENT_DAILY_CHAT_LIMIT`（默认 300）+ `AGENT_DAILY_CHAT_LIMIT_PER_IP`（默认 50）——自然日（UTC+8）额度，超限 429；额度在**会话归属校验之后**扣减，避免被越权请求刷爆。
+  - `AGENT_MAX_TOKENS`（默认 2048）——单轮输出上限，直接传给 LLM。
+  - `AGENT_MAX_CONCURRENCY`（默认 2）+ `AGENT_QUEUE_WAIT_SEC`（默认 20）——全局并发闸，满时短时排队、超时发 `error(busy)` 事件（SSE 已开始，无法再返 429）。
+  - ⚠️ 计数在进程内（uvicorn 单 worker），**重启即清零**；持久化随 P1 审计日志一起做。
+- [ ] **P0-5 请求体大小限制**：`ChatBody.user_msg` / `history` 原无长度上限，可塞超大 JSON 直灌 LLM（按 token 计费）或写库。整改（已落地 `src/api/routers_agent.py`）：
+  - `user_msg ≤ 4000`、`history ≤ 50 条`、每条 `content ≤ 20000`；`session_id ≤ 64`、`tool_call_id ≤ 128`、`tool_name ≤ 64`；`CreateSessionBody` 的 `page_context ≤ 8000` / `title ≤ 100` / `model ≤ 64`（超限一律 422）。
+  - Caddy `request_body { max_size 1MB }`（§7A / §7B）——传输层兜底。
+
+### 5.5.3 P1 建议（内测期）
+
+- [ ] **审计日志**：DB 表 `access_log`（ip / anon / path / status / ts）——内测是观察期，不知道谁在用就没法定阈值、出事后无法溯源。
+- [ ] **`PUBLIC_MODE=1` 启动自检**：公网模式下缺 `SESSION_SECRET_KEY` / 准入口令 / 日额度则拒绝启动（扩展 `main.py` 既有的 session key fail-closed）。
+- [ ] **CSP / Permissions-Policy**（Caddy 头，§7）。
+- [ ] **B 站评论 `uid`/`uname` 脱敏**（对外提供个人信息）。
+
+### 5.5.4 备案前的 HTTPS 选项（明文是最大残留风险）
+
+明文 HTTP 下，basic_auth 口令、admin 密码、Agent 对话全文**均可被中间人嗅探**。备案前有两条路可拿到真 HTTPS：
+
+1. **DNS-01 签 `erself.site` 证书**（推荐）：DNS-01 只写 TXT 记录，**不依赖 80/443 连通**，绕开备案阻断；用户访问 `https://erself.site:8443`（非标端口不受阻断），Caddy 用真证书。需要 DNSPod API token（apt 版 Caddy 无 dnspod 模块，需 `xcaddy` 编译或用 `acme.sh` 外部签发）。
+2. **Cloudflare 代理**：域名接 CF 免费版，用户侧直接 HTTPS 且隐藏源站 IP；回源到 8443 需处理端口/协议约束（CF 的 HTTPS 回源端口含 8443，但源站需有证书）。
+
+> 两条都不走 = 接受明文。此时**不要对外发 admin 口令**，Agent 对话按「运营商可见」对待。
+
+### 5.5.5 必做运维配置（非代码）
+
+- [ ] **fail2ban** 安装 + 给 Caddy 加 jail（防 basic_auth 爆破）——§5 承诺但一直未落地。
+- [ ] **ufw / 云防火墙**：8443 收敛；SSH `AllowUsers voc`；密钥登录（已做）。
+- [ ] **备份加密**：`backups/voc-*.db` 含 B 站用户数据。
 
 ---
 
@@ -634,13 +814,18 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 
 ---
 
-## 11. ①b 落地清单（2026-09-10 · 逐项勾选）
+## 11. ①b 落地清单（2026-09-11 · 逐项勾选）
 
 **外部资源（工程师）**
-- [ ] 购买轻量服务器（腾讯云 Lighthouse，Ubuntu 24.04，2C2G/40GB；地域按 §3.3 决策）
-- [ ] 购买域名 + 实名认证；（若国内节点）提交 ICP 备案并等待通过
-- [ ] 把本机 SSH 公钥交给 VPS（或将私钥路径告知部署脚本）
-- [ ] 提供 VPS 公网 IP / SSH 端口 / 登录用户
+- [x] 购买轻量服务器：**腾讯云轻量 · 广州（大陆）** `134.175.115.248:22`，登录用户 `ubuntu`，密钥对名 `lynx-web-SSH-kye`（2026-09-11）
+- [x] 购买域名：**`erself.site`**（`.site` 属工信部批复后缀，可备案；2026-09-11）
+- [x] **SSH 登录打通**：有效私钥为 `~/.ssh/k_lynx_web.pem`，`ssh -o BatchMode=yes ubuntu@134.175.115.248` 可直连（2026-09-11）
+- [x] 轻量防火墙放通 **8443/TCP**（内测，2026-09-11 公网实测 200）；80/443 待备案通过后放通
+- [x] 提供公网 IP / SSH 端口 / 登录用户（2026-09-11）
+- [ ] （大陆节点）域名**实名认证**须与备案主体一致 → 提交 ICP 备案并等待通过
+
+> **历史阻塞（已解决）**：早期用 `C:\Users\44481\.ssh\lynx-web-key.pem`（指纹 `SHA256:At5gFb56…`）登录被拒
+> （`Permission denied (publickey)`）→ 改用可用的 `~/.ssh/k_lynx_web.pem` 后正常。
 
 **开发（本地仓库）**
 - [ ] `scripts/ops/push_db_to_vps.ps1`（checkpoint → scp → 原子替换；失败不阻塞采集）+ pytest
@@ -648,17 +833,18 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 - [ ] 提交现有未入库改动（Agent 73 例 + 前端 + 文档），保证可回滚
 
 **VPS 端**
-- [ ] §4 步骤 1–5：voc 用户 / 系统包 / 代码 / `.env`（600）/ data 目录
-- [ ] §6.5 `voc-web.service`（uvicorn 127.0.0.1:8000）+ systemd 加固
-- [ ] §7 Caddy 反代 + 自动 HTTPS（域名生效后）
-- [ ] §5 安全清单 7 项（ufw / fail2ban / SSH 密钥 / DB 600 / .env 600）
-- [ ] 确认 VPS 不装 ML 依赖；确认 `/data/voc.db`、`/.env` 公网 404
+- [x] §4 步骤 1–5：voc 用户 / 系统包 / 代码 / `.env`（600）/ data 目录（2026-09-11）
+- [x] §6.5 `voc-web.service`（uvicorn `127.0.0.1:8000`，enabled + active）+ systemd 加固（**ProtectHome 必须 read-only**）
+- [x] §7 Caddy 反代：apt 2.6.2，`:8443` 内测阶段已上线（域名 HTTPS 待备案后切 §7B）
+- [x] §5 安全清单：ufw 已启用（22/80/443/8443）、DB 600、`.env` 600、SSH 密钥登录；⚠️ **fail2ban 待装**
+- [x] 确认 VPS 不装 ML 依赖；确认 `/data/voc.db`、`/.env` 公网 404（2026-09-11 实测）
 
 **验收**
-- [ ] 公网 HTTPS 打开三看板，数据与本地一致（同步后）
+- [x] 内测（HTTP）`http://134.175.115.248:8443/` 打开看板；`/api/health` 返回 `{"ok":true,...}`（2026-09-11）
+- [ ] 域名 HTTPS 打开三看板，数据与本地一致（同步后）
 - [ ] `/api/agent/chat` 流式对话可用（DeepSeek Key 生效、tool 调用正常）
 - [ ] admin 登录可增删改采集任务（可选，内测阶段）
-- [ ] `curl https://<域名>/data/voc.db` → 404；`/.env` → 404
+- [x] `http://134.175.115.248:8443/data/voc.db` → 404；`/.env` → 404（2026-09-11 实测）
 - [ ] 静态快照站（EdgeOne）与 VPS 版并存互不影响，手册交叉引用
 
 ---
@@ -667,6 +853,9 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
-| 2026-09-10 | **启用变体 ①b + 国内轻量获取指南**：新增 §0.5（本机采集 + DB 同步 + VPS 只读服务架构、选型理由、同步设计、4 项决策记录）+ §3.3（腾讯云轻量购买路径 / 地域与备案对比 / 购买界面逐项选择对照表 / 域名购买与 ICP 备案 / 成本）+ §3.4（香港→大陆迁移路径与两种采购策略，官方依据：自定义镜像跨地域复制 + 5 天无理由退还限首次）+ §11 落地清单；头部状态改为「落地准备中」 | 工程师确认 4 项决策（国内轻量 / ①b / 新买域名 / Agent 公开+限流内测）；「实时数据查询 + Agent 对话」静态托管不可行，必须 VPS 长驻服务 |
+| 2026-09-11 | **§5.5 安全加固 P0-1/2/3/4 落地**：①**P0-2**（代码）`auth.client_ip()` 由 XFF **首段**改取**末段**（反代追加的真实 IP；首段可被客户端伪造 → 原限流可被"每次换一个随机 XFF"绕过）；§7A/§7B Caddyfile 均加 `header_up X-Forwarded-For {remote_host}` 覆盖；新增 2 例回归。②**P0-1**（VPS 配置）§7A 重写为 `caddy hash-password` + `basic_auth { 每人一行 }` 全站准入，含"不带凭据必须 401"验证与撤人步骤。③**P0-3**（代码）通用 `_rate_check` 抽离，新增 `check_public_rate`/`public_rate_limit` 并挂 `public_router`（一处覆盖 11 个公开只读端点，默认 120/min/IP）；`/api/health` 不受影响；新增回归 1 例。④**P0-4**（代码）新增日额度熔断 `AGENT_DAILY_CHAT_LIMIT`(300)/`AGENT_DAILY_CHAT_LIMIT_PER_IP`(50)（UTC+8 自然日、归属校验后扣减）、`AGENT_MAX_TOKENS`(2048) 传入 LLM、并发闸 `AGENT_MAX_CONCURRENCY`(2)+`AGENT_QUEUE_WAIT_SEC`(20)（`stream_chat_guarded` 包装，满则发 `error(busy)`）；新增回归 5 例。`.env.example` 同步 7 个新 env | 工程师「继续」：把 §5.5 的 P0 清单从"待办"变成"已落地代码 + 待执行 VPS 配置" |
+| 2026-09-11 | **新增 §5.5 内测期安全加固**：备案前外发链接前的 P0 清单（全站准入 basic_auth / XFF 伪造修复 / 公开端点限流 / Agent 成本熔断 / 请求体上限）+ P1（审计日志 / 公网模式自检 / CSP / B站用户信息脱敏）+ 备案前 HTTPS 两条路（DNS-01 签 `erself.site` / Cloudflare 代理）+ 必做运维配置 | 工程师「备案前要给内测人员访问」：把安全整改固化为可勾选清单，避免"裸 IP + 无鉴权 + 明文"外发 |
+| 2026-09-11 | **VPS 内测上线：systemd 常驻 + Caddy 反代**：①`voc-web.service` 落地（`uvicorn src.api.main:app --host 127.0.0.1 --port 8000`，`User=voc`，`Restart=always`，`enable` 开机自启）——**实测坑**：手册原写的 `ProtectHome=true` 会导致 `status=203/EXEC`（`/home` 被挂成空目录、venv 二进制无法解析），已改为 `ProtectHome=read-only` 并同步修正 §6 / §6.5 两处 unit；②Caddy 由 apt 装（2.6.2 / universe 源），§7 重写为「7A 内测 `:8443` 明文反代（**必须显式 `http://:8443`**，否则可能走内部 CA）+ 7B 域名块（`erself.site` 自动 HTTPS）」；③安全加固：`ufw` 启用（22/80/443/8443，先放 22 再 `enable` 保证 SSH 不断）、DB/`.env` 均 600、SSH 密钥登录（有效私钥 `~/.ssh/k_lynx_web.pem`）；**fail2ban 因审批未落地，待装**；④实测：公网 `http://134.175.115.248:8443/api/health` → `{"ok":true,"comments":18916}`、SPA 首页 200、`/data/voc.db` 与 `/.env` → 404；⑤§11 勾选同步 | 工程师「继续任务」：把临时 `nohup uvicorn` 固化为 systemd 常驻服务并接 Caddy 反代 |
+| 2026-09-10/11 | **启用变体 ①b + 国内轻量获取 + 域名规划**：新增 §0.5（①b 架构/理由/DB 同步设计/4 项决策）+ §3.3（轻量购买路径 / 地域与备案对比 / **购买界面逐项选择对照表** / 域名与 ICP 备案 / 成本）+ **§3.4（香港→大陆迁移路径与两条采购策略，官方依据：自定义镜像跨地域复制 + 5 天无理由退还限首次）** + **§3.5（域名规划：一个域名放多少站点、四种区分方式、本项目 `voc.` + `snapshot.` 映射、CORS/证书/Cookie/备案五条约束）** + §11 落地清单；头部状态改为「落地准备中」。⚠️ 9/11 发现其中 3.3 对照表与 3.4 曾被并行会话覆盖丢失，已重写并当场校验（同 AGENTS.md 条目丢失同类问题） | 工程师确认 4 项决策（国内轻量 / ①b / 新买域名 / Agent 公开+限流内测）+ 追问购买选项、地域迁移、域名规划三问 |
 | 2026-09-02 | 补 Web 看板服务：步骤 6.5（uvicorn :8000 + systemd + 鉴权 env）+ secrets 清单扩到 7 项 + WAL checkpoint 备份注意事项 | Web 实时看板（WEB_DASHBOARD.md）落地，VPS 形态 A 可二选一/并存托管 |
 | 2026-08-23 | 初版 | 回应"团队外零数据访问 + 公网可访问"诉求；形态 A 落地架构稿 |

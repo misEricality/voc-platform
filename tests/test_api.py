@@ -46,6 +46,8 @@ def client(test_db_path, monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD_HASH", hash_password("test-pass-123"))
     monkeypatch.setenv("SESSION_SECRET_KEY", "test-secret")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{test_db_path}")
+    # P0-3：功能性用例默认关闭公开端点限流（限流本身由专属用例显式设阈值验证）
+    monkeypatch.setenv("PUBLIC_RATE_LIMIT_PER_MIN", "0")
 
     app = create_app(db_url=f"sqlite:///{test_db_path}")
     with TestClient(app) as c:
@@ -396,6 +398,24 @@ def test_login_rate_limit(seeded_db, client):
         assert r.status_code == 429
     finally:
         auth._LOGIN_FAILURES.clear()  # 清理：避免污染后续测试
+
+
+# ---------- P0-3 回归：公开只读端点限流（2026-09-11） ----------
+
+def test_public_endpoint_rate_limit(client, monkeypatch):
+    """P0-3：公开只读端点超阈值应 429；/api/health 为监控端点不受影响"""
+    from src.api import auth
+
+    auth._PUBLIC_HITS.clear()
+    monkeypatch.setenv("PUBLIC_RATE_LIMIT_PER_MIN", "2")
+    try:
+        assert client.get("/api/topics/tree").status_code == 200
+        assert client.get("/api/topics/tree").status_code == 200
+        assert client.get("/api/topics/tree").status_code == 429
+        # health 挂 app 上（非 public_router），供监控探活，不应被公开限流拦截
+        assert client.get("/api/health").status_code == 200
+    finally:
+        auth._PUBLIC_HITS.clear()
 
 
 # ---------- P2#6 回归：backfill 状态可观测 ----------

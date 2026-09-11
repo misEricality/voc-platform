@@ -24,7 +24,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.agent import sessions as sess_mod
-from src.api.auth import check_agent_rate, client_ip, get_session
+from src.api.auth import (
+    check_agent_daily_quota,
+    check_agent_rate,
+    client_ip,
+    get_session,
+)
 
 log = logging.getLogger("voc.api.agent")
 
@@ -38,25 +43,34 @@ def _ok(data: Any) -> dict:
 # ==================== Sessions CRUD ====================
 
 
+# P0-5（2026-09-11）：请求体字段一律加长度上限——否则可塞超大 JSON 直灌 LLM（按 token 计费）
+# 或写入 DB。上限按「前端正常用量 × 充裕余量」取值，正常使用不会触顶。
+_MAX_USER_MSG = 4000  # 单条用户输入
+_MAX_HISTORY_ITEMS = 50  # 前端回传的历史条数（tool 由服务端管理，不回传）
+_MAX_HISTORY_CONTENT = 20_000  # 单条历史内容（assistant 结论可能较长）
+_MAX_PAGE_CONTEXT = 8_000  # 页面上下文 JSON 串
+_MAX_TITLE = 100
+
+
 class CreateSessionBody(BaseModel):
     page: str = Field(..., min_length=1, max_length=32)
-    page_context: str | None = None
-    title: str | None = None
-    model: str | None = None
+    page_context: str | None = Field(None, max_length=_MAX_PAGE_CONTEXT)
+    title: str | None = Field(None, max_length=_MAX_TITLE)
+    model: str | None = Field(None, max_length=64)
 
 
 class ChatMessage(BaseModel):
     role: str = Field(..., pattern="^(user|assistant|tool)$")
-    content: str | None = None
+    content: str | None = Field(None, max_length=_MAX_HISTORY_CONTENT)
     tool_calls: list[dict] | None = None
-    tool_call_id: str | None = None
-    tool_name: str | None = None
+    tool_call_id: str | None = Field(None, max_length=128)
+    tool_name: str | None = Field(None, max_length=64)
 
 
 class ChatBody(BaseModel):
-    session_id: str = Field(..., min_length=1)
-    user_msg: str = Field(..., min_length=1)
-    history: list[ChatMessage] | None = None  # Round 3 可选；前端带历史更连贯
+    session_id: str = Field(..., min_length=1, max_length=64)
+    user_msg: str = Field(..., min_length=1, max_length=_MAX_USER_MSG)
+    history: list[ChatMessage] | None = Field(None, max_length=_MAX_HISTORY_ITEMS)
     # 2026-09-10「引用当前查询」：前端聚合摘要（≤2000 字符，chat.py 再截断），不落库
     context: str | None = Field(None, max_length=4000)
 
@@ -148,7 +162,8 @@ async def api_chat(
     前端用 EventSource 不便带 body，改用 fetch + ReadableStream；本端点返回
     `text/event-stream`，按 §0 SSE 协议推送 event: token / done / error。
     """
-    check_agent_rate(client_ip(request))
+    ip = client_ip(request)
+    check_agent_rate(ip)
     anon = sess_mod.get_anon_user_id(request)
 
     # 校验 session 归属（fail-closed，与 get/delete 一致：无 anon 或归属不符一律 404）
@@ -158,6 +173,11 @@ async def api_chat(
     sess = s.get(AgentSession, body.session_id)
     if not anon or not sess or sess.anon_user_id != anon:
         raise HTTPException(404, "会话不存在或无权访问")
+
+    # P0-4 成本熔断（刻意放在归属校验**之后**）：chat 是唯一真实消耗 LLM 的端点
+    # （最多 5 轮 tool 循环，每轮重发全量 messages）。全局日额度保余额、单 IP 日额度防单点刷爆；
+    # 超限直接 429，连流都不开。放在校验之后 → 越权/不存在的会话不扣额度，防被拿 404 刷爆额度。
+    check_agent_daily_quota(ip)
 
     # 解析 page_context → dict（若为 JSON 字符串）
     page_ctx: dict | None = None
@@ -181,12 +201,13 @@ async def api_chat(
                 "content": h.content or "",
             })
 
-    from src.agent.chat import stream_chat
+    from src.agent.chat import stream_chat_guarded
 
     async def event_gen():
         # chat.py 负责 assistant / tool 消息的落库（与 tool_call 循环共享状态机）
         # user_msg 已在路由层落库（让用户立即能看到自己的输入，避免 SSE 等待）
-        async for chunk in stream_chat(
+        # P0-4：stream_chat_guarded 额外做全局并发闸（满则发 error 事件，不静默挂起）
+        async for chunk in stream_chat_guarded(
             user_msg=body.user_msg,
             session=s,
             session_id=body.session_id,

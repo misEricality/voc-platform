@@ -45,8 +45,11 @@ def client(test_db_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{test_db_path}")
-    # 测试环境关掉 agent 速率限制（避免影响其他测试；rate limit 有专门用例覆盖）
+    # 测试环境关掉 agent 的全部限流/熔断（避免影响其他测试；均有专门用例覆盖）
     monkeypatch.setenv("AGENT_RATE_LIMIT_PER_MIN", "0")
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT", "0")
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT_PER_IP", "0")
+    monkeypatch.setenv("AGENT_MAX_CONCURRENCY", "0")
 
     from src.api.main import create_app
 
@@ -443,3 +446,230 @@ def test_agent_rate_hits_bounded(monkeypatch):
         f"实际 {len(auth._AGENT_HITS)}"
     )
     auth._AGENT_HITS.clear()
+
+
+# ==================== 5. XFF 取信（P0-2 · 2026-09-11） ====================
+
+
+def _make_request(headers: dict | None = None, client=("127.0.0.1", 1234)):
+    """构造最小 http scope 的 starlette Request（单测 client_ip 用）"""
+    from starlette.requests import Request
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "query_string": b"",
+        "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+        "client": client,
+        "server": ("testserver", 80),
+        "scheme": "http",
+    }
+    return Request(scope)
+
+
+def test_client_ip_takes_last_xff_segment():
+    """P0-2：应取 X-Forwarded-For **末段**（反代追加的真实 IP），不取可伪造的首段"""
+    from src.api.auth import client_ip
+
+    # 客户端伪造首段 + Caddy 追加真实 IP（末段）→ 必须返回末段
+    assert client_ip(_make_request({"X-Forwarded-For": "1.2.3.4, 203.0.113.9"})) == "203.0.113.9"
+    # 单值（Caddy header_up 覆盖模式）也正确
+    assert client_ip(_make_request({"X-Forwarded-For": "203.0.113.9"})) == "203.0.113.9"
+    # 无 XFF → 回退直连 client.host
+    assert client_ip(_make_request({}, client=("10.0.0.5", 5555))) == "10.0.0.5"
+
+
+def test_spoofed_xff_first_segment_cannot_bypass_rate_limit(client, monkeypatch):
+    """P0-2 端到端：每次换伪造首段也无法绕过限流（末段相同 → key 不变 → 仍 429）"""
+    monkeypatch.setenv("AGENT_RATE_LIMIT_PER_MIN", "2")
+    from src.api import auth
+
+    auth._AGENT_HITS.clear()
+
+    # 前 2 次成功：首段每次换（伪造），末段固定 = 真实身份
+    for i in range(2):
+        r = client.get(
+            "/api/agent/sessions",
+            headers={"X-Anon-User-Id": "anon-X", "X-Forwarded-For": f"1.2.3.{i}, 203.0.113.9"},
+        )
+        assert r.status_code == 200, f"req {i + 1}: {r.status_code}"
+
+    # 第 3 次换一个伪造首段：末段未变，应仍被限流拦下
+    r = client.get(
+        "/api/agent/sessions",
+        headers={"X-Anon-User-Id": "anon-X", "X-Forwarded-For": "9.9.9.9, 203.0.113.9"},
+    )
+    assert r.status_code == 429, "换伪造首段不应绕过限流"
+
+    auth._AGENT_HITS.clear()
+
+
+# ==================== 6. 成本熔断（P0-4 · 2026-09-11）====================
+
+
+def _reset_daily_quota():
+    """把 auth 的日额度计数复位（隔离用例间状态）"""
+    from src.api import auth
+
+    auth._AGENT_COST_DAY = ""
+    auth._AGENT_DAILY_TOTAL_USED = 0
+    auth._AGENT_DAILY_IP_USED.clear()
+
+
+def test_agent_daily_quota_unit_and_rollover(monkeypatch):
+    """P0-4 单测：日额度用尽 → 429；跨自然日自动重置；snapshot 只读"""
+    from fastapi import HTTPException
+
+    from src.api import auth
+
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT", "1")
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT_PER_IP", "0")
+    _reset_daily_quota()
+    try:
+        auth.check_agent_daily_quota("1.1.1.1")  # 用掉唯一额度
+        with pytest.raises(HTTPException) as ei:
+            auth.check_agent_daily_quota("1.1.1.1")
+        assert ei.value.status_code == 429
+        assert "额度已用尽" in ei.value.detail
+
+        # 模拟跨日：把计数日期改成过去 → 下一次调用应重置
+        auth._AGENT_COST_DAY = "2000-01-01"
+        auth.check_agent_daily_quota("1.1.1.1")
+        snap = auth.agent_usage_snapshot()
+        assert snap["total_used"] == 1
+        assert snap["total_limit"] == 1
+    finally:
+        _reset_daily_quota()
+
+
+def test_agent_daily_quota_per_ip_429(client, monkeypatch):
+    """P0-4 端到端：单 IP 日额度用尽后 /chat 直接 429（连流都不开）"""
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT", "0")  # 关全局，只验单 IP
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT_PER_IP", "1")
+    _reset_daily_quota()
+
+    r = client.post("/api/agent/sessions", json={"page": "agent"},
+                    headers={"X-Anon-User-Id": "anon-q"})
+    sid = r.json()["data"]["id"]
+    hdr = {"X-Anon-User-Id": "anon-q"}
+
+    r1 = client.post("/api/agent/chat", json={"session_id": sid, "user_msg": "第一问"}, headers=hdr)
+    assert r1.status_code == 200, r1.text
+
+    r2 = client.post("/api/agent/chat", json={"session_id": sid, "user_msg": "第二问"}, headers=hdr)
+    assert r2.status_code == 429
+    assert "额度已用尽" in r2.text
+    _reset_daily_quota()
+
+
+def test_agent_daily_quota_global_429(client, monkeypatch):
+    """P0-4 端到端：全局日额度用尽 → 429（保护余额的最后一道闸）"""
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT", "1")
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT_PER_IP", "0")
+    _reset_daily_quota()
+
+    r = client.post("/api/agent/sessions", json={"page": "agent"},
+                    headers={"X-Anon-User-Id": "anon-g"})
+    sid = r.json()["data"]["id"]
+
+    assert client.post("/api/agent/chat", json={"session_id": sid, "user_msg": "问"},
+                       headers={"X-Anon-User-Id": "anon-g"}).status_code == 200
+    r2 = client.post("/api/agent/chat", json={"session_id": sid, "user_msg": "再问"},
+                     headers={"X-Anon-User-Id": "anon-g"})
+    assert r2.status_code == 429
+    assert "全站" in r2.text
+    _reset_daily_quota()
+
+
+def test_agent_concurrency_guard_emits_busy(monkeypatch):
+    """P0-4：并发槽占满 + 排队超时 → 发 error(busy) 事件，而不是静默挂起"""
+    import asyncio
+
+    from src.agent import chat
+
+    monkeypatch.setenv("AGENT_MAX_CONCURRENCY", "1")
+    monkeypatch.setenv("AGENT_QUEUE_WAIT_SEC", "0")
+    chat._active_streams = 0
+    assert chat._try_acquire_slot() is True  # 占满唯一槽位
+
+    async def _collect():
+        return [c async for c in chat.stream_chat_guarded(
+            user_msg="x", session=None, session_id="s",
+        )]
+
+    try:
+        chunks = asyncio.run(_collect())
+    finally:
+        chat._release_slot()
+        chat._active_streams = 0
+
+    assert len(chunks) == 1, "并发满时应只发一个事件就结束"
+    assert "event: error" in chunks[0]
+    assert "busy" in chunks[0]
+
+
+def test_llm_config_respects_max_tokens(monkeypatch):
+    """P0-4：真正传给 LLM 的 max_tokens 走 AGENT_MAX_TOKENS，默认 2048"""
+    import asyncio
+
+    from src.agent import chat
+
+    captured: dict = {}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return iter([])  # 空流：只验参数，不验内容
+
+    class _FakeClient:
+        class chat:  # noqa: N801 - 模拟 openai 客户端结构
+            completions = _FakeCompletions()
+
+    monkeypatch.delenv("AGENT_MAX_TOKENS", raising=False)
+    monkeypatch.setenv("AGENT_MAX_TOKENS", "1234")
+
+    async def _call():
+        return await chat._stream_llm_round(
+            _FakeClient(), "test-model", [], loop=asyncio.get_running_loop(),
+        )
+
+    asyncio.run(_call())
+    assert captured["max_tokens"] == 1234
+    assert captured["stream"] is True
+
+    # 默认值：2048
+    monkeypatch.delenv("AGENT_MAX_TOKENS", raising=False)
+    asyncio.run(_call())
+    assert captured["max_tokens"] == 2048
+
+
+# ==================== 7. 请求体上限（P0-5 · 2026-09-11）====================
+
+
+def test_chat_body_length_limits(client):
+    """P0-5：超长 user_msg / 超量 history / 超长历史内容一律 422；边界内放行"""
+    r = client.post("/api/agent/sessions", json={"page": "agent"},
+                    headers={"X-Anon-User-Id": "anon-l"})
+    sid = r.json()["data"]["id"]
+    hdr = {"X-Anon-User-Id": "anon-l"}
+
+    # user_msg 超过 4000 → 422
+    assert client.post("/api/agent/chat", headers=hdr,
+                       json={"session_id": sid, "user_msg": "x" * 4001}).status_code == 422
+
+    # history 超过 50 条 → 422
+    hist = [{"role": "user", "content": "hi"} for _ in range(51)]
+    assert client.post("/api/agent/chat", headers=hdr,
+                       json={"session_id": sid, "user_msg": "hi",
+                             "history": hist}).status_code == 422
+
+    # 单条历史内容超过 20000 → 422
+    assert client.post("/api/agent/chat", headers=hdr,
+                       json={"session_id": sid, "user_msg": "hi",
+                             "history": [{"role": "assistant", "content": "y" * 20001}]}
+                       ).status_code == 422
+
+    # 边界内（正好 4000）应放行
+    assert client.post("/api/agent/chat", headers=hdr,
+                       json={"session_id": sid, "user_msg": "x" * 4000}).status_code == 200

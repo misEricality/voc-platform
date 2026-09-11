@@ -46,6 +46,10 @@ def client(test_db_path, monkeypatch):
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{test_db_path}")
     monkeypatch.setenv("AGENT_RATE_LIMIT_PER_MIN", "0")
+    # P0-4：测试环境关闭日额度与并发闸（有专门用例覆盖）
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT", "0")
+    monkeypatch.setenv("AGENT_DAILY_CHAT_LIMIT_PER_IP", "0")
+    monkeypatch.setenv("AGENT_MAX_CONCURRENCY", "0")
 
     from src.api.main import create_app
 

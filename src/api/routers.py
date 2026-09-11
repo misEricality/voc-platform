@@ -26,6 +26,7 @@ from src.api.auth import (
     client_ip,
     get_session,
     hash_password,
+    public_rate_limit,
     record_login_failure,
     require_admin,
     verify_password,
@@ -40,7 +41,12 @@ from src.storage.db import (
 
 log = logging.getLogger("voc.api")
 
-public_router = APIRouter(prefix="/api", tags=["public"])
+public_router = APIRouter(
+    prefix="/api",
+    tags=["public"],
+    # P0-3（2026-09-11）：公开只读端点统一限流（默认 120 req/min/IP，PUBLIC_RATE_LIMIT_PER_MIN 可调）
+    dependencies=[Depends(public_rate_limit)],
+)
 admin_router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
 

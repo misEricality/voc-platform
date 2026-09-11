@@ -29,6 +29,53 @@ log = logging.getLogger("voc.agent.chat")
 
 MAX_TOOL_ROUNDS = 5  # tool_call 循环上限（含中间有 tool 的轮次），防死循环/费用爆炸
 
+# ---------- 并发闸 + 单轮输出上限（P0-4 · 2026-09-11 成本熔断）----------
+# 2C2G 单机 + 同步 OpenAI SDK 跑在线程池里：并发 chat 流太多会打满 CPU/内存，
+# 且每路都是一次真实计费调用。这里全局限制同时在跑的流数量（超出短时排队、再超时明确报错）。
+_MAX_CONCURRENCY_DEFAULT = 2  # 同时进行的 chat 流上限
+_QUEUE_WAIT_DEFAULT = 20  # 排队等待上限（秒）
+_MAX_TOKENS_DEFAULT = 2048  # 单轮 LLM 输出 token 上限（tool 调用 + 正文共用）
+
+_active_streams = 0
+
+
+def _max_concurrency() -> int:
+    """并发上限；<=0 表示不限制（测试 / 本地）"""
+    return int(os.getenv("AGENT_MAX_CONCURRENCY", str(_MAX_CONCURRENCY_DEFAULT)))
+
+
+def _queue_wait_sec() -> float:
+    return float(os.getenv("AGENT_QUEUE_WAIT_SEC", str(_QUEUE_WAIT_DEFAULT)))
+
+
+def _try_acquire_slot() -> bool:
+    """占一个并发槽（返回 True 时调用方必须在 finally 里 _release_slot）"""
+    global _active_streams
+    limit = _max_concurrency()
+    if limit > 0 and _active_streams >= limit:
+        return False
+    _active_streams += 1
+    return True
+
+
+def _release_slot() -> None:
+    global _active_streams
+    if _active_streams > 0:
+        _active_streams -= 1
+
+
+async def _acquire_slot() -> bool:
+    """短时轮询等待并发槽；等不到返回 False（不做无限排队，避免 SSE 静默挂起）"""
+    if _try_acquire_slot():
+        return True
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _queue_wait_sec()
+    while loop.time() < deadline:
+        await asyncio.sleep(0.25)
+        if _try_acquire_slot():
+            return True
+    return False
+
 SYSTEM_PROMPT = """你是"原声分析助手"，集成在 Lynx VoC 平台内的自然语言数据查询助手。
 
 你的能力：
@@ -73,6 +120,12 @@ def _get_llm_config() -> dict:
         "base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
         "model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
     }
+
+
+def _max_tokens() -> int:
+    """P0-4：单轮输出上限。tool 循环每轮都会重新生成，不限长时模型可输出数千 token，
+    5 轮叠加即为可观成本；2048 足够容纳 tool_calls + 一段结构化结论。"""
+    return int(os.getenv("AGENT_MAX_TOKENS", str(_MAX_TOKENS_DEFAULT)))
 
 
 def _format_sse(event: str, data: Any) -> str:
@@ -227,6 +280,7 @@ async def _stream_llm_round(
             tool_choice="auto",
             stream=True,
             temperature=0.3,
+            max_tokens=_max_tokens(),  # P0-4：单轮输出上限（不新增签名参数，避免破坏测试替身）
             # 2026-09-10：末 chunk（choices 为空）携带 usage；stream_chat 会逐轮累加
             stream_options={"include_usage": True},
             extra_body={"thinking": {"type": "disabled"}},
@@ -444,3 +498,23 @@ async def stream_chat(
             except Exception:
                 pass
         yield _format_sse("error", {"message": str(e)})
+
+
+async def stream_chat_guarded(**kwargs: Any) -> AsyncIterator[str]:
+    """`stream_chat` 的并发保护包装（P0-4）
+
+    路由层统一改用本函数：并发已满时先短时排队，超时则直接发 error 事件
+    （SSE 已开始，无法再返回 HTTP 429——用 error 事件让前端拿到明确提示）。
+    槽位在 finally 释放，异常/客户端断开都不会泄漏。
+    """
+    if not await _acquire_slot():
+        yield _format_sse("error", {
+            "message": "当前对话人数较多（服务并发已满），请稍后重试。",
+            "busy": True,
+        })
+        return
+    try:
+        async for chunk in stream_chat(**kwargs):
+            yield chunk
+    finally:
+        _release_slot()
