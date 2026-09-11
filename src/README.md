@@ -2,7 +2,7 @@
 
 > **正式模块，不是脚本。** 所有跨脚本复用的代码都在这里；一次性逻辑走 `scripts/`。
 >
-> **最后更新**：2026-09-01（HANDOVER 收口：补 src/README.md · 模块职责索引）
+> **最后更新**：2026-09-11（补 `runtime_mode.py`：展示端形态判定）
 
 ---
 
@@ -13,6 +13,7 @@ src/
 ├── README.md                  ⬅ 你在这里：src/ 模块职责索引
 ├── __init__.py                包标记（空文件）
 ├── pipeline.py                🚀 主流程编排（CLI 入口 `python -m src.pipeline`）
+├── runtime_mode.py            🧭 运行形态判定（展示端 = 不采集 / 不标注 / 不改任务）
 ├── analyzers/                 🤖 分析器（情感 / 语义 / 标注）
 ├── collectors/                📥 采集器（多平台数据源）
 ├── queue/                     📋 B 站采集队列（P5 自动化阶段 0）
@@ -31,6 +32,14 @@ src/
 | **职责** | 串联采集 → 入库 → 向量化 → 打标 → 回写全流程；CLI 入口 `python -m src.pipeline --platform steam --target 730 --count 50 [--skip-analysis]` |
 | **更新** | 2026-08-28（P9 阶段 2 / P6 daily 入口衔接） |
 | **依赖** | collectors / storage / analyzers / visualizer 全套 |
+
+### `runtime_mode.py` · 运行形态判定
+
+| 项 | 值 |
+|---|---|
+| **职责** | `display_only()`：判定本实例是否为「只读展示端」。**默认跟随 `PUBLIC_MODE`**（公网形态即展示端，故 VPS 无需额外配键）。为真时 `admin_router` 写操作一律 403、`pipeline.run_pipeline()` 拒绝采集与标注 —— 收口「线上 admin 页看着能采」的陷阱（在 VPS 上跑采集会烧 token，结果次日又被整库推送覆盖） |
+| **更新** | 2026-09-11（内测期展示端收口） |
+| **依赖** | 仅标准库；被 `src/api/routers.py`、`src/api/main.py`、`src/pipeline.py` 引用 |
 
 ### `__init__.py`
 

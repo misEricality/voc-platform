@@ -5,7 +5,7 @@
 >
 > **关联文档**：
 > - 字段三级分类（与本设计的"前缀约定"配套）：[DATA_FIELDS.md](./DATA_FIELDS.md)
-> - 完整开发计划：[DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
+> - 完整开发计划：[DEVELOPMENT_PLAN.md](../plan/DEVELOPMENT_PLAN.md)
 
 ---
 

@@ -7,7 +7,8 @@
 > - 总路线图：[plan/DEVELOPMENT_PLAN.md](../plan/DEVELOPMENT_PLAN.md)
 > - 自动化采集流水线：[AUTOMATION_PIPELINE.md](./AUTOMATION_PIPELINE.md)
 > - 字段与存储设计：[DATA_FIELDS.md](./DATA_FIELDS.md) / [DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
-> - 安全与隐私声明：[SECURITY.md](../SECURITY.md)（如存在）
+> - 安全与隐私声明：见本文 **§5 安全加固清单（必查）** 与根目录 `AGENTS.md` **§3 必守的工程红线**
+>   （2026-09-11 修正死链：原引用的 `docs/SECURITY.md` 从未存在）
 >
 > **最后更新**：2026-09-11
 > **状态**：🟢 内测已上线——VPS 跑 `voc-web.service`（uvicorn `127.0.0.1:8000`，systemd 常驻 + 开机自启）+ Caddy `:8443` 反代，公网 `http://134.175.115.248:8443` 可访问；变体 ①b（本机采集 + DB 同步 + VPS 只读服务，见 §0.5）；域名 HTTPS 待 ICP 备案通过后切 §7B

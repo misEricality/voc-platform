@@ -171,10 +171,6 @@ powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task
 
 ## 📋 版本记录
 
----
-
-## 📋 版本记录
-
 | 日期 | 内容 | 原因 |
 |---|---|---|
 | 2026-09-07 | 初版：架构图 + 收敛策略 + 手动发布步骤 + 计划任务接入 + 本地验证记录 + 部署后差异；同日完成**首次公网发布**（项目 voc-platform，公网三页 Playwright 实测通过） | 方案③ 落地（工程师确认：只做③、EdgeOne Pages、三页、先手动后挂任务） |
