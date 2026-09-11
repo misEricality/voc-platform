@@ -10,7 +10,7 @@
 > - 字段与存储设计：[DATA_FIELDS.md](./DATA_FIELDS.md) / [DATA_STORAGE_DESIGN.md](./DATA_STORAGE_DESIGN.md)
 >
 > **最后更新**：2026-09-10
-> **状态**：🟢 方案 ③ 已落地（2026-09-07，见 [STATIC_SNAPSHOT_DEPLOYMENT.md](./STATIC_SNAPSHOT_DEPLOYMENT.md)）；🟡 **方案 ① 于 2026-09-10 改为启用变体 ①b**（本机采集 + 推 DB + VPS 只读服务，含实时查询与 Agent 对话）——落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](./SELF_HOSTED_VPS_DEPLOYMENT.md)，**待外部资源到位**（国内轻量 VPS / 域名 / ICP 备案）
+> **状态**：🟢 方案 ③ 已落地（2026-09-07，见 [STATIC_SNAPSHOT_DEPLOYMENT.md](./STATIC_SNAPSHOT_DEPLOYMENT.md)）；🟢 **方案 ① 于 2026-09-10 改为启用变体 ①b，2026-09-11 内测上线**（本机采集 + 推 DB + VPS 只读服务，含实时查询与 Agent 对话；腾讯云轻量 + systemd + Caddy `:8443`，DB 每日随 02:00 采集推库）——落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](./SELF_HOSTED_VPS_DEPLOYMENT.md)，**剩余外部依赖**：域名 `erself.site` ICP 备案通过后切 HTTPS
 
 ---
 
@@ -66,9 +66,10 @@
 | 稳定性 | ★★★☆☆ | 单点无冗余；Oracle 免费机有「闲置回收」策略（需保活）；但**依赖最少，故障排查最直接** |
 | 数据私有 | ★★★★★ | 唯一满分项：DB 只在本地磁盘，无任何 HTTP 出口暴露它 |
 
-**变体 ①b — 本机采集 + 推 DB + VPS 只读服务（2026-09-10 确认启用）**
-采集与标注继续留在本机（B 站风控 / 代理环境必须本地），每日 `wal_checkpoint → scp → 远端原子替换` 把 `data/voc.db` 推到 VPS；VPS 只跑 Caddy + uvicorn（实时查询 + Agent 对话，DB 只读消费）。VPS 规格可降到 2C2G 且**不装 ML 依赖**；代价是多一条同步链路（失败只记 ERROR，不阻塞采集判定）。
+**变体 ①b — 本机采集 + 推 DB + VPS 只读服务（2026-09-10 确认启用，2026-09-11 落地）**
+采集与标注继续留在本机（B 站风控 / 代理环境必须本地），每日 `VACUUM INTO` 快照 → `scp` → 远端**原位** `sqlite3 .backup()`（**不是 `mv` 原子替换**）把 `data/voc.db` 推到 VPS；VPS 只跑 Caddy + uvicorn（实时查询 + Agent 对话，DB 只读消费）。VPS 规格可降到 2C2G 且**不装 ML 依赖**；代价是多一条同步链路（失败只记 warning、不阻塞采集判定）。
 > 早期草案曾考虑「VPS 拉 GH Release」，但 `collect` job 已停用（切本地直采），故实际改为**本机直推**。
+> ⚠️ `mv` 原子替换对本站**不安全**：uvicorn 连接池持旧 inode 会永远读旧库且不报错；故用 `sqlite3.Connection.backup()` 在原文件内逐页重写（详见 `SELF_HOSTED_VPS_DEPLOYMENT.md §0.5`）。
 
 **变体 ①c — 停用 Streamlit**
 Web 看板（FastAPI + SPA）已覆盖仪表盘能力，VPS 上可只起 uvicorn 一个服务，省 ~400 MB 常驻内存与一个 systemd unit。
@@ -205,6 +206,7 @@ GitHub Actions（现有 P6 流水线）
 
 | 日期 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-11 | **①b 的 DB 同步落地**：`scripts/ops/push_db_to_vps.ps1` 实现为「本地 `VACUUM INTO` 快照 → scp → 远端**原位** `sqlite3 .backup()`」——原设计的「远端 `mv` 原子替换」因 uvicorn 连接池持旧 inode 会静默读旧库而**弃用**；并入 02:00 采集链（`daily_incremental_collect.py --push-db`，失败只告警、不改退出码）；端到端实测推送后远端 `comments=18916` 与本地一致。本文档同步修正「变体 ①b」措辞：`原子替换` → `原位 .backup()`、失败语义 `ERROR` → `warning` | 工程师「C,D,E 都做」：让选型文档与已落地实现一致，避免照旧措辞把 `mv` 写回脚本 |
 | 2026-09-10 | **方案 ③ 自动发布落地（方案 A）**：`ops/register_local_collect_task.ps1` 新增第 4 个计划任务 `VOC-Local-Publish-Snapshot`（04:30 导出 + 发布 EdgeOne Pages），公网静态站由「手动发布」转为**每日自动更新**；同时修正 2026-09-07 记录里「daily `--publish-snapshot`（默认关闭）」的表述——**该参数从未在 `daily_incremental_collect.py` 落地**，已改为独立计划任务方案；顺手修 `publish_static_snapshot.ps1` 冷启动 bug（dist 校验早于导出）+ 自定义 `-Dist` 未传 `--out` 的问题。手动发布验证：344 路由，Deploy Success（ID `dpipzplikffx`） | 工程师确认「做方案 A + 顺手修掉」；此前远端只能手动发布，内容停在 9/7（早于 P11 清理与重新归档） |
 | 2026-09-10 | **方案 ① 定为变体 ①b 并进入落地准备**：本机采集 + `push_db_to_vps.ps1` 推 DB + VPS 只读服务（Caddy + uvicorn，含实时查询与 Agent 对话）；VPS 用国内轻量、域名新买（国内节点需 ICP 备案）、Agent 公开 + 限流小范围内测。同步修正本文档：①b 定义（原「VPS 拉 GH Release」已不成立，`collect` job 已停用）、①b 对比行、决策 7 解冻 + 追加决策 8；落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](./SELF_HOSTED_VPS_DEPLOYMENT.md) | P11 收尾时同步文档：把「计划外已做 + 2026-09-10 部署决策」补进选型文档，消除与 DEVELOPMENT_PLAN 的状态不一致 |
 | 2026-09-07 | **方案 ③ 落地**：`scripts/ops/export_static_snapshot.py`（三页预聚合快照，复用 service.py 聚合层）+ `api.js` 静态 shim（manifest 路由表，实时模式零影响）+ `publish_static_snapshot.ps1`（EdgeOne Pages）+ daily `--publish-snapshot`（默认关闭）。决策 7 解冻：数据链路已切本地直采，导出走本地脚本而非 GH Actions；托管平台按工程师确认用 EdgeOne Pages（非文档原定的 Cloudflare Pages）。操作手册：[STATIC_SNAPSHOT_DEPLOYMENT.md](./STATIC_SNAPSHOT_DEPLOYMENT.md) | 工程师启动部署开发 |

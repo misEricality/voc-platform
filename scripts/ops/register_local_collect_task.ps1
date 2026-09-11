@@ -6,11 +6,15 @@
 # removing sync lag and the GH Actions schedule jitter (up to 8h).
 # The GH workflow `collect` job was disabled the same day (`test` job kept as CI regression gate).
 #
-# Command: daily_incremental_collect.py --no-download --no-upload
+# Command: daily_incremental_collect.py --no-download --no-upload --lookback-days 7 --push-db
 #   --no-download: skip pulling remote GH Release (prevents an older remote DB overwriting the
 #                  newer local DB; local data/voc.db is the single source of truth now)
 #   --no-upload  : skip uploading to GH Release (gh CLI not installed on this machine;
 #                  after installing gh + `gh auth login`, remove this flag to restore cloud backup)
+#   --push-db    : after the whole collect chain finishes, push the local DB to the self-hosted
+#                  VPS (data channel variant "1b" - docs/architecture/SELF_HOSTED_VPS_DEPLOYMENT.md
+#                  section 0.5). Non-blocking: a push failure only logs a warning and never
+#                  changes the collect exit code. Register with -NoPushDb to opt out.
 #
 # Notes:
 # - Registered as current user (no admin required); if registration fails on permissions,
@@ -20,6 +24,13 @@
 #   covers yesterday + the day before). Recovery:
 #   python scripts/ops/daily_incremental_collect.py --no-download --no-upload --full-replay
 #
+# Last updated: 2026-09-11 (02:00 collect now also ships the DB to the VPS: added --push-db to
+#   the 02:00 action plus a -NoPushDb opt-out switch. The push runs at the very END of the
+#   02:00 chain (after bilibili run-due and the GH Release upload step) and is non-blocking.
+#   Why reuse the 02:00 chain instead of adding a 5th task: variant "1b" only needs "the freshest
+#   DB once per day", and the push MUST happen after collection. A separate task would need an
+#   ad-hoc ordering guard, while the flag is inherently ordered and keeps the ops surface small.
+#   See docs/architecture/SELF_HOSTED_VPS_DEPLOYMENT.md section 0.5 / section 11.)
 # Last updated: 2026-09-10 (added snapshot-publish task VOC-Local-Publish-Snapshot at 04:30:
 #   runs ops/publish_static_snapshot.ps1 -> exports the 3 read-only dashboards to
 #   data/exports/snapshot and publishes them to EdgeOne Pages (public static site).
@@ -46,7 +57,8 @@ param(
     [string]$At = "02:00",           # 02:00 BJT (machine local timezone)
     [string]$CheckAt = "03:00",      # sentinel check time
     [string]$PublishAt = "04:30",    # static snapshot publish time
-    [string]$SnapshotProject = "voc-platform"  # EdgeOne Pages project name
+    [string]$SnapshotProject = "voc-platform",  # EdgeOne Pages project name
+    [switch]$NoPushDb                # register the 02:00 task WITHOUT the local DB -> VPS push
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,7 +94,10 @@ if ($task) { Write-Host "updating: $TaskName" } else { Write-Host "creating: $Ta
 # redirect output via cmd /c (ScheduledTaskAction does not support redirection itself)
 # --lookback-days 7: 7-day overlapping re-crawl against Steam recent-feed non-determinism
 # (single-pass coverage ~80-95%; upsert idempotent + analyzed-skip keep the cost to pagination)
-$inner = "`"$Python`" `"$Script`" --no-download --no-upload --lookback-days 7 >> `"$LogFile`" 2>&1"
+# --push-db: ship the finished DB to the self-hosted VPS (variant 1b); skipped with -NoPushDb.
+#            Must stay LAST on the command line - it runs after the collect chain, not before.
+$pushFlag = if ($NoPushDb) { "" } else { " --push-db" }
+$inner = "`"$Python`" `"$Script`" --no-download --no-upload --lookback-days 7$pushFlag >> `"$LogFile`" 2>&1"
 $cmdArgs = "/c cd /d `"$ProjectRoot`" && $inner"
 $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument $cmdArgs -WorkingDirectory $ProjectRoot
 $trigger = New-ScheduledTaskTrigger -Daily -At $At
@@ -96,10 +111,11 @@ $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interac
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
     -Settings $settings -Principal $principal `
-    -Description "VoC local daily collect (02:00 BJT) -> data/voc.db; GH Release cloud backup paused (no gh CLI)" `
+    -Description "VoC local daily collect (02:00 BJT) -> data/voc.db; GH Release cloud backup paused (no gh CLI); pushes DB to the self-hosted VPS (variant 1b, non-blocking)" `
     -Force | Out-Null
 
-Write-Host "  -> $TaskName daily at $At (local collect, lookback 7d, no download/upload)"
+$pushNote = if ($NoPushDb) { "push to VPS DISABLED" } else { "pushes DB to VPS (non-blocking)" }
+Write-Host "  -> $TaskName daily at $At (local collect, lookback 7d, no download/upload, $pushNote)"
 
 # ---- sentinel task: 03:00 re-run if the 02:00 collect failed or was missed ----
 $CheckTaskName = "$TaskName-Check"
@@ -184,6 +200,7 @@ Write-Host "  -> $PublishTaskName daily at $PublishAt (export + publish static s
 Write-Host ""
 Write-Host "Test run manually:"
 Write-Host "  & `"$Python`" `"$Script`" --no-download --no-upload"
+Write-Host "  powershell -ExecutionPolicy Bypass -File `"$ProjectRoot\scripts\ops\push_db_to_vps.ps1`" -DryRun"
 Write-Host "  & `"$Python`" `"$CheckScript`" --dry-run"
 Write-Host "  & `"$Python`" `"$PruneScript`" --dry-run"
 Write-Host "  powershell -ExecutionPolicy Bypass -File `"$PublishScript`" -Name $SnapshotProject"

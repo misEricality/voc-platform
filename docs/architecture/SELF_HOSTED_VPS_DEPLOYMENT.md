@@ -41,7 +41,7 @@ Steam / B站 采集 + LLM 标注                    ├─ SPA（product/web/，
 （B站风控、代理环境必须留本地）                  ├─ /api/*        实时数据查询
         │ 写 data/voc.db（单一权威源）          ├─ /api/agent/*  Agent 对话（SSE 流式）
         │                                      └─ data/voc.db（600，只读消费）
-        └── 每日同步（wal_checkpoint → scp → 原子替换）
+        └── 每日同步（VACUUM INTO → scp → 远端原位 .backup()，见下）
 ```
 
 ### 为什么选 ①b（而不是 VPS 自己采集）
@@ -53,14 +53,30 @@ Steam / B站 采集 + LLM 标注                    ├─ SPA（product/web/，
 | VPS 最轻 | 只装 `requirements-dashboard.txt`（**不装 ML**），常驻 ~300–500 MB，2C2G 足够 |
 | 数据私有 | DB 只在两台受控机器间 SSH 传输，无第三方面板 |
 
-### DB 同步设计（本次配套开发）
+### DB 同步设计（2026-09-11 已实现 + 实测）
 
-- 脚本：`scripts/ops/push_db_to_vps.ps1`
-  - `PRAGMA wal_checkpoint(TRUNCATE)`（保证 -wal 合并、传输一致）
-  - `scp`/`rsync` 推到 VPS 临时文件 → 远端 `mv` 原子替换（避免读到写一半的库）
-  - 失败只记 ERROR、**不阻塞采集结果判定**（与 `--publish-snapshot` 同款解耦原则）
-- 触发时机：并入 02:00 采集链路末尾；如需当日更新可另加 10:00/18:00 两次（先跑稳再决定）
-- 传输安全：复用部署用 SSH 密钥（`voc` 用户），不新增密码/端口暴露
+- 脚本：`scripts/ops/push_db_to_vps.ps1`（本地快照 → scp → 远端**原位**回灌）
+  1. **本地**：`PRAGMA wal_checkpoint(TRUNCATE)` + **`VACUUM INTO`** 出一份一致性快照
+     （比直接 scp 主库安全：不长时间锁库、顺带整理碎片；实测 117.2 MB → 116.9 MB）
+  2. **校验**：本地 SHA256 → `scp` 到 `/tmp/voc.db.new` → 远端比对 SHA256 +
+     `PRAGMA integrity_check` + `comments` 条数 > 0（任一不过 → 远端**分毫不动**）
+  3. **远端**：`sqlite3.Connection.backup()` 把快照**回灌进现有的 `data/voc.db`**
+- ⚠️ **与原设计的偏离（有意为之，务必别改回 `mv`）**：原设计写"远端 `mv` 原子替换"，
+  实测**对本站不安全**——`voc-web.service` 常驻且持有 SQLAlchemy 连接池，`mv` 只换
+  inode，池里那些已打开的连接会**永远继续读那个被 unlink 的旧文件**（不报错、
+  只是数据永远不更新，属于最难查的静默陈旧）。`sqlite3 .backup()` 是在**原文件内逐页
+  重写**，已在服务的读者能立刻看到新数据；也不需要重启服务（并发写冲突由
+  `busy_timeout=60000` 兜住，WAL 下读写可并行）。
+- 失败语义：脚本 `exit 1` 且远端不改；`daily_incremental_collect.py` 只记 warning，
+  **不影响采集退出码**——本机始终是唯一权威源，VPS 只是展示端，宁可 VPS 旧一天，
+  也不能让 02:00 采集被判失败（与 `--publish-snapshot` 同款解耦原则）
+- 触发时机：**并入 02:00 采集链路末尾**（`daily_incremental_collect.py --push-db`）。
+  不另开计划任务的理由：推送必须等采集**全部跑完**，同进程内顺序天然成立，
+  另开任务反而要自己造时序守卫。如需当日更新再另加 10:00/18:00 两次（先跑稳再决定）
+- 参数：`-DbPath` / `-Remote` / `-RemoteDb` / `-Identity`（默认 `~/.ssh/k_lynx_web.pem`）；
+  `-DryRun` 只出本地快照不联网；`-RestartService` 默认关（原位回灌不需要重启）
+- 传输安全：复用部署用 SSH 密钥，不新增密码/端口暴露；`data/covers/` 不随库同步，
+  新增封面目标需手动补传
 
 ### 本次确认的 4 项决策（2026-09-10）
 
@@ -892,8 +908,8 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 > （`Permission denied (publickey)`）→ 改用可用的 `~/.ssh/k_lynx_web.pem` 后正常。
 
 **开发（本地仓库）**
-- [ ] `scripts/ops/push_db_to_vps.ps1`（checkpoint → scp → 原子替换；失败不阻塞采集）+ pytest
-- [ ] 同步触发：并入 02:00 采集链路末尾（`daily_incremental_collect.py` 加开关，默认关）
+- [x] `scripts/ops/push_db_to_vps.ps1`（VACUUM INTO 本地快照 → SHA256 → scp → 远端**原位** `sqlite3 .backup()` 回灌；失败返回非零但**不阻塞采集**）+ `tests/test_daily_incremental_collect.py` 新增 8 例（2026-09-11 端到端实测通过）
+- [x] 同步触发：并入 02:00 采集链路末尾（`daily_incremental_collect.py --push-db`，默认关；`register_local_collect_task.ps1` 的 02:00 任务已带该 flag，`-NoPushDb` 可退回）
 - [ ] 提交现有未入库改动（Agent 73 例 + 前端 + 文档），保证可回滚
 
 **VPS 端**
@@ -905,9 +921,9 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 
 **验收**
 - [x] 内测（HTTP）`http://134.175.115.248:8443/` 打开看板；`/api/health` 返回 `{"ok":true,...}`（2026-09-11）
-- [ ] 域名 HTTPS 打开三看板，数据与本地一致（同步后）
-- [ ] `/api/agent/chat` 流式对话可用（DeepSeek Key 生效、tool 调用正常）
-- [ ] admin 登录可增删改采集任务（可选，内测阶段）
+- [ ] 域名 HTTPS 打开三看板（待备案通过 + §7B）；**数据一致已达成**：`push_db_to_vps.ps1` 实测推送后远端 `comments=18916` 与本地一致（2026-09-11）
+- [x] `/api/agent/chat` 流式对话可用：公网 `:8443` SSE 实测收到 `token` + `done`、会话落库 `['user','assistant']`（DeepSeek Key 生效，见 §7A-1）；本地另验 tool 调用链 + 归属护栏
+- [x] admin 登录 + 采集任务增删改（CRUD）：本地 TestClient（真实 app + 真实库）验收 **9/9** 通过（2026-09-11）
 - [x] `http://134.175.115.248:8443/data/voc.db` → 404；`/.env` → 404（2026-09-11 实测）
 - [ ] 静态快照站（EdgeOne）与 VPS 版并存互不影响，手册交叉引用
 
@@ -917,6 +933,7 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-11 | **①b 数据通道落地（E 项）+ 内测功能验收（C/D 项）**：①新增 `scripts/ops/push_db_to_vps.ps1`——5 步（本地 `wal_checkpoint(TRUNCATE)` + `VACUUM INTO` 快照 → 本地 SHA256 → `scp` 到 `/tmp/voc.db.new` → 远端 SHA256 + `integrity_check` + 评论数校验 → 远端**原位** `sqlite3.Connection.backup()` 回灌）；**有意偏离原设计**：原写「远端 `mv` 原子替换」对本站不安全（uvicorn 连接池持旧 inode → 静默读旧库不报错），改为原位 `.backup()` 逐页重写 + `busy_timeout=60000` 兜并发；参数 `-DbPath`/`-Remote`/`-RemoteDb`/`-Identity`/`-DryRun`/`-RestartService`（默认关）。②`daily_incremental_collect.py` 新增 `push_db_to_vps()`（任何失败 → warning + 返回 False，**不改采集退出码**）+ `--push-db`（默认关）；`register_local_collect_task.ps1` 的 02:00 任务追加 `--push-db` + `-NoPushDb` 退回开关。③`tests/test_daily_incremental_collect.py` +8 例（默认关 / 传 flag 推一次 / 顺序 collect→summary→push / 失败不改退出码 / 脚本缺失 / 非零 rc / 无 powershell / 显式 utf-8 解码）。④**端到端实测**：dry-run 快照 `integrity=ok` / `comments=18916` / 116.9 MB；真实推送两端 SHA256 一致（`1423887f…`）、远端 `RESTORE_OK`、`live_comments_after=18916`；推送后 `/api/health` 仍 `{"ok":true,"comments":18916}`、`voc-web` active、DB 600、无临时文件残留；全量 pytest **236 passed**。⑤**C 项**（admin 登录 + 采集任务 CRUD）本地 TestClient（真实 app + 真实库）**9/9 通过**；**D 项**（Agent SSE / tool 调用 / 落库 / 归属护栏）通过。⑥§0.5 同步 5 步流程 + `mv` 偏离警告 + 失败语义 + 触发时机 + 参数；§11 开发/验收勾选 | 工程师「C,D,E 都做」：把 ①b 的「本地→VPS」数据通道从设计变为可用脚本并并入 02:00 链路，同时完成内测功能验收 |
 | 2026-09-11 | **§7A 手册与线上实测对齐（Caddy 2.6.2 指令名坑 + 实测记录表 + fail2ban jail）**：①**指令名坑**——Caddy **2.6.2（apt/universe）里是 `basicauth`**，`basic_auth` 是 **2.8+ 新名**；照 2.8+ 文档写会 `validate` 失败并报 `unrecognized directive: basic_auth`（本站首次部署即踩），§7A 片段统一改 `basicauth` 并加警告；②§7A 补「先备份 + 先 `validate` 再覆盖」安全操作法（改写 `/tmp/Caddyfile.new` → 验证 → 覆盖），`restart`→`reload`；③新增 **§7A-1 实测记录表**：no-auth→**401** / with-auth→**200**；**130 次伪造 XFF 连打 → 200=120 / 429=10，首个 429 恰在 #121**（P0-2+P0-3 同时生效）；200KB→**422**；2MB→**502**（含"为何不改回 413"说明：`expression` 匹配 `Content-Length` 无法兜 chunked）；SSE `ttfb≈1.2s/total≈2.6s` 收到 `token`+`done` 且落库 `['user','assistant']`（P0-4 不阻塞流式）；④新增 **§7A-2 fail2ban jail**（filter 匹配 Caddy JSON 日志 `"status":401`，jail `voc-caddy-401`，`-t` 先测再重启）；⑤§5.5.2 P0-4/P0-5 与 §5.5.5 fail2ban 勾选、§11 fail2ban 由「待装」改「已装」 | 工程师「把你能替我做的都做好」：把本轮实测结论固化进手册，消除"文档写的 Caddy 指令在线上跑不通 / fail2ban 一直待装"类不一致 |
 | 2026-09-11 | **§5.5 安全加固 P0-1/2/3/4 落地**：①**P0-2**（代码）`auth.client_ip()` 由 XFF **首段**改取**末段**（反代追加的真实 IP；首段可被客户端伪造 → 原限流可被"每次换一个随机 XFF"绕过）；§7A/§7B Caddyfile 均加 `header_up X-Forwarded-For {remote_host}` 覆盖；新增 2 例回归。②**P0-1**（VPS 配置）§7A 重写为 `caddy hash-password` + `basic_auth { 每人一行 }` 全站准入，含"不带凭据必须 401"验证与撤人步骤。③**P0-3**（代码）通用 `_rate_check` 抽离，新增 `check_public_rate`/`public_rate_limit` 并挂 `public_router`（一处覆盖 11 个公开只读端点，默认 120/min/IP）；`/api/health` 不受影响；新增回归 1 例。④**P0-4**（代码）新增日额度熔断 `AGENT_DAILY_CHAT_LIMIT`(300)/`AGENT_DAILY_CHAT_LIMIT_PER_IP`(50)（UTC+8 自然日、归属校验后扣减）、`AGENT_MAX_TOKENS`(2048) 传入 LLM、并发闸 `AGENT_MAX_CONCURRENCY`(2)+`AGENT_QUEUE_WAIT_SEC`(20)（`stream_chat_guarded` 包装，满则发 `error(busy)`）；新增回归 5 例。`.env.example` 同步 7 个新 env | 工程师「继续」：把 §5.5 的 P0 清单从"待办"变成"已落地代码 + 待执行 VPS 配置" |
 | 2026-09-11 | **新增 §5.5 内测期安全加固**：备案前外发链接前的 P0 清单（全站准入 basic_auth / XFF 伪造修复 / 公开端点限流 / Agent 成本熔断 / 请求体上限）+ P1（审计日志 / 公网模式自检 / CSP / B站用户信息脱敏）+ 备案前 HTTPS 两条路（DNS-01 签 `erself.site` / Cloudflare 代理）+ 必做运维配置 | 工程师「备案前要给内测人员访问」：把安全整改固化为可勾选清单，避免"裸 IP + 无鉴权 + 明文"外发 |

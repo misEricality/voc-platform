@@ -146,10 +146,10 @@
 | 数据截至 | 2026-09-10 | 本地直采 02:00 + 03:00 补采哨兵；7 天回看窗口幂等补齐 |
 | 兜底占比 | topic 67.6% / opinion 67.4%（**2026-09-10 重打后未复测**） | GDT v3.1.1 锁定；复测脚本已归档到 `scripts/dev/archive/one_shot_curate/stage1_report.py` |
 | 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111） |
-| 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）+ 公网静态快照（EdgeOne Pages，每日 04:30 自动发布）** | FastAPI + 原生 SPA 5 页 + Agent 抽屉；Streamlit 并存；方案 ③ 已上线并自动化（`VOC-Local-Publish-Snapshot`），方案 ①b（VPS 只读服务）待外部资源 |
+| 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）+ 公网静态快照（EdgeOne Pages，每日 04:30 自动发布）+ VPS 只读服务（①b，内测上线）** | FastAPI + 原生 SPA 5 页 + Agent 抽屉；Streamlit 并存；方案 ③ 已上线并自动化（`VOC-Local-Publish-Snapshot`）；方案 ①b 已落地：VPS `voc-web.service` + Caddy `:8443` 内测，DB 每日随 02:00 采集推库（`--push-db`） |
 | 平台覆盖 | **Steam（单机 8）+ B站（5 视频）** | 微博为下一主扩展 |
-| 数据存储 | SQLite 单文件（`data/voc.db`，**115.7 MB / 2026-09-10**）| WAL 模式；前端服务读 × cron 写并发；GH Actions `collect` job 已停用 |
-| 测试门禁 | **pytest 219 例** | 黄金集 + API + 队列 + 每日采集 + 哨兵 + monitored 白名单 + Agent |
+| 数据存储 | SQLite 单文件（`data/voc.db`，**117.2 MB / 2026-09-11**）| WAL 模式；前端服务读 × cron 写并发；GH Actions `collect` job 已停用；①b 每日 `VACUUM INTO` 快照推 VPS（远端原位 `.backup()`） |
+| 测试门禁 | **pytest 236 例** | 黄金集 + API + 队列 + 每日采集（含推库 8 例）+ 哨兵 + monitored 白名单 + Agent |
 
 ---
 
@@ -367,7 +367,7 @@
 - **✅ 已落地**：三页预聚合 JSON 导出（383 路由 / 5.4 MB）+ 静态 shim + EdgeOne Pages 发布链路；公网 live 实测通过
 - **范围**：只导三看板页（不含数据管理 / 系统管理，无写操作）；首页 = 游戏对比（静态版）
 - **✅ 自动发布（2026-09-10）**：新增计划任务 `VOC-Local-Publish-Snapshot`（04:30，排在采集 02:00 / 哨兵 03:00 / Agent 裁剪 03:30 之后）→ 导出 + 发布 EdgeOne Pages；**独立任务而非并进采集**，保证发布失败不影响采集退出码与哨兵判定。⚠️ 早期文档称 daily 有 `--publish-snapshot`，实测该参数从未落地，已按独立任务方案修正文档
-- **待办**：方案 ① 已于 2026-09-10 定为**变体 ①b**（本机采集 + 推 DB + VPS 只读服务，含实时查询与 Agent 对话），落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](../architecture/SELF_HOSTED_VPS_DEPLOYMENT.md)，待 VPS / 域名 / 备案到位
+- **✅ ①b 内测上线（2026-09-11）**：方案 ① 定为**变体 ①b**（本机采集 + 推 DB + VPS 只读服务，含实时查询与 Agent 对话）；VPS `voc-web.service`（uvicorn `127.0.0.1:8000`）+ Caddy `:8443` 反代，公网 `http://134.175.115.248:8443` 可访问；DB 同步链路 `scripts/ops/push_db_to_vps.ps1`（`VACUUM INTO` 快照 → scp → 远端**原位** `.backup()`）已并入 02:00 采集（`--push-db`，失败只告警），实测推送后远端 `comments=18916` 与本地一致；落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](../architecture/SELF_HOSTED_VPS_DEPLOYMENT.md)。**剩余外部依赖**：域名 `erself.site` ICP 备案通过后切 HTTPS（§7B）
 
 ---
 ## ⚖️ 五、决策建议（业务视角）
@@ -390,7 +390,7 @@
 2. ✅ **Web 实时看板阶段 5 收口**：VPS 部署文档更新（鉴权/WAL/8000 端口 + 03:00 补采哨兵）+ AGENTS.md 版本记录 + §6 健康检查 8 条（2026-09-07 洁癖收口）
 3. ✅ ~~**P11 qwen-flash bogus 清理**~~：**2026-09-10 已执行**（实际 **2542 行**，6 个 Steam 目标；原「261 行」估算偏低）；这些评论 `posted_at` 在 8/04~8/25，**在每日 cron 的 7 天回看窗之外**（实测近 7 天未分析 = 0），故改用 `reanalyze_all.py --platform steam` 手动重打 + 补写 `analyzer_version` 溯源 —— 详见 §四 P11
 4. ✅ ~~**workflow cron change + verify step push**~~：已推送（2026-09-01）；2026-09-02 起 workflow `collect` job 置 `if: false` 停用（数据链路切**本地直采**：Task Scheduler `VOC-Local-Daily-Collect` 北京 02:00 直写 voc.db；`test` job 保留作 CI 门禁）——详见 [AUTOMATION_PIPELINE.md](../architecture/AUTOMATION_PIPELINE.md) §0
-5. **🆕 公网部署（进行中）**：[DEPLOYMENT_OPTIONS.md](../architecture/DEPLOYMENT_OPTIONS.md) 选型「③ 静态快照 + ① VPS」两步走——**③ 已于 2026-09-07 上线**（EdgeOne Pages，三看板快照；**2026-09-10 起由计划任务 `VOC-Local-Publish-Snapshot` 每日 04:30 自动导出 + 发布，不再需要手动**）；**① 于 2026-09-10 确认启用变体 ①b**（本机采集 + DB 同步 + VPS 只读服务，含实时查询与 Agent 对话）：VPS 用国内轻量、域名新买（国内节点需 ICP 备案）、Agent 公开+限流小范围内测。落地清单见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](../architecture/SELF_HOSTED_VPS_DEPLOYMENT.md)；**待外部资源到位**（VPS / 域名 / 备案）后执行部署
+5. **🆕 公网部署（①b 内测上线）**：[DEPLOYMENT_OPTIONS.md](../architecture/DEPLOYMENT_OPTIONS.md) 选型「③ 静态快照 + ① VPS」两步走——**③ 已于 2026-09-07 上线**（EdgeOne Pages，三看板快照；**2026-09-10 起由计划任务 `VOC-Local-Publish-Snapshot` 每日 04:30 自动导出 + 发布，不再需要手动**）；**① 采用变体 ①b 并已于 2026-09-11 内测上线**（腾讯云轻量·广州 `134.175.115.248`，`voc-web.service` + Caddy `:8443`；本机采集 + DB 每日随 02:00 采集推库 + VPS 只读服务，含实时查询与 Agent 对话；Agent 公开+限流小范围内测）。落地清单与实测见 [SELF_HOSTED_VPS_DEPLOYMENT.md §11](../architecture/SELF_HOSTED_VPS_DEPLOYMENT.md)；**剩余外部依赖**：域名 `erself.site` ICP 备案通过后切 HTTPS（§7B）
 6. ✅ ~~**原声分析 Agent**~~：2026-09-08 ~ 09-10 落地（见 §四 P12）+ 对抗式审查加固；「引用当前查询」已接入 dashboard / bilibili / compare 三看板
 7. P9 阶段 2 L3.5 微话题聚类（`l35_cluster.py` 骨架已就绪）
 8. P9 阶段 3 PEDM 负向观点试点（黄金集一致率 ≥80% 才放量）

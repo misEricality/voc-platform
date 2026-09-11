@@ -11,9 +11,12 @@
 5. （可选）把 DB 上传到 GitHub Release 作为长期累积载体
 6. B站采集队列 run-due（2026-09-05 接入；--skip-bilibili 关闭）——
    此前 daily 只采 Steam，B站到期任务无本地调度器负责
+7. （可选）把本地 DB 推送到自建 VPS（变体 ①b 数据通道，--push-db；默认关，
+   2026-09-11 接入）——见 docs/architecture/SELF_HOSTED_VPS_DEPLOYMENT.md §0.5
 
 设计要点：
 - 单 target 失败不阻塞其他（try/except 包裹）
+- VPS 推送失败只记 warning，不改采集退出码（本机始终是唯一数据源）
 - 增量语义完全依赖 src/pipeline.py 现有能力（bulk_upsert 去重 +
   analyzed_at IS NOT NULL 跳过 + find_missing_embedding_ids 增量向量化），
   本脚本不引入新的存储逻辑
@@ -29,6 +32,10 @@
 
     # 本地手动同步（强制从头跑，禁用滑窗）
     python scripts/ops/daily_incremental_collect.py --no-download --no-upload --full-replay
+
+    # 本机 02:00 计划任务（采集 + 把 DB 推到 VPS，变体 ①b）
+    python scripts/ops/daily_incremental_collect.py --no-download --no-upload \
+        --lookback-days 7 --push-db
 """
 from __future__ import annotations
 
@@ -66,6 +73,11 @@ DB_ASSET_NAME = "voc.db"
 # GitHub 网页端上传同名文件会被自动加后缀（如 voc.db-1）；脚本兼容这种情况：
 # 先用 --pattern 精确匹配，失败则按前缀 voc.db.* 接受带后缀的文件。
 DB_ASSET_PREFIX = "voc.db"
+
+# 变体 ①b 数据通道（2026-09-11）：本地 DB -> 自建 VPS。
+# 推送脚本在本地快照（VACUUM INTO）+ scp + 远端原位 sqlite3 .backup()，
+# 远端地址/路径/密钥都是脚本默认值，需要改就在那个 ps1 里改。
+PUSH_DB_SCRIPT = ROOT / "scripts" / "ops" / "push_db_to_vps.ps1"
 
 # 北京时区固定偏移（UTC+8）。用 timedelta 而非 zoneinfo 避免 DST 影响（中国不实行夏令时）。
 BJT_OFFSET = timedelta(hours=8)
@@ -314,6 +326,46 @@ def gh_release_upload(tag: str, db_path: Path, *, force: bool = True) -> bool:
     return False
 
 
+def push_db_to_vps(
+    db_path: Path,
+    *,
+    script: Path | None = None,
+    timeout: int = 1800,
+) -> bool:
+    """把本地 DB 快照推到自建 VPS（变体 ①b 数据通道）。
+
+    只负责调 scripts/ops/push_db_to_vps.ps1 并翻译退出码；任何失败都降级为
+    warning + 返回 False —— 推送失败绝不能改变采集的退出码（本机是唯一数据源，
+    VPS 只是展示端，宁可 VPS 数据旧一天，也不能让 02:00 采集被判失败）。
+
+    :param db_path: 本地待推送的 SQLite 文件
+    :param script:  推送脚本路径（测试可注入；默认 PUSH_DB_SCRIPT）
+    :param timeout: 子进程超时（秒），默认 30 分钟
+    """
+    ps1 = Path(script) if script is not None else PUSH_DB_SCRIPT
+    if not ps1.exists():
+        log.warning(f"未找到 VPS 推送脚本 {ps1}，跳过推送")
+        return False
+    cmd = [
+        "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", str(ps1), "-DbPath", str(db_path),
+    ]
+    try:
+        # encoding 显式给 utf-8：Windows 默认 locale（gbk）解不出脚本输出的中文/特殊字符
+        proc = subprocess.run(
+            cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout,
+        )
+    except Exception as e:  # noqa: BLE001 - 推送失败一律降级为 warning
+        log.warning(f"VPS 推送异常（不影响采集）：{e}")
+        return False
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-5:]
+        log.warning(f"VPS 推送失败（不影响采集，rc={proc.returncode}）：{' | '.join(tail)}")
+        return False
+    log.info("VPS 推送完成")
+    return True
+
+
 # ---------- 主流程 ----------
 
 def today_tag(prefix: str = "voc-daily") -> str:
@@ -501,6 +553,10 @@ def main():
     parser.add_argument("--bili-limit", type=int, default=5,
                         help="B站 run-due 单次最多处理几个视频（防风控；默认 5，"
                              "单视频 1-3 分钟，为 150 分钟计划任务上限预留余量）")
+    parser.add_argument("--push-db", action="store_true",
+                        help="采集结束后把本地 DB 推到自建 VPS（变体 ①b 数据通道）。"
+                             "默认关：GH Actions 与手动调试不推；本机 02:00 计划任务显式带上。"
+                             "推送失败只告警，不影响退出码")
     args = parser.parse_args()
 
     db_path = Path(args.db_path)
@@ -545,6 +601,11 @@ def main():
         tag = today_tag(args.release_tag_prefix)
         if not gh_release_upload(tag, db_path):
             log.warning("今日 release 上传失败；DB 仍在本地，下次跑会从本地 DB 起步")
+
+    # 5.5 变体 ①b 数据通道：把本地 DB 推到自建 VPS（默认关；失败只告警，
+    #     见 docs/architecture/SELF_HOSTED_VPS_DEPLOYMENT.md §0.5）
+    if args.push_db:
+        push_db_to_vps(db_path)
 
     # 6. 退出码：任一失败 → 非零
     if any(not r["ok"] for r in results):

@@ -5,6 +5,8 @@
 2. 有库起步 → 只新增（不覆盖已有 likes_refreshed_at）
 3. 时间窗计算正确（max(posted_at) - 1 天）
 4. 单 target 失败不阻塞其他 target
+5. --push-db（变体 ①b 推 DB 到 VPS）默认关、在采集链末尾、失败不改变退出码
+   （2026-09-11 接入）
 （plan/P6_AUTOMATION_PIPELINE.md 已于 2026-08-22 合并删除）
 
 每个用例用 data/test_*.db（已被 .gitignore 排除 *.db），绝不碰 data/voc.db；
@@ -423,6 +425,131 @@ def test_smart_window_bjt_midnight_boundary():
     assert posted_before == datetime(2026, 8, 28, 16, 0, 0), f"posted_before={posted_before}"
     # posted_after: max_ts - 1d = UTC 8/27 0:00（北京 8/27 8:00），floor = UTC 8/26 16:00
     assert posted_after == datetime(2026, 8, 27, 0, 0, 0), f"posted_after={posted_after}"
+
+
+# ---------- 用例 10：--push-db 开关（变体 ①b 数据通道，2026-09-11） ----------
+#
+# 契约（见 docs/architecture/SELF_HOSTED_VPS_DEPLOYMENT.md §0.5 + §11）：
+#   1. 默认关：不传 --push-db 就不推（GH Actions / 手动调试不受影响）
+#   2. 传了才推，且只推一次，参数是 --db-path 指向的那个库
+#   3. 推送必须发生在采集链路末尾（否则会推出半成品 DB）
+#   4. 推送失败只告警，绝不改变采集退出码（本机是唯一数据源，VPS 只是展示端）
+
+def _run_main(monkeypatch, test_db_path, extra_argv, push_result=True):
+    """跑 main()：屏蔽真实网络/采集/B站队列，只观察 push_db_to_vps 是否被调用。"""
+    import sys
+
+    import scripts.ops.daily_incremental_collect as mod
+
+    calls = []
+
+    def fake_push(db_path, **kwargs):
+        calls.append(Path(db_path))
+        return push_result
+
+    monkeypatch.setattr(mod, "push_db_to_vps", fake_push)
+    monkeypatch.setattr(mod, "load_targets_any", lambda *a, **k: [])
+    monkeypatch.setattr(mod, "run_bilibili_queue", lambda **k: {
+        "target": "bilibili:run-due (due=0)", "ok": True,
+        "fetched": 0, "analyzed": 0, "embedded": 0, "error": None,
+    })
+    monkeypatch.setattr(sys, "argv", [
+        "daily_incremental_collect.py", "--no-download", "--no-upload",
+        "--db-path", str(test_db_path),
+        "--targets-config", str(ROOT / "config" / "monitoring" / "targets.yaml"),
+    ] + extra_argv)
+    mod.main()
+    return calls
+
+
+def test_push_db_disabled_by_default(monkeypatch, test_db_path):
+    """不传 --push-db → 不触发 VPS 推送（默认关，GH Actions 与手动调试不受影响）"""
+    assert _run_main(monkeypatch, test_db_path, []) == []
+
+
+def test_push_db_flag_calls_pusher_once_with_db_path(monkeypatch, test_db_path):
+    """传 --push-db → 恰好推一次，且推的是 --db-path 指定的库"""
+    calls = _run_main(monkeypatch, test_db_path, ["--push-db"])
+    assert calls == [Path(str(test_db_path))], calls
+
+
+def test_push_db_runs_after_collect_chain(monkeypatch, test_db_path):
+    """顺序回归：push 必须在 B站 run-due + 摘要之后，否则推出的是半成品 DB"""
+    import sys
+
+    import scripts.ops.daily_incremental_collect as mod
+
+    order = []
+    monkeypatch.setattr(mod, "load_targets_any", lambda *a, **k: [])
+    monkeypatch.setattr(mod, "run_bilibili_queue", lambda **k: (
+        order.append("collect") or
+        {"target": "bilibili", "ok": True, "fetched": 0, "analyzed": 0, "embedded": 0, "error": None}
+    ))
+    monkeypatch.setattr(mod, "emit_step_summary", lambda results: order.append("summary"))
+    monkeypatch.setattr(mod, "push_db_to_vps", lambda db, **k: order.append("push") or True)
+    monkeypatch.setattr(sys, "argv", [
+        "daily_incremental_collect.py", "--no-download", "--no-upload",
+        "--db-path", str(test_db_path), "--push-db",
+    ])
+    mod.main()
+    assert order == ["collect", "summary", "push"], order
+
+
+def test_push_db_failure_does_not_change_exit_code(monkeypatch, test_db_path):
+    """推送返回 False → main() 正常返回，不 sys.exit(1)（失败不阻塞采集）"""
+    calls = _run_main(monkeypatch, test_db_path, ["--push-db"], push_result=False)
+    assert len(calls) == 1
+
+
+def test_push_db_to_vps_returns_false_when_script_missing(tmp_path):
+    """推送脚本不存在 → 仅告警并返回 False（不是异常）"""
+    from scripts.ops.daily_incremental_collect import push_db_to_vps
+    assert push_db_to_vps(tmp_path / "voc.db", script=tmp_path / "missing.ps1") is False
+
+
+def test_push_db_to_vps_returns_false_on_nonzero_rc(monkeypatch, tmp_path):
+    """推送脚本非零退出（scp/远端校验失败）→ 返回 False，不抛异常"""
+    import scripts.ops.daily_incremental_collect as mod
+
+    script = tmp_path / "push.ps1"
+    script.write_text("exit 1", encoding="utf-8")
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        args=["powershell"], returncode=1, stdout="", stderr="scp failed"))
+    assert mod.push_db_to_vps(tmp_path / "voc.db", script=script) is False
+
+
+def test_push_db_to_vps_returns_false_when_powershell_missing(monkeypatch, tmp_path):
+    """无 powershell（非 Windows / PATH 缺失）→ 返回 False，不抛异常"""
+    import scripts.ops.daily_incremental_collect as mod
+
+    script = tmp_path / "push.ps1"
+    script.write_text("exit 0", encoding="utf-8")
+
+    def boom(*a, **k):
+        raise FileNotFoundError("powershell not found")
+
+    monkeypatch.setattr(mod.subprocess, "run", boom)
+    assert mod.push_db_to_vps(tmp_path / "voc.db", script=script) is False
+
+
+def test_push_db_to_vps_uses_explicit_utf8_encoding(monkeypatch, tmp_path):
+    """回归：子进程输出必须显式 utf-8 解码（2026-09-09 Windows gbk 解码教训）"""
+    import scripts.ops.daily_incremental_collect as mod
+
+    script = tmp_path / "push.ps1"
+    script.write_text("exit 0", encoding="utf-8")
+    seen: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        seen["kwargs"] = kwargs
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="DONE", stderr="")
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    assert mod.push_db_to_vps(tmp_path / "voc.db", script=script) is True
+    assert seen["kwargs"].get("encoding") == "utf-8"
+    assert str(script) in seen["cmd"]
+    assert str(tmp_path / "voc.db") in seen["cmd"]
 
 
 # ---------- main（直接跑时） ----------

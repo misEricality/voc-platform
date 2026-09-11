@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-09-09（原声分析 Agent 落地：ops/ 新增 prune_agent_history.py + 补登记 check_daily_collect.py）
+> **最后更新**：2026-09-11（①b 数据通道：ops/ 新增 push_db_to_vps.ps1 + daily_incremental_collect 加 --push-db + register_local_collect_task 的 02:00 任务带推库）
 
 ---
 
@@ -54,6 +54,7 @@ scripts/
     ├── register_local_collect_task.ps1 ✅ 注册 4 个本地计划任务（02:00 采集 + 03:00 哨兵 + 03:30 prune + 04:30 静态快照发布；2026-09-10 起含发布）
     ├── check_daily_collect.py          ✅ 每日采集哨兵（03:00 检查 02:00 结果，失败/漏跑则补采；2026-09-07）
     ├── prune_agent_history.py          ✅ Agent 会话 30 天裁剪（03:30 跑，FK CASCADE 删消息；2026-09-09）
+    ├── push_db_to_vps.ps1              ✅ 本地 DB 推自建 VPS（VACUUM INTO 快照 → scp → 远端原位 .backup()；2026-09-11）
     └── register_sync_tasks.ps1         ✅ Windows Task Scheduler 注册（10:00/13:00/18:00/22:00 sync）
 ```
 
@@ -68,11 +69,12 @@ scripts/
 | **smoke_test.py** | 每次新增模块后跑一次 | 项目骨架回归测试 |
 | **ops/refresh_likes.py** | 发布满 7 天的评论回采点赞/回复/开发者回复 | `python -m scripts.refresh_likes --platform steam --target <appid>` |
 | **ops/backfill_embeddings.py** | 评论语义向量回填 / 换模型全量重算 | `python scripts/ops/backfill_embeddings.py --limit 100`（增量）；`--force`（清空重算，单事务原子切换） |
-| **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调用 + 本地直采计划任务）；2026-09-05 起内置 B站队列 run-due（`run_bilibili_queue`，默认跑，`--skip-bilibili` 关闭，`--bili-limit 5` 防风控） | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地直采计划任务用）；测试：`tests/test_bilibili_queue.py` run_bilibili_queue 编排 2 例 |
+| **ops/daily_incremental_collect.py** | P6 每日增量采集编排入口（GitHub Actions 调用 + 本地直采计划任务）；2026-09-05 起内置 B站队列 run-due（`run_bilibili_queue`，默认跑，`--skip-bilibili` 关闭，`--bili-limit 5` 防风控）；2026-09-11 起 `--push-db`（默认关）在整条链末尾把本地 DB 推自建 VPS（变体 ①b），推送失败只告警、**不改采集退出码** | `python scripts/ops/daily_incremental_collect.py`（默认全流程）；`--no-download --no-upload`（本地直采计划任务用）；`--push-db`（本机 02:00 任务用，见 `register_local_collect_task.ps1`）；测试：`tests/test_bilibili_queue.py` 编排 2 例 + `tests/test_daily_incremental_collect.py` 推库 8 例 |
 | **ops/verify_release_upload.py** | P6 静默失败防御：daily collect 跑完后用 `gh release view` 检查 `voc.db` asset 实际状态（size > 1KB + state=uploaded），失败 exit 1 让 workflow 标红。详见 `docs/architecture/AUTOMATION_PIPELINE.md §8.3` | GH Actions workflow 自动调用；也可 `--tag voc-daily-YYYY-MM-DD` 手动验证；测试：`tests/test_verify_release_upload.py` 8 例 |
 | **ops/smart_sync_release.py** | 本地自动 sync GH Release → `data/voc.db`（幂等）：①今天 release 未上传 → 安静 exit 0（专为"10:00 早跑，workflow 还没好"场景设计）②本地比远端新 → noop exit 0 ③远端比本地新 → 下载 + 安全 rename 替换 → exit 0 ④文件锁（Streamlit 打开）→ exit 1 + 提示"关仪表盘" | `python scripts/ops/smart_sync_release.py`（默认 today UTC）或 `--date 2026-08-28` 指定日期。注册到 Windows Task Scheduler 见 `register_sync_tasks.ps1`（4 task 错开 10:00/13:00/18:00/22:00） |
 | **ops/register_sync_tasks.ps1** | 注册 Windows Task Scheduler 任务：4 个 daily VOC-Sync-Release-* 任务，分别 10:00 / 13:00 / 18:00 / 22:00，每天跑 `smart_sync_release.py` | **需以管理员身份运行 PowerShell**：`powershell -ExecutionPolicy Bypass -File scripts\ops\register_sync_tasks.ps1`。卸载：`... -Uninstall`。DSH agent 无 admin 权限，不能自动注册。⚠️ **2026-09-10 起不建议注册**：远端 `voc-daily-*` release DB 是**归档前的旧快照**，sync 回灌主库会带回已归档的 4 款网游（2026-09-10 已实际发生一次并修复）；且数据链路已切本地直采，sync 不再必要 |
-| **ops/register_local_collect_task.ps1** | 注册 4 个本地计划任务：`VOC-Local-Daily-Collect`（北京 02:00 采集）+ `VOC-Local-Daily-Collect-Check` 哨兵（03:00）+ `VOC-Local-Agent-Prune`（03:30）+ **`VOC-Local-Publish-Snapshot`（04:30 导出静态快照 + 发布 EdgeOne Pages，2026-09-10 新增）**；采集跑 `daily_incremental_collect.py --no-download --no-upload --lookback-days 7` 直接写 `data/voc.db`，前端直读零延迟；错过补跑（StartWhenAvailable）+ 日志落 `logs/` | `powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1`（当前用户注册，**无需管理员**）；可传 `-PublishAt "05:00" -SnapshotProject "voc-platform"`；卸载 `... -Uninstall`（含发布任务）。⚠️ 机器关机 >2 天会有数据缺口，恢复后加 `--full-replay` 手动补 |
+| **ops/register_local_collect_task.ps1** | 注册 4 个本地计划任务：`VOC-Local-Daily-Collect`（北京 02:00 采集）+ `VOC-Local-Daily-Collect-Check` 哨兵（03:00）+ `VOC-Local-Agent-Prune`（03:30）+ **`VOC-Local-Publish-Snapshot`（04:30 导出静态快照 + 发布 EdgeOne Pages，2026-09-10 新增）**；采集跑 `daily_incremental_collect.py --no-download --no-upload --lookback-days 7 --push-db` 直接写 `data/voc.db` 并把成品库推自建 VPS（变体 ①b，2026-09-11 起），前端直读零延迟；错过补跑（StartWhenAvailable）+ 日志落 `logs/` | `powershell -ExecutionPolicy Bypass -File scripts\ops\register_local_collect_task.ps1`（当前用户注册，**无需管理员**）；可传 `-PublishAt "05:00" -SnapshotProject "voc-platform"`；`-NoPushDb` 注册「不带推库」版本；卸载 `... -Uninstall`（含发布任务）。⚠️ 机器关机 >2 天会有数据缺口，恢复后加 `--full-replay` 手动补 |
+| **ops/push_db_to_vps.ps1** | 变体 ①b 数据通道：本地 `wal_checkpoint(TRUNCATE)` + `VACUUM INTO` 快照 → 本地 SHA256 → `scp` → 远端 SHA256 + `integrity_check` + 评论数校验 → **原位** `sqlite3 .backup()` 回灌 VPS 的 `data/voc.db`（**有意不用 `mv`**：uvicorn 连接池持旧 inode 会永远读旧库且不报错）；任一步失败 → 远端分毫不动 + exit 1（调用方降级为 warning） | `powershell -ExecutionPolicy Bypass -File scripts\ops\push_db_to_vps.ps1`；`-DryRun` 只出本地快照不联网；`-RestartService` 默认关（原位回灌不需重启）；默认 SSH 目标 `ubuntu@134.175.115.248` / 密钥 `~/.ssh/k_lynx_web.pem`；**保持 ASCII-only**（PS 5.1 BOM-less 解析约束） |
 | **ops/check_daily_collect.py** | 每日采集哨兵：03:00 检查 `VOC-Local-Daily-Collect` 上次结果，失败/漏跑则补采（`LastTaskResult != 0` 或未跑）；并发安全（02:00 仍在跑则跳过） | 由计划任务自动调用；手动 `python scripts/ops/check_daily_collect.py --dry-run`；测试 `tests/test_check_daily_collect.py` 5 例 |
 | **ops/prune_agent_history.py** | Agent 会话 30 天滚动裁剪：删 `agent_sessions.created_at < now-AGENT_RETENTION_DAYS`（默认 30，0=永久），`agent_messages` 走 FK CASCADE | 由计划任务 03:30 调用；手动 `python scripts/ops/prune_agent_history.py --dry-run`；测试 `tests/test_prune_agent_history.py` 6 例 |
 | **ops/reset_qwen_flash_bogus.py** | P11 清理 8/24-25 QWEN-flash 模型 404 留下的假数据：UPDATE 261 条 `analyzer_version=llm:qwen3-flash@...` 的评论清掉分析字段，让明早 cron 重新打 | 默认 dry-run 打印预演；`--commit` 真正清；`--like` 宽松匹配（清所有 `llm:qwen%` 假数据） |
@@ -201,6 +203,7 @@ scripts/
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-11 | 新建 `ops/push_db_to_vps.ps1`（①b 数据通道：`VACUUM INTO` 快照 → scp → 远端**原位** `.backup()`；失败不阻塞采集）+ `ops/daily_incremental_collect.py` 加 `--push-db`（默认关，失败只告警）+ `ops/register_local_collect_task.ps1` 的 02:00 任务带 `--push-db`（`-NoPushDb` 退回）；`tests/test_daily_incremental_collect.py` +8 例 | 工程师「C,D,E 都做」：把 VPS 只读服务从「静态数据」升级为「每日自动同步的最新数据」 |
 | 2026-09-09 | 新建 `ops/prune_agent_history.py`（Agent 会话 30 天裁剪，FK CASCADE）；补登记 `ops/check_daily_collect.py`（9/7 新增漏登记） | 原声分析 Agent 落地：30 天合规裁剪 + 03:00 采集哨兵链闭环 |
 | 2026-09-06 | `ops/daily_incremental_collect.py` Steam 采集成功后回写 `collect_tasks.last_collected_at`（`task_row_id` 此前透传但从未被消费） | Web 看板 admin 列表新增「采集时间」列依赖该字段 |
 | 2026-09-05 | `ops/daily_incremental_collect.py` 内置 B站队列 run-due（`run_bilibili_queue` 复用 `src/queue/runner.py`，默认跑 / `--skip-bilibili` 关闭 / `--bili-limit 5` 防风控 + 预留计划任务时长余量）；计划任务命令不变无需重注册；测试 +2 例（编排透传 / 结构性异常不阻塞） | 修复调度缺口：daily 此前只采 Steam，B站队列 due 过期任务无本地调度器负责（当日晚间 uvicorn backfill ImportError 排查时发现） |
