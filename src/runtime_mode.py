@@ -7,9 +7,15 @@
 
 - 结果只落 VPS 库，**次日 02:00 被整库推送覆盖掉**（白干）；
 - VPS 上没有 `BILIBILI_SESSDATA` / 本机代理 → B 站必然 412 或 0 条；
-- VPS 没装 ML 依赖、也**没有生产标注器（GLM）的 Key** → `get_analyzer()` 回落到默认
-  `deepseek`，写进库的 `analyzer_version` 与本地口径不一致，**污染溯源**；
+- VPS 没装 ML 依赖（2026-09-12 实测 `import torch` → NO）→ 向量化缺失；
 - 每跑一次都在花 token。
+- ⚠️ **「VPS 缺凭据」不能当护栏**（2026-09-12 更正）：VPS 的 `.env` 里**有**
+  `DEEPSEEK_API_KEY`（原声分析 Agent 对话必需，缺它 `src/agent/chat.py` 直接报错），
+  且没设 `ANALYZER_PROVIDER` → `get_analyzer()` 取默认 `deepseek`
+  （`src/analyzers/base.py`）→ **能正常初始化并标注**。而本地生产标注器自 2026-09-08
+  起也是 `deepseek-v4-flash` → 写出来的 `analyzer_version` 与本地**口径一致、
+  看不出异常**，比"写脏溯源"更隐蔽。（旧注释写的"VPS 无标注器 Key → 回落 deepseek →
+  污染溯源"，只在生产标注器是 GLM 的 2026-08-31 ~ 09-08 期间成立。）
 
 即「**看着能采，其实白采还有害**」。所以把形态做成**代码级收口**，而不是靠人记着别点：
 `display_only()` 为真时 ①admin 写操作一律 403（GET 保留，线上看板照常"看"）；

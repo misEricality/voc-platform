@@ -278,7 +278,10 @@ def test_display_only_refuses_pipeline(monkeypatch):
     """展示端不得采集/标注：run_pipeline 在进入采集器之前就拒绝
 
     这条守卫的价值是**双重**的：既不让 VPS 白跑采集（结果次日被整库覆盖），
-    也不让它在没有生产标注器 Key 的情况下用错分析器写脏 `analyzer_version`。
+    也不让它真的标注 —— VPS 的 `.env` 里有 `DEEPSEEK_API_KEY`（Agent 对话必需）、
+    且没设 `ANALYZER_PROVIDER` → `get_analyzer()` 取默认 deepseek，**能正常标注**，
+    写出的 `analyzer_version` 与本地口径一致、**看不出异常**（2026-09-12 更正：早先
+    「无标注器 Key 会写脏溯源」的说法，只在生产标注器是 GLM 的期间成立）。
     """
     from src.pipeline import run_pipeline
 

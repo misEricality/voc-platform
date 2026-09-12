@@ -81,6 +81,32 @@ def test_skip_when_orphan_process_alive(monkeypatch):
     assert "进程" in reason
 
 
+# ==================== 补采必须回推 VPS（2026-09-12 调度缺口修复） ====================
+
+def test_backfill_carries_push_db_flag(monkeypatch):
+    """补采命令必须带 --push-db。
+
+    缺陷场景：02:00 部分目标失败 → 链末尾照样推了**部分快照**给 VPS；哨兵 03:00 补采
+    原先不带 --push-db，补到的数据只落本地 → VPS 整天停在部分快照（实测 2026-09-12
+    差 93 条评论）。本用例锁住这个 flag，防止将来被误删。
+    """
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, cwd=None):  # noqa: ANN001, ARG001
+        captured["cmd"] = list(cmd)
+        # 必须返回带 .returncode 的对象：run_backfill 取的是 subprocess.run(...).returncode
+        return sentinel.subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(sentinel.subprocess, "run", fake_run)
+    code = sentinel.run_backfill(lookback_days=7)
+
+    assert code == 0
+    cmd = captured["cmd"]
+    assert "--push-db" in cmd, "补采必须带 --push-db，否则 VPS 追不上补采结果"
+    assert "--no-download" in cmd and "--no-upload" in cmd
+    assert cmd[cmd.index("--lookback-days") + 1] == "7"
+
+
 if __name__ == "__main__":
     import pytest
 

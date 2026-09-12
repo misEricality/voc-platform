@@ -73,14 +73,30 @@ Steam / B站 采集 + LLM 标注                    ├─ SPA（product/web/，
   也不能让 02:00 采集被判失败（与 `--publish-snapshot` 同款解耦原则）
 - ⚠️ **单向语义的必然结论：VPS 必须只读**（2026-09-11 收口）。既然是"整库覆盖"，VPS 上
   任何写入（admin 页建任务、点「立即采集」）都只会被下一次推送抹掉；而「立即采集」还会
-  **真的在 VPS 上跑 pipeline + 花 token**，且 VPS 无生产标注器 Key → `get_analyzer()`
-  回落到 `deepseek` → 写脏 `analyzer_version`。即"看着能采，其实白采还有害"。故做了
-  **代码级收口**（不靠人记住别点），见 §5.5.3「展示端（`DISPLAY_ONLY`）」。
+  **真的在 VPS 上跑 pipeline + 花 token**、且 VPS 无 ML 依赖（实测 `import torch` → NO）
+  → 向量化缺失。即"看着能采，其实白采还有害"。故做了**代码级收口**（不靠人记住别点），
+  见 §5.5.3「展示端（`DISPLAY_ONLY`）」。
+- 🔧 **理由更正（2026-09-12 实测）**：原文写的「VPS 无生产标注器 Key → `get_analyzer()`
+  回落 `deepseek` → 写脏 `analyzer_version`」**已不成立** —— VPS 的 `.env` 里**有**
+  `DEEPSEEK_API_KEY`（原声分析 Agent 对话必需，`src/agent/chat.py` 缺它直接报错），
+  且没设 `ANALYZER_PROVIDER` → 取默认 `deepseek`（`src/analyzers/base.py`）→ **能真的
+  标注**；而本地生产标注器自 2026-09-08 起也是 `deepseek-v4-flash` → 写出来的
+  `analyzer_version` 与本地**口径一致、看不出异常**（旧结论成立于生产标注器是 GLM 的
+  2026-08-31 ~ 09-08 期间）。**结论反而更强**：唯一护栏是 `display_only()` 这道代码闸，
+  **`DISPLAY_ONLY=0` 绝不是可以随手打开的调试开关** —— 那台机器有 Key、有网络，一开就
+  真采集 + 真标注 + 烧 token，结果次日还被整库覆盖。
   反向（VPS → 本地）**没有任何通道**：线上改的任务/线上产生的 Agent 会话都只存在于 VPS，
   下一次推送即被本地版本覆盖（实测：推送后 VPS `agent_sessions` 比本地多出的那些会消失）。
 - 触发时机：**并入 02:00 采集链路末尾**（`daily_incremental_collect.py --push-db`）。
   不另开计划任务的理由：推送必须等采集**全部跑完**，同进程内顺序天然成立，
   另开任务反而要自己造时序守卫。如需当日更新再另加 10:00/18:00 两次（先跑稳再决定）
+  - ⚠️ **失败夜会推两次（2026-09-12 起，有意为之）**：02:00 若有目标失败，链末尾推的是**部分
+    快照**（推送发生在「判失败」之前），而 03:00 哨兵补采完会**再推一次**（`check_daily_collect.py`
+    的补采命令带 `--push-db`）→ VPS 在 1 小时内自愈。原先补采只落本地，VPS 整天停在「缺几个
+    目标」的中间态，**看起来像那几款游戏今天没有新评论**（实测 2026-09-12：本地 19,043 vs
+    VPS 18,950，差 93 条 = 当日补采量）。代价：仅失败夜多一次约 118 MB 上传。
+    **残余**：02:00 采集成功但推送本身失败时，哨兵判「成功」→ 跳过 → 那天 VPS 停在旧数据
+    （只有 `collect.log` 一行 warning）。
 - 参数：`-DbPath` / `-Remote` / `-RemoteDb` / `-Identity`（默认 `~/.ssh/k_lynx_web.pem`）；
   `-DryRun` 只出本地快照不联网；`-RestartService` 默认关（原位回灌不需要重启）
 - 传输安全：复用部署用 SSH 密钥，不新增密码/端口暴露；`data/covers/` 不随库同步，
@@ -1030,6 +1046,7 @@ ssh voc@<VPS> 'find ~/voc-platform/logs -name "*.log" -mtime +30 -delete'
 
 | 更新时间 | 内容 | 原因 |
 |---|---|---|
+| 2026-09-12 | **补上「失败夜 VPS 数据不完整」的缺口**：`check_daily_collect.py::run_backfill` 的补采命令加 `--push-db` —— 02:00 部分失败时链末尾推的是**部分快照**（推送在「判失败」之前），而原先补采只落本地 → VPS 整天停在「缺几个目标」的中间态（实测 9/12：本地 19,043 vs VPS 18,950，**差 93 条 = 当日补采量**；表现上像"那几款游戏今天没有新评论"，比数据旧更误导）。现在失败夜 02:07 推部分 + 03:0x 推完整 → 1 小时内自愈；正常夜仍只推一次。§0.5「触发时机」补注该行为与残余缺口（采集成功但推送失败时哨兵会跳过）。**另更正 §0.5 的一处错误理由**：「VPS 无生产标注器 Key → 回落 deepseek → 写脏 `analyzer_version`」不成立 —— VPS `.env` 有 `DEEPSEEK_API_KEY`（Agent 对话必需）、无 `ANALYZER_PROVIDER` → 取默认 deepseek，**能真标注**且与本地生产标注器（也是 deepseek）口径一致、看不出异常 | 工程师「1. A 2. 不做 3. 改 另外，推一次最新数据到VPS」 |
 | 2026-09-11 | **展示端代码级收口（填「看着能采」陷阱）+ 修 Web 端 `LOG_LEVEL` 空转**：①新增 `src/runtime_mode.py::display_only()`，**默认跟随 `PUBLIC_MODE`** → 公网形态自动成为展示端，**VPS 无需在 `.env` 加键**（少一个能忘的开关）；本地开发不受影响；确需可写公网实例才显式 `DISPLAY_ONLY=0`。②`routers.require_writable` 挂 `admin_router`（在 `require_admin` 之后）：GET/HEAD/OPTIONS 放行、写操作 **403**、未登录仍 **401**、对不存在 id 也 403（依赖先于 handler）。③`run_pipeline()` 开头 `raise`，**采集与标注一起挡**（含 B 站 runner 路径）。④启动日志写一行形态声明，可用 `grep 展示模式 logs/web.log` 确认。⑤顺带修：uvicorn 只配 `uvicorn.*` 且 `propagate=False` → root 无 handler → 应用自身 `log.info` 全被 lastResort 丢弃（**实测线上一条 `voc.api` 日志都没有**，`LOG_LEVEL=INFO` 空转）→ `create_app` 按 `LOG_LEVEL` 配 root。⑥测试 +5 → 全量 **257 passed / 1 skipped**。⑦VPS 零副作用实测：读 200 / 写 403 / 未登录 401 / `collect_tasks` 仍 8 行 / `/docs` 仍 404。**关键坑（TLS 段）**：`default_sni` 让展示端在 IP 直连下也能握手。详见 §0.5 末条 + §5.5.3 两条新勾选 | 工程师「把这个陷阱填掉……VPS 不要采集，也不要标注」 |
 | 2026-09-11 | **内测前收尾：补丁清零 + 重启换内核 + SSH root 收敛**：①`apt-get dist-upgrade` 装掉余下 5 个（内核 / `linux-firmware` / `fwupd`，**0 删除、27 新装**，新装的全是 `linux-firmware-*` 拆分包）→ **剩余可升级 0**；②`reboot` 后运行内核 `6.8.0-124` → **`6.8.0-139`**，`reboot-required`（`libc6` / `apparmor` / `linux-base`）清零；③`PermitRootLogin` 由 `yes` 改为 **drop-in** `/etc/ssh/sshd_config.d/99-voc-hardening.conf`（`sshd_config` 顶部 `Include` 该目录、**先出现者生效**，故能覆盖主文件里的 `yes` 且不怕包升级 conffile）→ `sshd -t` → `reload ssh`，实测 `permitrootlogin without-password`（= `prohibit-password`）；④**重启后复验**：6 个服务全 active + enabled、无凭据 401 / 有凭据 200 / `/docs` 404 / 明文 `:8443` 400 / 5 项安全头仍在、**内部 CA 证书复用未重签**（时间戳不变 ⇒ 测试者不会因重启看到新的证书警告）、主库 `comments=18916`、审计库 180 行、公网侧（本机 curl）同样通过。§5.5.5 勾选同步 | 工程师「1. 重启，现在。2. 改。」 |
 | 2026-09-11 | **P0-A 自签 TLS 上线 + P1 五项收口（VPS 实测）**：①**P0-A**：Caddyfile 由 `http://:8443` 切 `https://134.175.115.248:8443` + `tls internal`（内部 CA 自签，证书 SAN = 本机 IP）。**关键坑**：客户端用 IP 字面量访问**不发 SNI**（RFC 6066 禁止），Caddy 因此选不到证书 → 回 `TLS alert internal error(80)`，`curl`/浏览器全连不上；而带 `-servername` 的 `openssl s_client` 却能握手，极易误判"证书没问题"→ **解法：全局块 `default_sni <IP>`**，加后 `curl` 首探测即 `200`。刻意**不加 HSTS**（IP 字面量 + 自签下，若被浏览器记住 HSTS，证书警告会变"不可绕过"，测试者被锁在门外）。②**P1-2**：`PUBLIC_MODE=1` 时关 `/docs`/`/redoc`/`/openapi.json`（实测带 gate 口令原本 **200**，等于把全部 admin 端点/参数名/字段约束摊开）→ `main.py` 增 `_is_public_mode()`，线上转 **404**，本地/CI 保持可用。③**P1-4 CSP/Permissions-Policy**：为让 `script-src` 做到**纯 `'self'`**（无 `unsafe-inline`/`unsafe-eval`），去掉前端唯一内联事件处理器（`compare.js` 的 `<img onerror>` → `document` 级**捕获**监听，因 `error` 不冒泡），`index.html` 缓存串 bump `compare.js?v=20260911a`；核实 ECharts 仅一处 `new Function` 位于 `JSON.parse` 兜底分支；`style-src` 保留 `'unsafe-inline'`；`img-src`/`frame-src` 白名单由实测清点得出（Steam CDN 封面 + B站播放器 iframe）。④**P1-3** 日志轮转 `roll_size 20MiB`/`roll_keep 5`/`roll_keep_for 30d`（原先无轮转、单文件无限增长）。⑤**P1-5** ufw 收口 **22 + 8443**（80/443 无监听）。⑥**P1-1** 系统补丁 **172 → 5**（含 115 个 security 源），用 `--force-confold` 保住 `/etc/caddy/Caddyfile`。⑦`COOKIE_SECURE=1` → 线上登录返回 `httponly; samesite=lax; **secure**` cookie。⑧`.env.example` 更新 `COOKIE_SECURE` / `PUBLIC_MODE` 注释。**回归**：SSE 在 **HTTP/2** 下仍真流式（`event: token`/`done` 完整）、审计照常落库（174 行）、`voc-web`/`caddy`/`fail2ban`/`ufw`/`ssh`/`unattended-upgrades` 全 active+enabled、5 项安全响应头全命中；pytest **252 passed / 1 skipped**。**过程中的事故与纠正**：把上一轮会话遗留的 `/tmp/Caddyfile.new`（同名但**旧 gate 口令哈希**）误当候选文件 `install`，导致准入口令短暂回退 → `diff` 定位后立即用备份还原（md5 一致）+ 新旧口令双向验证，并给手册补了两道守卫（候选文件唯一名 + 属主校验 + 哈希与线上逐字比对；CRLF 必须 `sed -i 's/\r$//'` 后再比）。详见 **§5.5.4 / §5.5.5 / §7A / §7A-3** | 工程师「开始P0-A方案，接着做P1」：把"明文传输"这一唯一性质级风险从"待办"推到"线上加密 + 端到端实测"，并收口 P1 五项 |

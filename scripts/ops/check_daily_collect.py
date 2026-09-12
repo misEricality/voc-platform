@@ -1,6 +1,14 @@
 """每日采集哨兵（03:00 计划任务 VOC-Local-Daily-Collect-Check）
 
-职责：检查 02:00 的 VOC-Local-Daily-Collect 是否成功，失败/未跑则补采。
+职责：检查 02:00 的 VOC-Local-Daily-Collect 是否成功，失败/未跑则补采，
+**补完再把 DB 推一次给 VPS**（2026-09-12 起）。
+
+为什么补采要带 --push-db（2026-09-12 实测）：
+02:00 那次若**部分**目标失败（凌晨到 store.steampowered.com 超时是常态），采集链末尾
+照样会把**部分快照**推给 VPS（`push_db_to_vps` 非阻塞、且推送发生在"判失败"之前），
+而补采以前只落本地 → VPS 整天停在"缺几个目标"的中间态，看起来像"那几款游戏今天没有
+新评论"。实测 2026-09-12：本地 19,043 条 vs VPS 18,950 条，差的正是当日 03:00 补采的
+93 条。补完再推一次，VPS 在 1 小时内自愈（正常夜只推 02:00 那一次，无额外开销）。
 
 背景（2026-09-07）：02:00 采集连续三晚因本机到 store.steampowered.com 网络不通
 全灭（与用户代理程序启停状态相关）。StartWhenAvailable 只补「错过的运行」，
@@ -22,7 +30,7 @@
     python scripts/ops/check_daily_collect.py --dry-run  # 只判定不执行
     python scripts/ops/check_daily_collect.py --force    # 无条件补采（手动应急）
 
-最后更新：2026-09-07
+最后更新：2026-09-12（补采带 --push-db，让 VPS 在失败夜也能 1 小时内追平）
 """
 from __future__ import annotations
 
@@ -102,13 +110,19 @@ def should_backfill(status: dict, today: datetime) -> tuple[bool, str]:
 
 
 def run_backfill(lookback_days: int) -> int:
-    """同步执行补采（继承 stdout，由计划任务重定向到日志）。返回退出码。"""
+    """同步执行补采（继承 stdout，由计划任务重定向到日志）。返回退出码。
+
+    带 `--push-db`（2026-09-12 起）：补采结果必须回推 VPS，否则 02:00 部分失败时
+    VPS 会整天停在部分快照上（详见模块 docstring）。推送在 `daily_incremental_collect`
+    里是非阻塞的（失败只 warning、不改退出码），故不会污染本哨兵的判定。
+    """
     cmd = [
         sys.executable, str(DAILY_SCRIPT),
         "--no-download", "--no-upload",
         "--lookback-days", str(lookback_days),
+        "--push-db",
     ]
-    log.info("启动补采：%s", " ".join(cmd))
+    log.info("启动补采（含推库）：%s", " ".join(cmd))
     return subprocess.run(cmd, cwd=str(ROOT)).returncode
 
 
