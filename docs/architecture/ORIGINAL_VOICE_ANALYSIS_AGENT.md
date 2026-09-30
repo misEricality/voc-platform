@@ -587,7 +587,7 @@ async function exportMyHistory() {
 |---|---|---|
 | 1 | 本文档 + 00-index 登记 + AGENTS.md 版本记录 | 文档可执行 + 决策表 22 项锁定 |
 | 2 | DB schema：`agent_sessions`（含 `anon_user_id`） + `agent_messages` + FK CASCADE；init_db 自动建表 | smoke + db 存在性测试 |
-| 3 | FastAPI `/api/agent/chat` SSE 端点 + DeepSeek-V4-Flash 接通 + 4 个 tool 封装 | curl 流式响应有 token / 调一次 tool 后正确返回 / pytest mock 5 例 |
+| 3 | FastAPI `/api/agent/chat` SSE 端点 + DeepSeek 接通 + 4 个 tool 封装 | curl 流式响应有 token / 调一次 tool 后正确返回 / pytest mock 5 例 |
 | 4 | `/api/agent/sessions` CRUD + `/api/agent/export`（按 `X-Anon-User-Id` 隔离） | 列表/导出隔离测试；分页正确 |
 | 5 | `config/agent/tools.yaml` + 4 个 Python tool 实现 + skill 系统 + 3 个范例 skill YAML | 单元测试 4+3 例；skill 自动注入 smoke 1 例 |
 | 6 | 前端 `#/agent` 一级页（pages/agent.js）：左侧历史栏 + 主对话窗口 + 冷启动示例（白名单固定） + 导出按钮 | `/#/agent` 可访问；冷启动示例来自白名单前 2 款游戏 + 1 个视频 |

@@ -416,23 +416,27 @@ def test_glm_5_3_flash_provider_registered():
 
     cfg = LLMSentimentAnalyzer.PROVIDER_CONFIG["glm-5.3-flash"]
     # 凭据 env 统一 GLM_API_KEY（2026-08-31 决策：XXX_API_KEY 格式与 DEEPSEEK/QWEN/STEAM 一致；
-    # 本地 key 来源 Windows 用户变量 glm_api_voc_platform，大小写不敏感传递）
+    # 本地 key 来源 Windows 用户变量 glm_plan，由 .env 落到 GLM_API_KEY）
     assert cfg["api_key_env"] == "GLM_API_KEY", \
         f"凭据 env 应为 GLM_API_KEY（统一 XXX_API_KEY 命名约定），实际 {cfg['api_key_env']!r}"
     # 默认 model = glm-5.3-flash
     assert cfg["default_model"] == "glm-5.3-flash", \
         f"默认 model 应为 glm-5.3-flash，实际 {cfg['default_model']!r}"
-    # 与主 GLM 同端点（OpenAI 兼容协议 /v4/）
-    assert cfg["default_base_url"] == "https://open.bigmodel.cn/api/paas/v4/", \
-        f"应复用 BigModel OpenAI 兼容端点，实际 {cfg['default_base_url']!r}"
+    # 代码默认端点是标准（按量付费 key 用）；**生产必须由 env 覆盖成 Coding 专属端点** ——
+    # 2026-09-30 实测：Coding Plan 套餐 key 在标准端点会 429「余额不足或无可用资源包」。
+    # 归一化比较：末尾斜杠有无都接受（openai SDK 两种都能用）。
+    assert cfg["default_base_url"].rstrip("/") == "https://open.bigmodel.cn/api/paas/v4", \
+        f"代码默认应为 BigModel 标准 OpenAI 兼容端点，实际 {cfg['default_base_url']!r}"
+    assert cfg["base_url_env"] == "GLM_5_3_FLASH_BASE_URL", \
+        f"端点必须可被 env 覆盖（生产切 Coding 端点），实际 {cfg['base_url_env']!r}"
 
 
 def test_glm_5_3_flash_analyzer_version_format(monkeypatch):
     """provider='glm-5.3-flash' 时 analyzer_version = 'llm:glm-5.3-flash@{prompt_hash8}'"""
     fake_key = "sk-fake-glm-5-3-flash-test"
     monkeypatch.setenv("GLM_API_KEY", fake_key)
-    # 防止旧 glm_api_voc_platform 用户变量泄漏干扰（Windows 大小写不敏感）
-    monkeypatch.delenv("glm_api_voc_platform", raising=False)
+    # 无需额外 delenv 守卫：provider 只读 GLM_API_KEY 这一个 env
+    # （用户变量名 glm_plan 与它不同名，不存在大小写不敏感的遮蔽）
 
     from src.analyzers.sentiment_llm import LLMSentimentAnalyzer
 
@@ -452,9 +456,8 @@ def test_glm_5_3_flash_analyzer_version_format(monkeypatch):
 
 
 def test_glm_5_3_flash_missing_api_key_raises(monkeypatch):
-    """glm-5.3-flash 凭据缺失（GLM_API_KEY + 用户变量 glm_api_voc_platform 都未设）→ ValueError"""
+    """glm-5.3-flash 凭据缺失（GLM_API_KEY 未设）→ ValueError"""
     monkeypatch.delenv("GLM_API_KEY", raising=False)
-    monkeypatch.delenv("glm_api_voc_platform", raising=False)
 
     from src.analyzers.sentiment_llm import LLMSentimentAnalyzer
 
