@@ -22,6 +22,8 @@ from dotenv import load_dotenv
 
 load_dotenv()  # 自动加载 .env
 
+from concurrent.futures import ThreadPoolExecutor
+
 from src.collectors.steam import SteamCollector
 from src.collectors.bilibili import BilibiliCollector
 from src.storage.db import Danmaku, init_db, CommentRepository
@@ -37,7 +39,39 @@ log = logging.getLogger("voc.pipeline")
 
 # 标注批量大小：与 src/analyzers/sentiment_llm.DEFAULT_BATCH_SIZE 对齐（10 条/批）。
 # 不在此处 import 该模块：local 分析器路径无需 openai 依赖，保持惰性。
+# 2026-10-01 实测（GLM-5.3-Flash，同一样本 30 条）：5 条/批 3.29s/条、**10 条/批 2.15s/条**、
+# 20 条/批 2.57s/条且单请求 p50 从 21s 涨到 37.9s（尾部更差）→ 10 是最优点，故不改。
 ANALYSIS_BATCH_SIZE = 10
+
+# 标注并发（2026-10-01）：GLM-5.3-Flash 单请求延迟方差大（实测 p50 ~21s、见过 170.9s 尖峰），
+# 串行跑会让 02:00 链路更可能压进 03:00 哨兵窗口 —— 哨兵在「02:00 仍在运行」时会整个跳过，
+# 那晚的失败就不会被补采。实测同一份 30 条样本：并发 1 → 64.5s，并发 2 → 48.4s，
+# **并发 3 → 23.5s（2.74×，0 失败）**。默认 3，可用 ANALYZER_CONCURRENCY 覆盖。
+ANALYSIS_CONCURRENCY_DEFAULT = 3
+ANALYSIS_CONCURRENCY_MAX = 8
+
+
+def _analysis_concurrency() -> int:
+    """标注并发度（env ``ANALYZER_CONCURRENCY``）。
+
+    非法 / 越界一律回退默认并告警（不因一个手滑的 env 把跑批打挂）。
+    上限 :data:`ANALYSIS_CONCURRENCY_MAX`：再高收益递减，且会放大 provider 侧限流风险。
+    """
+    raw = os.getenv("ANALYZER_CONCURRENCY")
+    if raw is None or not str(raw).strip():
+        return ANALYSIS_CONCURRENCY_DEFAULT
+    try:
+        n = int(str(raw).strip())
+    except (TypeError, ValueError):
+        log.warning("ANALYZER_CONCURRENCY=%r 不是整数，回退默认 %d", raw, ANALYSIS_CONCURRENCY_DEFAULT)
+        return ANALYSIS_CONCURRENCY_DEFAULT
+    if n < 1:
+        log.warning("ANALYZER_CONCURRENCY=%d < 1，回退默认 %d", n, ANALYSIS_CONCURRENCY_DEFAULT)
+        return ANALYSIS_CONCURRENCY_DEFAULT
+    if n > ANALYSIS_CONCURRENCY_MAX:
+        log.warning("ANALYZER_CONCURRENCY=%d 超上限 %d，按上限执行", n, ANALYSIS_CONCURRENCY_MAX)
+        return ANALYSIS_CONCURRENCY_MAX
+    return n
 
 
 def _collect_valid_l2(hierarchy: dict | None) -> set[str] | None:
@@ -85,6 +119,96 @@ def _is_analysis_failure(result, text: str) -> bool:
         float(getattr(result, "sentiment_confidence", 0.0) or 0.0) == 0.0
         and not getattr(result, "opinions", None)
     )
+
+
+def _analyze_chunk_once(
+    analyzer, chunk: list, *, platform: str, target_id: str, supports_raise: bool
+) -> list:
+    """只做一次批次 LLM 调用（**不碰 DB、不写日志**）—— 并发路径要求它无副作用。"""
+    kwargs: dict = {"context": {"platform": platform, "target_id": target_id}}
+    if supports_raise:
+        kwargs["raise_on_error"] = True
+    return analyzer.analyze_batch([c.content for c in chunk], **kwargs)
+
+
+def _iter_chunk_results(
+    analyzer,
+    chunks: list[list],
+    *,
+    concurrency: int,
+    platform: str,
+    target_id: str,
+    supports_raise: bool,
+):
+    """按**窗口**并发跑批次 LLM，并**按批顺序**产出 ``(chunk, results)``。
+
+    并发只覆盖「LLM 调用」这一段，落库仍由调用方在主线程串行做（SQLite 写不可并发）。
+    窗口内任一批抛异常 → 直接向上抛（该 target 判失败，与串行语义一致）；同窗口内
+    已发出的其他批次请求结果会被丢弃 —— 它们保持未分析，下轮重试（幂等，只多花 token）。
+    """
+    if concurrency <= 1 or len(chunks) <= 1:
+        for chunk in chunks:
+            yield chunk, _analyze_chunk_once(
+                analyzer, chunk, platform=platform, target_id=target_id, supports_raise=supports_raise
+            )
+        return
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        for w in range(0, len(chunks), concurrency):
+            window = chunks[w : w + concurrency]
+            futures = [
+                pool.submit(
+                    _analyze_chunk_once, analyzer, ch,
+                    platform=platform, target_id=target_id, supports_raise=supports_raise,
+                )
+                for ch in window
+            ]
+            for ch, fut in zip(window, futures):
+                yield ch, fut.result()
+
+
+def _persist_chunk_results(
+    repo,
+    chunk: list,
+    results: list,
+    *,
+    target_id: str,
+    analyzer_version: str | None,
+    valid_l1: set[str] | None,
+    valid_l2: set[str] | None,
+) -> tuple[int, int]:
+    """把一批标注结果落库，返回 ``(已分析条数, 跳过条数)``。
+
+    失败占位（零置信度且无观点）**不落库**：``analyzed_at`` 留空 → 下轮自动重试
+    （P1#1 双保险；2026-09-21 起「批次异常向上抛」主链路的兜底）。
+    """
+    analyzed = skipped = 0
+    for i, c in enumerate(chunk):
+        result = results[i] if i < len(results) else None
+        # 双保险（P1#1）：批次异常被吞 / LLM 缺失 index 都会产出「零置信度
+        # 且无观点」的占位结果 —— 这类结果**不落库**（analyzed_at 留空 →
+        # 下轮自动重试），避免把脏标注固化进主链路。
+        if result is None or _is_analysis_failure(result, c.content):
+            skipped += 1
+            log.warning(
+                "  [分析] 跳过无效结果 comment_id=%s target=%s（保持未分析，下轮重试）",
+                c.id, target_id,
+            )
+            continue
+        # 方案4：topic 已由 analyzer 从核心观点映射；观点（opinions）随主流程落库
+        repo.update_analysis(
+            c.id,
+            sentiment=result.sentiment,
+            sentiment_score=result.sentiment_score,
+            sentiment_confidence=result.sentiment_confidence,
+            topic=result.topic,
+            opinions=[op.to_dict() for op in result.opinions],
+            valid_l1_labels=valid_l1,
+            valid_l2_labels=valid_l2,
+            analyzer_version=analyzer_version,
+        )
+        analyzed += 1
+    return analyzed, skipped
 
 
 # 注册可用的采集器
@@ -440,38 +564,26 @@ def run_pipeline(
             # 会把当晚评论永久标成 neutral、永不重试且无告警。现在批级异常向上抛 →
             # 该 target 判失败 → 哨兵次日补采（此前已提交的批保留，剩余未分析下轮重试）。
             supports_raise = _analyzer_supports_raise_on_error(analyzer)
-            for start in range(0, len(pending), ANALYSIS_BATCH_SIZE):
-                chunk = pending[start : start + ANALYSIS_BATCH_SIZE]
-                texts = [c.content for c in chunk]
-                kwargs: dict = {"context": {"platform": platform, "target_id": target_id}}
-                if supports_raise:
-                    kwargs["raise_on_error"] = True
-                results = analyzer.analyze_batch(texts, **kwargs)
-                for i, c in enumerate(chunk):
-                    result = results[i] if i < len(results) else None
-                    # 双保险（P1#1）：批次异常被吞 / LLM 缺失 index 都会产出「零置信度
-                    # 且无观点」的占位结果 —— 这类结果**不落库**（analyzed_at 留空 →
-                    # 下轮自动重试），避免把脏标注固化进主链路。
-                    if result is None or _is_analysis_failure(result, texts[i]):
-                        skipped_count += 1
-                        log.warning(
-                            "  [分析] 跳过无效结果 comment_id=%s target=%s（保持未分析，下轮重试）",
-                            c.id, target_id,
-                        )
-                        continue
-                    # 方案4：topic 已由 analyzer 从核心观点映射；观点（opinions）随主流程落库
-                    repo.update_analysis(
-                        c.id,
-                        sentiment=result.sentiment,
-                        sentiment_score=result.sentiment_score,
-                        sentiment_confidence=result.sentiment_confidence,
-                        topic=result.topic,
-                        opinions=[op.to_dict() for op in result.opinions],
-                        valid_l1_labels=valid_l1,
-                        valid_l2_labels=valid_l2,
-                        analyzer_version=analyzer_version,
-                    )
-                    analyzed_count += 1
+            chunks = [
+                pending[start : start + ANALYSIS_BATCH_SIZE]
+                for start in range(0, len(pending), ANALYSIS_BATCH_SIZE)
+            ]
+            concurrency = _analysis_concurrency()
+            if len(chunks) > 1 and concurrency > 1:
+                log.info(
+                    f"  待分析 {len(pending)} 条 / {len(chunks)} 批（并发 {concurrency}）"
+                )
+            for chunk, results in _iter_chunk_results(
+                analyzer, chunks, concurrency=concurrency,
+                platform=platform, target_id=target_id, supports_raise=supports_raise,
+            ):
+                a_, s_ = _persist_chunk_results(
+                    repo, chunk, results,
+                    target_id=target_id, analyzer_version=analyzer_version,
+                    valid_l1=valid_l1, valid_l2=valid_l2,
+                )
+                analyzed_count += a_
+                skipped_count += s_
                 # 逐批提交（2026-09-06 修复）：原「循环后一次 commit」会把 SQLite 写锁
                 # 横跨整个 LLM 分析阶段（单条 30-60s × N 条 = 锁握数小时），其他写者
                 # （每日 cron / admin backfill / run-due）在 busy_timeout 内抢不到锁 →

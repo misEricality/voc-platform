@@ -2,7 +2,7 @@
 
 > **pytest 自动回归门禁** — 不放脚本，CI 与本地共用同一套用例。
 >
-> **最后更新**：2026-09-30（LLM 批量输出健壮性：截断/JSON 残缺不再放大成整批异常 + `raise_on_error` 口径收敛为「系统性故障才抛」，新增 `test_llm_batch_robustness.py` 18 例；用例数 271 → **289**，并用 `pytest --collect-only` 全量复核本节各文件用例数）
+> **最后更新**：2026-09-30（新增标注并发：`ANALYZER_CONCURRENCY` 默认 3 + `_iter_chunk_results()` 窗口并发/按批顺序产出，`test_analysis_pipeline.py` +11 例；用例数 289 → **300**，并用 `pytest --collect-only` 全量复核本节各文件用例数）
 
 ---
 
@@ -45,7 +45,7 @@ tests/
 
 ## 📊 当前用例统计
 
-- **共 289 例**（pytest 2026-09-30 实测 **288 passed / 1 skipped**；上版 49 → 78 → 82 → 94 → 97 → 110 → 129 → 138 → 204 → 210 → 214 → 219 → 250 → 257 → 259 → 271 → 284 → **289**）
+- **共 300 例**（pytest 2026-09-30 实测 **299 passed / 1 skipped**；上版 49 → 78 → 82 → 94 → 97 → 110 → 129 → 138 → 204 → 210 → 214 → 219 → 250 → 257 → 259 → 271 → 284 → 289 → **300**）
 - 1 例 ML 环境依赖跳过（`test_embedding.py`，无 torch 时 skip；本机 .venv-ml 有 torch 时全量跑）
 - CI 跑通门禁：`pytest tests/` 在 push / cron 都跑（workflow `test:` job）
 - `requirements-core.txt` 已含 fastapi/uvicorn/httpx/itsdangerous（`test_api.py` 依赖）
@@ -67,9 +67,9 @@ tests/
 
 | 项 | 值 |
 |---|---|
-| **覆盖** | `run_pipeline` 分析阶段：观点写入 `comment_opinions`、topic 由核心观点映射、**批级失败向上抛不固化 `analyzed_at`**、**失败占位（conf=0 且无观点）跳过落库**、**越界 topic 被 `valid_l1_labels` 过滤** |
-| **用例数** | 4 |
-| **更新** | 2026-09-21（对抗审查 P1#1 / P3#2 回归） |
+| **覆盖** | `run_pipeline` 分析阶段：观点写入 `comment_opinions`、topic 由核心观点映射、**批级失败向上抛不固化 `analyzed_at`**、**失败占位（conf=0 且无观点）跳过落库**、**越界 topic 被 `valid_l1_labels` 过滤**、**标注并发（`ANALYZER_CONCURRENCY` 默认 3 / 设 1 串行 / 并发不串批 / env 解析与越界回退）** |
+| **用例数** | 15 |
+| **更新** | 2026-09-30（对抗审查 P1#1 / P3#2 回归 + 标注并发 11 例） |
 
 ### `test_golden_match.py` · **黄金集回归门禁** ⭐
 

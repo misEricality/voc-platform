@@ -6,6 +6,8 @@
 3. topic 由核心观点映射，正确落库
 """
 
+import threading
+import time
 from datetime import datetime, timezone
 
 import pytest
@@ -225,3 +227,145 @@ def test_pipeline_filters_out_of_range_topic(tmp_path, monkeypatch):
     with SessionLocal() as s:
         rows = list(s.execute(select(Comment)).scalars())
     assert all(c.topic is None for c in rows), "越界 topic 应被 valid_l1_labels 过滤为 None"
+
+
+# ==================== 标注并发（2026-10-01） ====================
+#
+# 背景：GLM-5.3-Flash 单请求延迟方差大（实测 p50 ~21s、见过 170.9s 尖峰），串行跑会让
+# 02:00 链路更可能压进 03:00 哨兵窗口（哨兵在「02:00 仍在运行」时整个跳过 → 失败夜不补采）。
+# 实测同一份 30 条样本：并发 1 → 64.5s，并发 3 → 23.5s（2.74×）。以下锁住并发不改变语义。
+
+def _many_collector(n: int):
+    """返回 1 个能产出 n 条评论的采集器类（内容各不相同，便于核对是否串批）"""
+
+    class _ManyCollector:
+        def fetch_app_info(self, target_id):
+            return {"name": "Test Game", "type": "game"}
+
+        def collect(self, target_id, max_count=50, language="schinese",
+                    posted_after=None, posted_before=None):
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            return [
+                RawComment(
+                    platform="steam", source_id=f"m{i}", content=f"评论{i}",
+                    author_id=f"u{i}", rating=1, language="schinese",
+                    posted_at=now, extra={"appid": "999999"},
+                )
+                for i in range(n)
+            ]
+
+    return _ManyCollector
+
+
+class _TrackingAnalyzer:
+    """记录「同时进行中的批次数」峰值，并按文本回显观点（用于核对串批）"""
+
+    name = "tracking"
+
+    def __init__(self, delay: float = 0.05):
+        self.delay = delay
+        self.inflight = 0
+        self.max_inflight = 0
+        self.calls = 0
+        self._lock = threading.Lock()
+
+    def analyze_batch(self, texts: list[str], **kwargs) -> list[AnalysisResult]:
+        with self._lock:
+            self.inflight += 1
+            self.calls += 1
+            self.max_inflight = max(self.max_inflight, self.inflight)
+        try:
+            time.sleep(self.delay)  # 制造重叠窗口：没有并发时 max_inflight 恒为 1
+            return [
+                AnalysisResult(
+                    sentiment="positive", sentiment_score=0.5, sentiment_confidence=0.7,
+                    topic="玩法与内容",
+                    opinions=[Opinion(
+                        phrase=t, sentiment="positive", sentiment_score=0.5,
+                        sentiment_confidence=0.7, is_core=True, l3="动作系统",
+                        full_path="玩法与内容/玩法机制/动作系统",
+                    )],
+                )
+                for t in texts
+            ]
+        finally:
+            with self._lock:
+                self.inflight -= 1
+
+
+def _run_many(tmp_path, monkeypatch, analyzer, n: int, concurrency: str | None):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'conc.db'}")
+    monkeypatch.setenv("LOG_LEVEL", "CRITICAL")
+    if concurrency is None:
+        monkeypatch.delenv("ANALYZER_CONCURRENCY", raising=False)
+    else:
+        monkeypatch.setenv("ANALYZER_CONCURRENCY", concurrency)
+
+    from src.pipeline import run_pipeline, COLLECTORS
+
+    monkeypatch.setitem(COLLECTORS, "steam", _many_collector(n))
+    monkeypatch.setattr("src.pipeline.get_analyzer", lambda provider=None: analyzer)
+    monkeypatch.setattr("src.pipeline.get_embedder", lambda: None)
+    return run_pipeline("steam", "999999", max_count=n)
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (None, 3),        # 未配置 → 默认 3
+    ("", 3),          # 空串 → 默认（别把「空 env」当 0）
+    ("1", 1),
+    (" 4 ", 4),       # 容忍空白
+    ("0", 3),         # 越界 → 回退默认并告警
+    ("-2", 3),
+    ("abc", 3),       # 手滑写错 → 回退默认，不能把跑批打挂
+    ("99", 8),        # 超上限 → 按上限截断
+])
+def test_analysis_concurrency_env_parsing(monkeypatch, raw, expected):
+    from src.pipeline import _analysis_concurrency
+
+    if raw is None:
+        monkeypatch.delenv("ANALYZER_CONCURRENCY", raising=False)
+    else:
+        monkeypatch.setenv("ANALYZER_CONCURRENCY", raw)
+    assert _analysis_concurrency() == expected
+
+
+def test_analysis_runs_chunks_concurrently(tmp_path, monkeypatch):
+    """25 条 → 3 批，默认并发 3：批次必须真的重叠（串行时 max_inflight 恒为 1）"""
+    analyzer = _TrackingAnalyzer()
+    report = _run_many(tmp_path, monkeypatch, analyzer, n=25, concurrency=None)
+
+    assert report["analyzed"] == 25
+    assert analyzer.max_inflight > 1, "默认应并发（串行时 max_inflight == 1）"
+    assert analyzer.calls == 3, "25 条 / 10 条一批 = 3 批"
+
+
+def test_analysis_concurrency_one_is_serial(tmp_path, monkeypatch):
+    """ANALYZER_CONCURRENCY=1 → 回到串行（保底开关）"""
+    analyzer = _TrackingAnalyzer()
+    report = _run_many(tmp_path, monkeypatch, analyzer, n=25, concurrency="1")
+
+    assert report["analyzed"] == 25
+    assert analyzer.max_inflight == 1
+
+
+def test_analysis_concurrency_preserves_per_comment_results(tmp_path, monkeypatch):
+    """并发不得串批：每条评论落库的观点必须是**它自己**的（观点 phrase 回显文本）"""
+    analyzer = _TrackingAnalyzer()
+    report = _run_many(tmp_path, monkeypatch, analyzer, n=25, concurrency="3")
+    assert report["analyzed"] == 25
+
+    engine, SessionLocal = init_db()
+    with SessionLocal() as s:
+        rows = list(s.execute(select(Comment).order_by(Comment.source_id)).scalars())
+        assert len(rows) == 25
+        by_content = {c.content: c for c in rows}
+        assert set(by_content) == {f"评论{i}" for i in range(25)}
+        for c in rows:
+            ops = list(s.execute(
+                select(CommentOpinion).where(CommentOpinion.comment_id == c.id)
+            ).scalars())
+            assert [o.quote for o in ops] == [c.content], (
+                f"{c.content} 的观点被串批：{ops}"
+            )
+        assert all(c.topic == "玩法与内容" for c in rows)
+
