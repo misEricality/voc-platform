@@ -124,3 +124,27 @@ def test_wordcloud_window_and_rebuild(wordcloud_db):
         words = {w["word"] for w in a_after["words"]}
         assert "全新" in words or "词汇" in words or "横空" in words  # 新评论已计入
         assert a_after["total_tokens"] > a_full["total_tokens"]
+
+
+def test_cloud_tf_cache_invalidates_on_content_edit(wordcloud_db):
+    """P3#3（2026-09-21）：既有评论正文被覆盖（作者编辑，source_id 相同 → upsert 更新，
+    count/max_id 均不变）后，词频矩阵必须失效重建 —— 原指纹只看 (count, max_id) 会漏。"""
+    from sqlalchemy import select
+
+    from src.api import service
+    from src.storage.db import Comment
+
+    service._CLOUD_TF_CACHE.clear()
+    with wordcloud_db["session_factory"]() as s:
+        first = service._cloud_tf_for_target(s, "steam:111")
+
+        row = s.execute(
+            select(Comment).where(Comment.target_id == "steam:111").order_by(Comment.id)
+        ).scalars().first()
+        row.content = "筋斗云腾云驾雾的战斗系统真是精彩，优化也不错，剧情很棒"  # 改写正文
+        s.commit()
+
+        second = service._cloud_tf_for_target(s, "steam:111")
+
+    assert second is not first, "正文被改写后应重建，而非复用旧缓存对象"
+    assert second["fp"] != first["fp"], "内容指纹必须能感知正文变化"

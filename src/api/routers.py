@@ -42,6 +42,9 @@ from src.storage.db import (
 
 log = logging.getLogger("voc.api")
 
+# /api/games/meta 单次请求目标数上限（P1#2 · 2026-09-21）：对齐 /api/wordcloud 的 8 目标口径。
+GAMES_META_MAX_TARGETS = 8
+
 
 def require_writable(request: Request) -> None:
     """展示端（VPS）拒绝 admin 写操作（2026-09-11「看着能采」陷阱收口）
@@ -91,14 +94,17 @@ def _ok(data) -> dict:
 def api_targets(
     platform: str | None = None,
     monitored: bool = False,
-    include_hidden: bool = False,
     s: Session = Depends(get_session),
 ):
+    """目标列表（公开只读）
+
+    P2#1（2026-09-21）：公开通道**不再暴露** `include_hidden` —— 原先任何访客加
+    `?include_hidden=true` 即可看到 admin「隐藏」的目标及其聚合数据，与隐藏功能意图
+    相悖。隐藏过滤恒开；service 层仍保留该能力，仅供内部/鉴权路径调用。
+    """
     from src.api import service
 
-    return _ok(service.list_targets_payload(
-        s, platform, monitored=monitored, include_hidden=include_hidden,
-    ))
+    return _ok(service.list_targets_payload(s, platform, monitored=monitored))
 
 
 @public_router.get("/wordcloud")
@@ -130,10 +136,15 @@ def api_wordcloud(
 
 @public_router.get("/games/meta")
 def api_games_meta(targets: str, s: Session = Depends(get_session)):
-    """游戏元数据（发行日期/Steam 评级/封面；缺行或超 24h 自动刷新，失败不阻塞）"""
+    """游戏元数据（发行日期/Steam 评级/封面；缺行或超 24h 自动刷新，失败不阻塞）
+
+    P1#2（2026-09-21）输入收敛：targets 截断至 8 个（对齐 /api/wordcloud 口径）——
+    原先无上限，一次请求可塞入海量目标 → 后台刷新线程堆积 + VPS 出口持续打 Steam。
+    另：service 层只对「steam:<digits> 且 ∈ 监控白名单」的目标落库/外呼。
+    """
     from src.api import service
 
-    tlist = [t.strip() for t in targets.split(",") if t.strip()]
+    tlist = [t.strip() for t in targets.split(",") if t.strip()][:GAMES_META_MAX_TARGETS]
     if not tlist:
         raise HTTPException(422, "targets 不能为空（逗号分隔）")
     return _ok(service.games_meta_payload(s, tlist))
@@ -227,11 +238,14 @@ def api_comments(
 
 
 @public_router.get("/bilibili/videos")
-def api_bilibili_videos(include_hidden: bool = False, s: Session = Depends(get_session)):
-    """B 站视频看板数据源：fetched 视频快照 + 采集量 + 性别分布 + 高光总结"""
+def api_bilibili_videos(s: Session = Depends(get_session)):
+    """B 站视频看板数据源：fetched 视频快照 + 采集量 + 性别分布 + 高光总结
+
+    P2#1（2026-09-21）：公开通道不再暴露 `include_hidden`（被隐藏视频恒过滤）。
+    """
     from src.api import service
 
-    return _ok(service.bilibili_videos_payload(s, include_hidden=include_hidden))
+    return _ok(service.bilibili_videos_payload(s))
 
 
 @public_router.get("/opinions")

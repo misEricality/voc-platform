@@ -117,8 +117,8 @@ main():
 
 | 方法 | 路径 | 说明 | 数据来源（复用现有仓储方法） |
 |---|---|---|---|
-| GET | `/api/targets?platform=steam\|bilibili&monitored=` | 目标列表 + 聚合指标（`monitored=true` 仅返回 targets.yaml targets 段白名单，2026-09-03） | `list_targets(platform=None)` |
-| GET | `/api/games/meta?targets=a,b,c` | **游戏元数据**（发行日期/Steam 全量评测数/评级描述/本地封面文件名；缺行或超 24h 自动刷新，失败返回 NULL 不阻塞） | `game_meta` 表 + Steam appdetails/appreviews 代理 |
+| GET | `/api/targets?platform=steam\|bilibili&monitored=` | 目标列表 + 聚合指标（`monitored=true` 仅返回 targets.yaml targets 段白名单，2026-09-03；**被 admin「隐藏」的目标恒过滤**——公开通道不暴露 `include_hidden`，2026-09-21 P2#1） | `list_targets(platform=None)` |
+| GET | `/api/games/meta?targets=a,b,c` | **游戏元数据**（发行日期/Steam 全量评测数/评级描述/本地封面文件名；缺行或超 24h 自动刷新，失败返回 NULL 不阻塞）。**输入收敛（2026-09-21 P1#2）**：单次 ≤8 个目标；仅 `steam:<数字>` 且 ∈ 监控白名单 ∪ collect_tasks 的目标会落库/外呼，其余原样返回 NULL | `game_meta` 表 + Steam appdetails/appreviews 代理 |
 | 静态 | `/covers/{appid}.jpg` | 游戏竖版封面（`data/covers/` 本地缓存，采集时从 Steam CDN 下载 library_600x900） | FastAPI StaticFiles |
 | GET | `/api/overview?target=&start=&end=&grain=comment\|opinion` | 单目标 KPI + 情感分布（双颗粒度） | 聚合查询（新写薄封装） |
 | GET | `/api/topics/tree` | **L1~L3 主题树**（`config/topics/gaming.yaml`，树状筛选器数据源） | yaml 直读（service 层轻量 loader） |

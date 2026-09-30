@@ -53,6 +53,10 @@ MONITORING_YAML = Path(__file__).resolve().parents[2] / "config" / "monitoring" 
 COVERS_DIR = Path(__file__).resolve().parents[2] / "data" / "covers"
 DATE_FMT = "%Y-%m-%d"
 SENTIMENTS = ("positive", "negative", "neutral")
+# Steam AppID 白名单（P1#2 · 2026-09-21）：纯数字，杜绝拼路径穿越 / 任意 key 落库。
+_STEAM_APPID_RE = re.compile(r"\d{1,12}")
+# game_meta 目标标识：必须形如 "steam:2358720"
+_GAME_META_TARGET_RE = re.compile(r"^steam:\d{1,12}$")
 
 
 def _meta_name(extra_meta: str | None, fallback: str) -> str:
@@ -191,8 +195,10 @@ def list_targets_payload(
     （只存在于 excluded_targets / 归档 DB）依旧被挡在外面。
     另：collect_tasks 里还没有任何评论的任务也补进列表（total=0），达成「添加即可见，
     采到数据即可看」。
-    include_hidden=True（2026-09-08）：不过滤 collect_tasks.visible=0（隐藏）的目标——
-    data 页「运维全量」豁免用；看板/对比/下拉等默认过滤。
+    include_hidden=True：不过滤 collect_tasks.visible=0（隐藏）的目标。
+    ⚠️ P2#1（2026-09-21）：该参数**不再由任何公开端点暴露**（原先访客加
+    `?include_hidden=true` 即可绕过 admin 隐藏）。仅保留作内部/未来鉴权路径能力；
+    公开调用一律走默认 False（隐藏恒过滤）。
     """
     from src.storage.db import CommentRepository
 
@@ -273,29 +279,40 @@ def _cloud_tokens(text: str) -> list[str]:
     return out
 
 
-_CLOUD_TF_CACHE: dict = {}  # (db_url, target_id) → {"max_id","total","days":{word:{date:[c,pos,neg,neu]}}}
+_CLOUD_TF_CACHE: dict = {}  # (db_url, target_id) → {"fp": 数据指纹, "days": {word: {date: [...]}}}
 _CLOUD_TF_LOCK = __import__("threading").Lock()
 
 
 def _cloud_tf_for_target(session: Session, target_id: str) -> dict:
-    """目标级「词×日×情感」频次矩阵（评论内容不可变 → 只在数据变化时重建一次）
+    """目标级「词×日×情感」频次矩阵（数据变化时重建一次）
 
-    指纹 = (count, max_id)；新增评论后自动失效重建。构建耗时（jieba 全量分词）
-    摊销为每目标一次，此后任意窗口筛选退化为按日求和。
+    指纹 = (count, max_id, sum(length(content)), min(content), max(content))。
+    P3#3（2026-09-21）：原先只看 (count, max_id)，而 `upsert` 会**覆盖已有评论的
+    content**（作者编辑场景，source_id 相同 → 更新而非新增）→ 词频矩阵不失效。
+    Comment 无 updated_at 列，故用上述**廉价聚合**作内容指纹（同一次全表扫描顺带
+    取长度和与字典序极值），新增评论或正文被改写都会触发重建。
+    构建耗时（jieba 全量分词）摊销为每目标一次，此后任意窗口筛选退化为按日求和。
     """
     engine_key = str(session.get_bind().url)
     key = (engine_key, target_id)
     row = session.execute(
-        select(func.count(Comment.id), func.max(Comment.id)).where(Comment.target_id == target_id)
+        select(
+            func.count(Comment.id),
+            func.max(Comment.id),
+            func.sum(func.length(Comment.content)),
+            func.min(Comment.content),
+            func.max(Comment.content),
+        ).where(Comment.target_id == target_id)
     ).one()
-    total, max_id = int(row[0] or 0), int(row[1] or 0)
+    # fingerprint：捕获「新增评论」与「既有评论正文被覆盖」两类变化
+    fp = (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0), row[3], row[4])
     cached = _CLOUD_TF_CACHE.get(key)
-    if cached and cached["max_id"] == max_id and cached["total"] == total:
+    if cached and cached["fp"] == fp:
         return cached
 
     with _CLOUD_TF_LOCK:
         cached = _CLOUD_TF_CACHE.get(key)  # 双重检查：并发请求只构建一次
-        if cached and cached["max_id"] == max_id and cached["total"] == total:
+        if cached and cached["fp"] == fp:
             return cached
         rows = session.execute(
             select(Comment.content, Comment.sentiment, Comment.posted_at).where(
@@ -316,7 +333,7 @@ def _cloud_tf_for_target(session: Session, target_id: str) -> dict:
                     cell[2] += 1
                 else:
                     cell[3] += 1
-        entry = {"max_id": max_id, "total": total, "days": days}
+        entry = {"fp": fp, "days": days}
         _CLOUD_TF_CACHE[key] = entry
         return entry
 
@@ -335,9 +352,10 @@ def wordcloud_payload(
     - 每词聚合情感分布（positive/neutral/negative），取多数情感作为词的着色标签
     - 权重 = tf × idf（idf 按目标间文档频率），突出「区别于其他游戏」的词；
       count/share 仍随词条返回供 tooltip
-    - 性能（2026-09-09）：评论内容不可变 → 每目标「词×日×情感」频次矩阵只分词构建一次并
-      驻留内存（`_cloud_tf_for_target`，新评论到达后按目标重建）；任意窗口筛选退化为
-      纯计数求和（毫秒级）。参数级 payload 缓存保留。
+    - 性能（2026-09-09）：每目标「词×日×情感」频次矩阵只分词构建一次并驻留内存
+      （`_cloud_tf_for_target`）；P3#3（2026-09-21）修正「内容不可变」的过强假设 ——
+      指纹纳入内容长度和+字典序极值，新评论或既有正文被覆盖（作者编辑）都会按目标重建。
+      任意窗口筛选退化为纯计数求和（毫秒级）。参数级 payload 缓存保留。
     """
     import math
 
@@ -346,14 +364,14 @@ def wordcloud_payload(
     if isinstance(end, str):
         end = _parse_date(end, field="end")
 
-    # 目标级频次矩阵（含数据量指纹，新增评论自动失效重建）
+    # 目标级频次矩阵（含数据指纹，新增评论/正文被改写自动失效重建）
     tf_entries = []
-    total_fingerprint = []
+    data_fingerprint = []
     for t in targets:
         entry = _cloud_tf_for_target(session, t)
         tf_entries.append((t, entry))
-        total_fingerprint.append((t, entry["max_id"], entry["total"]))
-    cache_key = (tuple(sorted(targets)), start, end, top_n, tuple(total_fingerprint))
+        data_fingerprint.append((t, entry["fp"]))
+    cache_key = (tuple(sorted(targets)), start, end, top_n, tuple(data_fingerprint))
     if cache_key in _WORDCLOUD_CACHE:
         return _WORDCLOUD_CACHE[cache_key]
 
@@ -615,7 +633,9 @@ def _public_comment(d: dict) -> dict:
     Steam 侧采集时只落 steamid（匿名 ID、无昵称），保持不动。
 
     处理：
-    - `author` → 稳定伪名（昵称 sha1 前 8 位）：同一账号跨页面仍可辨认，但无法反查昵称；
+    - `author` → 稳定伪名（昵称 sha1 前 8 位）：同一账号跨页面仍可辨认；
+      P3#4（2026-09-21）措辞校正：sha1 前 8 位仅 32 bit，持有候选昵称列表者可**字典碰撞**
+      确认 → 准确说法是「不可**直接**反查」，而非「无法反查」；
     - `extra.profile` 删掉 `uname` / `official`，保留 `level` / `vip` / `sex`（分桶特征）。
 
     ⚠️ 库里**仍保留原文**（本机离线分析要用），脱敏只发生在对外序列化这一层；
@@ -636,6 +656,15 @@ def _public_comment(d: dict) -> dict:
             cleaned = {k: v for k, v in profile.items() if k not in ("uname", "official")}
             out = {**out, "extra": {**extra, "profile": cleaned}}
     return out
+
+
+def _escape_like(s: str) -> str:
+    """转义 LIKE 元字符（`\\` `%` `_`），配合 `.like(pattern, escape="\\\\")` 使用。
+
+    P2#3（2026-09-21）：原先 `q` 直接拼进 LIKE 模式，`%`/`_` 被当通配符
+    （无法字面搜索），且 `%a%b%c%` 类模式可放大全表扫描。
+    """
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def comments_payload(
@@ -671,7 +700,8 @@ def comments_payload(
     if sentiment:
         conditions.append(Comment.sentiment == sentiment)
     if q:
-        conditions.append(Comment.content.like(f"%{q}%"))
+        # 字面量搜索（P2#3 · 2026-09-21）：转义 LIKE 元字符，避免 %/_ 被当通配符
+        conditions.append(Comment.content.like(f"%{_escape_like(q)}%", escape="\\"))
     _apply_time(conditions, start, end)
     if topic:
         if grain == "comment":
@@ -844,7 +874,8 @@ def bilibili_videos_payload(session: Session, *, include_hidden: bool = False) -
     - 只返回 status=fetched 且已有 aid 的视频（aid 是评论/弹幕 target_id 的映射键）
     - 性别分布：comments.extra_json.profile.sex（男/女/secret），SQLite json_extract 聚合
     - 高光：highlights_json 解析（采集时 LLM 总结落库，页面零成本）
-    - include_hidden=True（2026-09-08）：不过滤 visible=0（data 页运维豁免）
+    - include_hidden=True：不过滤 visible=0。⚠️ P2#1（2026-09-21）：不再由公开端点
+      暴露（隐藏视频恒过滤），仅保留内部能力。
     """
     from src.storage.db import BilibiliQueue
 
@@ -1031,7 +1062,14 @@ def _download_cover(appid: str) -> str | None:
 
     本地化原因（2026-09-04 决策）：不依赖 Steam CDN 连通性、无防盗链问题、
     随 data/ 目录同步即可完成公网部署。全部失败返回 None（前端走 CDN 兜底）。
+
+    P1#2（2026-09-21）纵深防御：appid 必须为纯数字才落盘 —— 原先直接用于拼
+    `COVERS_DIR / f"{appid}.jpg"`，`steam:../../evil` 可把文件写到 data/covers 之外。
     """
+    if not _STEAM_APPID_RE.fullmatch(appid):
+        logging.getLogger("voc.api").warning("封面下载拒绝非数字 appid: %r", appid)
+        return None
+
     import requests
 
     try:
@@ -1067,6 +1105,10 @@ def _refresh_game_meta(session: Session, target_id: str) -> None:
     from src.collectors.steam import SteamCollector
 
     appid = target_id.split(":", 1)[1] if ":" in target_id else target_id
+    # P1#2 纵深防御：非数字 appid（如 ../../evil）直接拒绝，不进外呼/落库/封面写入路径。
+    if not _STEAM_APPID_RE.fullmatch(appid):
+        logging.getLogger("voc.api").warning("game_meta 刷新拒绝非法 appid: %r", target_id)
+        return
     collector = SteamCollector()
     info = collector.fetch_app_info(appid) or {}
     summary = collector.fetch_review_summary(appid) or {}
@@ -1101,6 +1143,12 @@ def _refresh_game_meta(session: Session, target_id: str) -> None:
     session.commit()
 
 
+# in-flight 去重（P1#2 · 2026-09-21）：同一目标已有刷新线程在跑 → 不再起第二个。
+# 前端 3s 轮询会反复命中 stale 判定，原实现每次请求都新起线程 → 线程堆积 + 持续外呼。
+_META_REFRESH_INFLIGHT: set[str] = set()
+_META_REFRESH_LOCK = __import__("threading").Lock()
+
+
 def _refresh_game_meta_batch(target_ids: list[str]) -> None:
     """后台线程批量刷新（stale-while-revalidate）：独立 session + 0.5s 间隔防限流"""
     import time as _time
@@ -1119,6 +1167,10 @@ def _refresh_game_meta_batch(target_ids: list[str]) -> None:
                 _time.sleep(0.5)
     except Exception as e:  # noqa: BLE001
         logging.getLogger("voc.api").warning("game_meta 后台刷新线程异常: %s", e)
+    finally:
+        # 无论成败都解除 in-flight 标记，下次 stale 判定可再次触发刷新
+        with _META_REFRESH_LOCK:
+            _META_REFRESH_INFLIGHT.difference_update(target_ids)
 
 
 def _meta_row_dict(row: GameMeta | None, target_id: str) -> dict:
@@ -1146,27 +1198,46 @@ def games_meta_payload(
     的目标交给后台线程刷新（0.5s 间隔），响应体 `refreshing` 非空时前端 3s 轮询。
     修复：原先同步刷新 6 款游戏串行打 Steam 接口，首屏阻塞 30s+。
     `spawn_refresh=False`（静态快照导出场景）：只读现有行，**不**起后台刷新线程。
+
+    P1#2（2026-09-21）输入收敛：只对「steam:<digits> 且 ∈ 监控白名单 ∪ collect_tasks(steam)」
+    的目标落库/外呼。非法或非白名单目标既不建行也不刷新，仅原样返回 null 元数据项
+    （响应结构不变）—— 封堵「任意 key 灌 game_meta 表 + 路径穿越写封面 + 无上限外呼」。
     """
     import threading
 
     items: list[dict] = []
     refreshing: list[str] = []
     now = _utcnow()
+    allowed = _monitored_target_ids() | {
+        f"steam:{tid}" for tid in session.execute(
+            select(CollectTask.target_id).where(CollectTask.platform == "steam")
+        ).scalars()
+    }
+    valid_targets = {
+        t for t in targets if _GAME_META_TARGET_RE.match(t) and t in allowed
+    }
+
     for t in targets:
-        row = session.get(GameMeta, t)
-        stale = (
-            row is None
-            or row.fetched_at is None
-            or now - row.fetched_at > timedelta(hours=GameMeta.REFRESH_TTL_HOURS)
-            or row.review_score is None  # 不完整行（限流导致字段缺失）→ 尽快补
-        )
-        if stale:
-            refreshing.append(t)
+        row = session.get(GameMeta, t) if t in allowed else None
+        if t in valid_targets:
+            stale = (
+                row is None
+                or row.fetched_at is None
+                or now - row.fetched_at > timedelta(hours=GameMeta.REFRESH_TTL_HOURS)
+                or row.review_score is None  # 不完整行（限流导致字段缺失）→ 尽快补
+            )
+            if stale:
+                refreshing.append(t)
         items.append(_meta_row_dict(row, t))
 
+    # in-flight 去重：只把「当前没有刷新线程在跑」的目标交给后台线程（见模块级注释）。
     if refreshing and spawn_refresh:
-        threading.Thread(
-            target=_refresh_game_meta_batch, args=(refreshing,),
-            name="game-meta-refresh", daemon=True,
-        ).start()
+        with _META_REFRESH_LOCK:
+            to_refresh = [t for t in refreshing if t not in _META_REFRESH_INFLIGHT]
+            _META_REFRESH_INFLIGHT.update(to_refresh)
+        if to_refresh:
+            threading.Thread(
+                target=_refresh_game_meta_batch, args=(to_refresh,),
+                name="game-meta-refresh", daemon=True,
+            ).start()
     return {"items": items, "refreshing": refreshing}

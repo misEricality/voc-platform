@@ -217,6 +217,28 @@ def test_to_dict_serializable():
         teardown_tmp_db(path)
 
 
+def test_danmaku_to_dict_serializable():
+    """P3#1（2026-09-21）：Danmaku.to_dict 归位到类内（原写在 bucket_danmaku_rows 的
+    return 之后，永不可达且不属于任何类 → 任何人一调即 AttributeError）"""
+    SessionLocal, path = setup_tmp_db()
+    try:
+        import json
+
+        from src.storage.db import Danmaku
+
+        row = Danmaku(
+            video_id="bilibili:video:42", cid="123", content="弹幕内容",
+            progress=40, mode=1, color=16777215,
+            posted_at=datetime(2026, 8, 1, 12, 0),
+        )
+        d = row.to_dict()
+        assert d["content"] == "弹幕内容" and d["progress"] == 40
+        assert d["posted_at"] == "2026-08-01T12:00:00"
+        json.dumps(d, ensure_ascii=False)  # 必须可序列化
+    finally:
+        teardown_tmp_db(path)
+
+
 def test_unique_bv_id_constraint():
     """BV 号唯一约束：重复 add 应抛 IntegrityError"""
     SessionLocal, path = setup_tmp_db()

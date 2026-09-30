@@ -65,7 +65,7 @@ docs/
 | **为什么选这个数据源、不选别的** | [research/VOC_COMPETITOR_RESEARCH.md](./research/VOC_COMPETITOR_RESEARCH.md) |
 | **国内外 VoC 平台都在做什么** | [research/VOC_COMPETITOR_RESEARCH.md](./research/VOC_COMPETITOR_RESEARCH.md) |
 | **src/ 代码模块结构（pipeline / analyzers / collectors / queue / storage / visualizer 的职责）** | [../src/README.md](../src/README.md) |
-| **tests/ 测试用例索引（219 例 pytest + 黄金集门禁 + ML skip）** | [../tests/README.md](../tests/README.md) |
+| **tests/ 测试用例索引（271 例 pytest + 黄金集门禁 + ML skip）** | [../tests/README.md](../tests/README.md) |
 | **某次改动的来龙去脉 / 项目变更历史** | [CHANGELOG.md](./CHANGELOG.md)（原 AGENTS.md 版本记录；AGENTS.md 只留最近 3 条） |
 
 ---

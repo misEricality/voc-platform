@@ -227,6 +227,21 @@ class Danmaku(Base):
         Index("ux_danmaku_dedup", "video_id", "progress", "content", "user_hash"),
     )
 
+    def to_dict(self) -> dict:
+        """P3#1（2026-09-21）：方法此前被误写在 bucket_danmaku_rows 的 return 之后
+        （永不可达、且不属于任何类），类本身反而缺失该方法 —— 已归位到此。"""
+        return {
+            "id": self.id,
+            "video_id": self.video_id,
+            "cid": self.cid,
+            "content": self.content,
+            "progress": self.progress,
+            "mode": self.mode,
+            "color": self.color,
+            "user_hash": self.user_hash,
+            "posted_at": self.posted_at.isoformat() if self.posted_at else None,
+        }
+
 
 # 弹幕分桶宽度（秒）：30s 固定桶（2026-09-04 B站视频看板，工程师确认）
 DANMAKU_BUCKET_WIDTH_SEC = 30
@@ -245,19 +260,6 @@ def bucket_danmaku_rows(rows: list, *, width: int = DANMAKU_BUCKET_WIDTH_SEC) ->
         {"start_sec": idx * width, "end_sec": (idx + 1) * width, "count": len(rs), "rows": rs}
         for idx, rs in sorted(grouped.items())
     ]
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "video_id": self.video_id,
-            "cid": self.cid,
-            "content": self.content,
-            "progress": self.progress,
-            "mode": self.mode,
-            "color": self.color,
-            "user_hash": self.user_hash,
-            "posted_at": self.posted_at.isoformat() if self.posted_at else None,
-        }
 
 
 class BilibiliQueue(Base):

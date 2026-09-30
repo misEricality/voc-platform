@@ -945,5 +945,94 @@ def test_admin_lookup(seeded_db, client, monkeypatch):
     assert r.status_code == 422
 
 
+# ==================== 对抗审查修复（2026-09-21）：P1#2 / P2#1 / P2#3 ====================
+
+def test_games_meta_truncates_targets(ranged_db, client, monkeypatch):
+    """P1#2：/api/games/meta 单次目标数截断为 8（原无上限 → 后台线程堆积 + 外呼放大）"""
+    from src.api import service
+
+    monkeypatch.setattr(service, "_refresh_game_meta", lambda session, target_id: None)
+    targets = ",".join(f"steam:{i}" for i in range(50))
+    r = client.get("/api/games/meta", params={"targets": targets})
+    assert r.status_code == 200
+    assert len(r.json()["data"]["items"]) == 8
+
+
+def test_games_meta_rejects_illegal_target(ranged_db, client):
+    """P1#2：非法 target_id（非 steam:<digits> / 非白名单）既不落库也不刷新"""
+    from sqlalchemy import select
+
+    from src.storage.db import GameMeta
+
+    r = client.get("/api/games/meta", params={"targets": "steam:../../evil,steam:abc,evil:1"})
+    assert r.status_code == 200
+    body = r.json()["data"]
+    assert body["refreshing"] == []
+    assert len(body["items"]) == 3
+    assert all(i["release_date"] is None for i in body["items"])
+
+    with client.app.state.SessionLocal() as s:
+        assert list(s.execute(select(GameMeta)).scalars()) == [], "非法 target 不得灌 game_meta 表"
+
+
+def test_download_cover_rejects_non_numeric_appid(tmp_path, monkeypatch):
+    """P1#2 纵深防御：封面写入路径的 appid 白名单（阻断 steam:../../evil 路径穿越写）"""
+    from src.api import service
+
+    monkeypatch.setattr(service, "COVERS_DIR", tmp_path / "covers")
+    assert service._download_cover("../../evil") is None
+    assert service._download_cover("12ab") is None
+    assert not (tmp_path / "covers").exists(), "非法 appid 连目录都不该建"
+
+
+def test_public_targets_cannot_include_hidden(seeded_db, client):
+    """P2#1：公开端点不再暴露 include_hidden —— 隐藏目标对任何访客恒不可见"""
+    from sqlalchemy import select
+
+    from src.storage.db import CollectTask
+
+    with client.app.state.SessionLocal() as s:
+        t = s.execute(
+            select(CollectTask).where(CollectTask.target_id == "2358720")
+        ).scalar_one()
+        t.visible = 0
+        s.commit()
+
+    assert client.get("/api/targets", params={"monitored": "true"}).json()["data"] == []
+    # 旧绕过姿势：加 include_hidden=true（参数已移除，被 FastAPI 忽略 → 仍不可见）
+    r = client.get("/api/targets", params={"monitored": "true", "include_hidden": "true"})
+    assert r.json()["data"] == []
+
+
+def test_public_bilibili_videos_cannot_include_hidden(test_db_path, client):
+    """P2#1：/api/bilibili/videos 的 include_hidden 通道已移除"""
+    from src.storage.db import BilibiliQueue, init_db
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    _, SessionLocal = init_db(f"sqlite:///{test_db_path}")
+    with SessionLocal() as s:
+        s.add(BilibiliQueue(
+            bv_id="BV1HIDDEN", status="fetched", aid=777, pubdate=now, visible=0,
+        ))
+        s.commit()
+
+    assert client.get("/api/bilibili/videos").json()["data"] == []
+    r = client.get("/api/bilibili/videos", params={"include_hidden": "true"})
+    assert r.json()["data"] == []
+
+
+def test_comments_q_escapes_like_wildcards(seeded_db, client):
+    """P2#3：q 按字面量匹配 —— % / _ 不再被当 LIKE 通配符"""
+    # 未转义时 '%' 会匹配全部 3 条评论
+    r = client.get("/api/comments", params={"target": "steam:2358720", "q": "%"})
+    assert r.json()["data"]["total"] == 0
+    # 未转义时 '_' 匹配任意单字符 → 也会命中全部
+    r = client.get("/api/comments", params={"target": "steam:2358720", "q": "_"})
+    assert r.json()["data"]["total"] == 0
+    # 正常子串仍可命中
+    r = client.get("/api/comments", params={"target": "steam:2358720", "q": "太差"})
+    assert r.json()["data"]["total"] == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

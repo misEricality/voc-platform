@@ -35,6 +35,57 @@ logging.basicConfig(
 )
 log = logging.getLogger("voc.pipeline")
 
+# 标注批量大小：与 src/analyzers/sentiment_llm.DEFAULT_BATCH_SIZE 对齐（10 条/批）。
+# 不在此处 import 该模块：local 分析器路径无需 openai 依赖，保持惰性。
+ANALYSIS_BATCH_SIZE = 10
+
+
+def _collect_valid_l2(hierarchy: dict | None) -> set[str] | None:
+    """从 topic hierarchy（L1 → {L2: [L3...]}）收集全部合法 L2 标签。
+
+    P3#2（2026-09-21）：供 update_analysis 的越界过滤使用；无词表时返回 None（不过滤）。
+    """
+    if not isinstance(hierarchy, dict) or not hierarchy:
+        return None
+    out: set[str] = set()
+    for l2_map in hierarchy.values():
+        if isinstance(l2_map, dict):
+            out.update(l2_map.keys())
+    return out or None
+
+
+def _analyzer_supports_raise_on_error(analyzer) -> bool:
+    """探测 analyze_batch 是否接受 raise_on_error（LLM 分析器专有参数）。
+
+    local 分析器走 BaseAnalyzer.analyze_batch(texts, *, context=None)，传该参数会
+    TypeError；测试 Fake 分析器多为 **(texts, **kwargs)**。用签名探测而非
+    try/except TypeError —— 后者会吞掉实现内部的真实 TypeError。
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(analyzer.analyze_batch).parameters
+    except (TypeError, ValueError):
+        return False
+    if "raise_on_error" in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
+def _is_analysis_failure(result, text: str) -> bool:
+    """失败占位判定（P1#1 双保险 · 2026-09-21）：非空文本却拿到「零置信度且无观点」的结果。
+
+    两类来源都表现为该形态：① analyze_batch 异常被吞后的 neutral 占位；
+    ② LLM 返回缺失 index → _empty_result()。成功路径置信度恒 > 0（无观点兜底为 0.5），
+    且此处额外要求 opinions 为空，故不会误伤真实成功结果。
+    """
+    if not text or not text.strip():
+        return False
+    return (
+        float(getattr(result, "sentiment_confidence", 0.0) or 0.0) == 0.0
+        and not getattr(result, "opinions", None)
+    )
+
 
 # 注册可用的采集器
 COLLECTORS = {
@@ -360,6 +411,7 @@ def run_pipeline(
 
     # 4. 分析
     analyzed_count = 0
+    skipped_count = 0
     if not skip_analysis:
         log.info(f"[3/3] AI 分析...")
         try:
@@ -371,33 +423,68 @@ def run_pipeline(
             analyzer = None
 
         if analyzer:
-            # 查询刚入库的评论（按目标）
+            # 查询刚入库的评论（按目标），只挑未分析者
             comments = repo.list_by_target(platform, db_lookup_target, limit=max_count)
+            pending = [c for c in comments if c.analyzed_at is None]
             # analyzer_version：取自 analyzer（LLM/本地都有 analyzer_version 属性）
             # 缺省时为 None（旧 caller 也能跑；新数据 analyzer_version 留空，可后续回填）
             analyzer_version = getattr(analyzer, "analyzer_version", None)
-            for c in comments:
-                if c.analyzed_at is not None:
-                    continue
-                result = analyzer.analyze(c.content, context={"platform": platform, "target_id": target_id})
-                # 方案4：topic 已由 analyzer 从核心观点映射；观点（opinions）随主流程落库
-                repo.update_analysis(
-                    c.id,
-                    sentiment=result.sentiment,
-                    sentiment_score=result.sentiment_score,
-                    sentiment_confidence=result.sentiment_confidence,
-                    topic=result.topic,
-                    opinions=[op.to_dict() for op in result.opinions],
-                    analyzer_version=analyzer_version,
-                )
-                analyzed_count += 1
-                # 逐条提交（2026-09-06 修复）：原「循环后一次 commit」会把 SQLite 写锁
+            # 越界标签过滤接线（P3#2 · 2026-09-21）：把词表边界下推到落库层，唤醒
+            # db.update_analysis 的 valid_l1/l2 过滤（此前主链路从未传入 → 过滤休眠）。
+            # 属性缺失（local / 测试 Fake 分析器）→ None = 不过滤。
+            valid_l1 = set(getattr(analyzer, "topic_primary", None) or []) or None
+            valid_l2 = _collect_valid_l2(getattr(analyzer, "topic_hierarchy", None))
+            # P1#1 主修复（2026-09-21）：改**按批**打标（原先逐条 analyze() 约 10 倍请求），
+            # 且显式 raise_on_error=True。原逐条 analyze() 默认吞异常 → 返回
+            # neutral/conf=0 占位仍被 update_analysis 固化 analyzed_at，一个 LLM 故障夜
+            # 会把当晚评论永久标成 neutral、永不重试且无告警。现在批级异常向上抛 →
+            # 该 target 判失败 → 哨兵次日补采（此前已提交的批保留，剩余未分析下轮重试）。
+            supports_raise = _analyzer_supports_raise_on_error(analyzer)
+            for start in range(0, len(pending), ANALYSIS_BATCH_SIZE):
+                chunk = pending[start : start + ANALYSIS_BATCH_SIZE]
+                texts = [c.content for c in chunk]
+                kwargs: dict = {"context": {"platform": platform, "target_id": target_id}}
+                if supports_raise:
+                    kwargs["raise_on_error"] = True
+                results = analyzer.analyze_batch(texts, **kwargs)
+                for i, c in enumerate(chunk):
+                    result = results[i] if i < len(results) else None
+                    # 双保险（P1#1）：批次异常被吞 / LLM 缺失 index 都会产出「零置信度
+                    # 且无观点」的占位结果 —— 这类结果**不落库**（analyzed_at 留空 →
+                    # 下轮自动重试），避免把脏标注固化进主链路。
+                    if result is None or _is_analysis_failure(result, texts[i]):
+                        skipped_count += 1
+                        log.warning(
+                            "  [分析] 跳过无效结果 comment_id=%s target=%s（保持未分析，下轮重试）",
+                            c.id, target_id,
+                        )
+                        continue
+                    # 方案4：topic 已由 analyzer 从核心观点映射；观点（opinions）随主流程落库
+                    repo.update_analysis(
+                        c.id,
+                        sentiment=result.sentiment,
+                        sentiment_score=result.sentiment_score,
+                        sentiment_confidence=result.sentiment_confidence,
+                        topic=result.topic,
+                        opinions=[op.to_dict() for op in result.opinions],
+                        valid_l1_labels=valid_l1,
+                        valid_l2_labels=valid_l2,
+                        analyzer_version=analyzer_version,
+                    )
+                    analyzed_count += 1
+                # 逐批提交（2026-09-06 修复）：原「循环后一次 commit」会把 SQLite 写锁
                 # 横跨整个 LLM 分析阶段（单条 30-60s × N 条 = 锁握数小时），其他写者
                 # （每日 cron / admin backfill / run-due）在 busy_timeout 内抢不到锁 →
                 # database is locked 连锁失败（9/6 凌晨 6 游戏 daily 全挂 + B站 run-due
-                # 两次卡死 fetching 的根因）。WAL 模式下逐条 commit 开销可忽略。
+                # 两次卡死 fetching 的根因）。WAL 模式下逐批 commit 开销可忽略。
                 repo.commit()
-            log.info(f"  完成 {analyzed_count} 条分析")
+            if skipped_count:
+                log.warning(
+                    f"  完成 {analyzed_count} 条分析；{skipped_count} 条无有效结果已跳过落库"
+                    f"（保持未分析，下轮自动重试）"
+                )
+            else:
+                log.info(f"  完成 {analyzed_count} 条分析")
 
     session.close()
 
@@ -407,6 +494,7 @@ def run_pipeline(
         "target_meta": target_meta,
         "fetched": len(raws),
         "analyzed": analyzed_count,
+        "analysis_skipped": skipped_count,
         "embedded": embed_count,
         "danmaku": danmaku_count,
     }

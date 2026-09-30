@@ -136,3 +136,92 @@ def test_pipeline_analysis_writes_opinions(tmp_path, monkeypatch):
     assert all(o.sentiment_confidence is not None for o in opinions)
 
     session.close()
+
+
+# ==================== P1#1 / P3#2 对抗审查修复（2026-09-21） ====================
+
+def _run_with_analyzer(tmp_path, monkeypatch, analyzer):
+    """跑一次 run_pipeline（3 条评论），采集器/向量化已 mock，仅注入给定分析器"""
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'analysis.db'}")
+    monkeypatch.setenv("LOG_LEVEL", "CRITICAL")
+
+    from src.pipeline import run_pipeline, COLLECTORS
+
+    monkeypatch.setitem(COLLECTORS, "steam", _FakeCollector)
+    monkeypatch.setattr("src.pipeline.get_analyzer", lambda provider=None: analyzer)
+    monkeypatch.setattr("src.pipeline.get_embedder", lambda: None)
+    return run_pipeline("steam", "999999", max_count=3)
+
+
+def test_pipeline_raises_when_analysis_batch_fails(tmp_path, monkeypatch):
+    """P1#1：批级失败必须向上抛（raise_on_error=True）→ 目标判失败交哨兵重采。
+
+    回归的是最重的数据完整性缺陷：原先逐条 analyze() 默认吞异常，DeepSeek
+    超时/限流/400 会返回 neutral/conf=0 占位并被 update_analysis 固化 analyzed_at，
+    当晚全部新评论永久标成 neutral 且永不重试、无告警。
+    """
+    class FailingAnalyzer:
+        name = "failing"
+
+        def analyze_batch(self, texts, **kwargs):
+            assert kwargs.get("raise_on_error") is True, "主链路必须显式 raise_on_error=True"
+            raise RuntimeError("DeepSeek 400 bad request")
+
+    with pytest.raises(RuntimeError):
+        _run_with_analyzer(tmp_path, monkeypatch, FailingAnalyzer())
+
+    # 评论已入库（采集阶段），但分析失败 → analyzed_at 保持 NULL（下轮自动重试）
+    _, SessionLocal = init_db()
+    with SessionLocal() as s:
+        rows = list(s.execute(select(Comment)).scalars())
+    assert len(rows) == 3
+    assert all(c.analyzed_at is None for c in rows), "失败不得固化 analyzed_at"
+    assert all(c.sentiment is None for c in rows)
+
+
+def test_pipeline_skips_placeholder_results(tmp_path, monkeypatch):
+    """P1#1 双保险：零置信度且无观点的「失败占位」不得落库（LLM 缺失 index 场景）"""
+    class PlaceholderAnalyzer:
+        name = "placeholder"
+
+        def analyze_batch(self, texts, **kwargs):
+            return [
+                AnalysisResult(
+                    sentiment="neutral", sentiment_score=0.0,
+                    sentiment_confidence=0.0, opinions=[],
+                )
+                for _ in texts
+            ]
+
+    report = _run_with_analyzer(tmp_path, monkeypatch, PlaceholderAnalyzer())
+    assert report["analyzed"] == 0
+    assert report["analysis_skipped"] == 3
+
+    _, SessionLocal = init_db()
+    with SessionLocal() as s:
+        rows = list(s.execute(select(Comment)).scalars())
+    assert all(c.analyzed_at is None for c in rows), "占位结果不得固化，留待下轮重试"
+
+
+def test_pipeline_filters_out_of_range_topic(tmp_path, monkeypatch):
+    """P3#2：主链路把词表边界传给 update_analysis，越界 topic 落库前被置空"""
+    class OutOfRangeAnalyzer:
+        name = "oor"
+        topic_primary = ["机制与内容"]  # 仅一个合法 L1
+
+        def analyze_batch(self, texts, **kwargs):
+            return [
+                AnalysisResult(
+                    sentiment="positive", sentiment_score=0.5,
+                    sentiment_confidence=0.9, topic="不在词表里的标签", opinions=[],
+                )
+                for _ in texts
+            ]
+
+    report = _run_with_analyzer(tmp_path, monkeypatch, OutOfRangeAnalyzer())
+    assert report["analyzed"] == 3
+
+    _, SessionLocal = init_db()
+    with SessionLocal() as s:
+        rows = list(s.execute(select(Comment)).scalars())
+    assert all(c.topic is None for c in rows), "越界 topic 应被 valid_l1_labels 过滤为 None"

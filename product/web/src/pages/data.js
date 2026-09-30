@@ -4,9 +4,10 @@
    （6 款单机 + fetched B 站视频），无需登录（公开只读端点） */
 Routes.data = async function (app) {
   const [steam, bili] = await Promise.all([
-    // data 页运维豁免（2026-09-08）：include_hidden 拉全量（含 admin 隐藏目标）
-    API.get('/api/targets?platform=steam&monitored=true&include_hidden=true'),
-    API.get('/api/bilibili/videos?include_hidden=true'),
+    // P2#1（2026-09-21）：公开端点已移除 include_hidden（隐藏目标/视频恒过滤），
+    // 本页随之只展示未隐藏目标（原「运维全量」豁免已收口）
+    API.get('/api/targets?platform=steam&monitored=true'),
+    API.get('/api/bilibili/videos'),
   ]);
   // 下拉顺序与其他页对齐（2026-09-06）：Steam 按发行日期倒序（/api/games/meta，失败回落名称序，
   // 同 dashboard/compare 序）；B站按投稿日期倒序（同 admin 列表序）

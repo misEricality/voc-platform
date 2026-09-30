@@ -26,6 +26,8 @@ SESSION_ADMIN_KEY = "admin"
 _LOGIN_FAILURES: dict[str, deque] = defaultdict(deque)
 _LOGIN_MAX_FAILS = 5
 _LOGIN_WINDOW = 300  # 5 分钟窗口
+# 容量保护（P2#5 · 2026-09-21）：与其它限流桶（_rate_check 的 max_keys）口径一致。
+_LOGIN_MAX_KEYS = 50_000
 
 # ---------- 通用 IP 限流（2026-09-09 原声分析 Agent · 决策 #15）----------
 
@@ -215,6 +217,23 @@ def public_rate_limit(request: Request) -> None:
     check_public_rate(client_ip(request))
 
 
+def _evict_login_failures(now: float) -> None:
+    """容量保护（P2#5 · 2026-09-21）：先淘汰窗口外 stale key，仍超上限则清空。
+
+    与 `_rate_check` 同思路（宁可短暂放行也不 OOM）。登录失败桶此前无容量约束。
+    """
+    if len(_LOGIN_FAILURES) <= _LOGIN_MAX_KEYS:
+        return
+    stale = [
+        k for k, v in _LOGIN_FAILURES.items()
+        if not v or now - v[-1] > _LOGIN_WINDOW
+    ]
+    for k in stale:
+        _LOGIN_FAILURES.pop(k, None)
+    if len(_LOGIN_FAILURES) > _LOGIN_MAX_KEYS:
+        _LOGIN_FAILURES.clear()
+
+
 def check_login_rate(ip: str) -> None:
     """登录前检查：窗口内失败次数超阈值则 429"""
     now = time.monotonic()
@@ -225,7 +244,9 @@ def check_login_rate(ip: str) -> None:
         raise HTTPException(
             429, f"登录失败次数过多，请 {_LOGIN_WINDOW // 60} 分钟后再试"
         )
-    _LOGIN_FAILURES[ip] = dq  # 确保 deque 已注册
+    # 不再对「从未失败过」的 IP 注册空 deque（P2#5）：原 `_LOGIN_FAILURES[ip] = dq`
+    # 让每个登录尝试都新增一个 key（过期也不回收）→ 无界增长；此处 `.get` 已足够。
+    _evict_login_failures(now)
 
 
 def record_login_failure(ip: str) -> None:
@@ -236,6 +257,7 @@ def record_login_failure(ip: str) -> None:
         dq.popleft()
     dq.append(now)
     _LOGIN_FAILURES[ip] = dq
+    _evict_login_failures(now)
 
 
 def clear_login_failures(ip: str) -> None:
