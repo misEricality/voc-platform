@@ -2,7 +2,7 @@
 
 > **运维/调试/数据处理脚本地图** — 区分"一次性的开发脚本"与"长期运行的运维脚本"。
 >
-> **最后更新**：2026-09-11（①b 数据通道：ops/ 新增 push_db_to_vps.ps1 + daily_incremental_collect 加 --push-db + register_local_collect_task 的 02:00 任务带推库）
+> **最后更新**：2026-09-30（`dev/verify_glm_5_3_flash.py` 重写为主标注器「生效配置」验证；`dev/verify_today_collect.py` 标注器标记语义修正）
 
 ---
 

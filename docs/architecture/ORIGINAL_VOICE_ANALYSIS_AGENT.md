@@ -9,7 +9,7 @@
 > - 自动化采集：[AUTOMATION_PIPELINE.md](./AUTOMATION_PIPELINE.md)（agent 查询的是每日增量后的 DB）
 > - 静态快照部署：[STATIC_SNAPSHOT_DEPLOYMENT.md](./STATIC_SNAPSHOT_DEPLOYMENT.md)（静态版不含 Agent，需在 FastAPI 模式才有）
 >
-> **最后更新**：2026-09-09 · **状态**：🟡 方案定稿，待落地
+> **最后更新**：2026-09-30（§1 决策 2/3：Agent 侧 LLM 与离线标注器解耦说明 + 模型名改用官方现名 `deepseek-flash`）· **状态**：🟡 方案定稿，待落地
 
 ---
 

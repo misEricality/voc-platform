@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../architecture/STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-09-21（对抗式审查报告 P1×2 + P2×3 + P3×4 全量收口；pytest **271 / 0 failed**）
+> **最后更新**：2026-09-30（主标注器切 GLM-5.3-Flash、DeepSeek 备用；标注输出截断自动降批；标注并发默认 3；pytest **300 例 / 299 passed**）
 
 ---
 
