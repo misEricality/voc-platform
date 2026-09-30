@@ -12,10 +12,11 @@
 - ⚠️ **「VPS 缺凭据」不能当护栏**（2026-09-12 更正）：VPS 的 `.env` 里**有**
   `DEEPSEEK_API_KEY`（原声分析 Agent 对话必需，缺它 `src/agent/chat.py` 直接报错），
   且没设 `ANALYZER_PROVIDER` → `get_analyzer()` 取默认 `deepseek`
-  （`src/analyzers/base.py`）→ **能正常初始化并标注**。而本地生产标注器自 2026-09-08
-  起也是 `deepseek-v4-flash` → 写出来的 `analyzer_version` 与本地**口径一致、
-  看不出异常**，比"写脏溯源"更隐蔽。（旧注释写的"VPS 无标注器 Key → 回落 deepseek →
-  污染溯源"，只在生产标注器是 GLM 的 2026-08-31 ~ 09-08 期间成立。）
+  （`src/analyzers/base.py`）→ **能正常初始化并标注**。（旧注释写的"VPS 无标注器 Key →
+  回落 deepseek → 污染溯源"，只在生产标注器是 GLM 的 2026-08-31 ~ 09-08 期间成立。）
+  2026-09-30 起本地主标注器是 `glm-5.3-flash`（DeepSeek 为备用）→ 万一在 VPS 上真标注，
+  写出的 `analyzer_version` 会是 `llm:deepseek-*@…`、与本地 `llm:glm-5.3-flash@…`
+  **一眼可辨**。但这只是"事后可识别"，**不能当护栏**：事中照样烧 token、照样白干。
 
 即「**看着能采，其实白采还有害**」。所以把形态做成**代码级收口**，而不是靠人记着别点：
 `display_only()` 为真时 ①admin 写操作一律 403（GET 保留，线上看板照常"看"）；

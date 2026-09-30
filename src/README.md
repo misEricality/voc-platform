@@ -60,7 +60,7 @@ src/
 | `base.py` | 分析器抽象基类（统一 `analyzer_version` 接口契约） | 2026-08-06 |
 | `embedder.py` | 本地 **bge-small-zh-v1.5** 语义向量化（512 维，零 API 成本，单例加载 + `semantic_search` 接口） | 2026-08-11 |
 | `normalize.py` | **L1-L3 三级标签匹配核心**（GDT v3.1.1：`match_l3()` 五级规则 + 词典索引 + 路径映射；程序匹配层，非 LLM 选标签） | 2026-08-19 |
-| `sentiment_llm.py` | **LLM 打标器**（支持 deepseek / qwen / glm / glm-5.3-Flash 4 个 provider；`analyzer_version = llm:{model}@{prompt_hash8}`） | 2026-08-31（GLM-5.3-Flash 默认标注器切换） |
+| `sentiment_llm.py` | **LLM 打标器**（支持 glm-5.3-flash / deepseek / qwen / glm 4 个 provider；`analyzer_version = llm:{model}@{prompt_hash8}`；输出截断自动降批，2026-09-30） | 2026-09-30（GLM-5.3-Flash 设为主标注器、DeepSeek 备用） |
 | `sentiment_local.py` | 本地 BERT 情感分析（零成本备选；无 ML 环境时跳过） | 2026-08-21 |
 
 > 📖 标注流程详见 [docs/architecture/ANNOTATION_PIPELINE.md](../docs/architecture/ANNOTATION_PIPELINE.md)

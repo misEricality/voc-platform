@@ -89,7 +89,7 @@ def api_create_session(
         page=body.page,
         page_context=body.page_context,
         title=body.title,
-        model=body.model or "deepseek-v4-flash",
+        model=body.model or "deepseek-flash",
         anon_user_id=anon,
     )
     return _ok(sess.to_dict())

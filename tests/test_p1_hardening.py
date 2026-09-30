@@ -279,9 +279,12 @@ def test_display_only_refuses_pipeline(monkeypatch):
 
     这条守卫的价值是**双重**的：既不让 VPS 白跑采集（结果次日被整库覆盖），
     也不让它真的标注 —— VPS 的 `.env` 里有 `DEEPSEEK_API_KEY`（Agent 对话必需）、
-    且没设 `ANALYZER_PROVIDER` → `get_analyzer()` 取默认 deepseek，**能正常标注**，
-    写出的 `analyzer_version` 与本地口径一致、**看不出异常**（2026-09-12 更正：早先
-    「无标注器 Key 会写脏溯源」的说法，只在生产标注器是 GLM 的期间成立）。
+    且没设 `ANALYZER_PROVIDER` → `get_analyzer()` 取默认 deepseek，**能正常标注**
+    （2026-09-12 更正：早先「无标注器 Key 会写脏溯源」的说法，只在生产标注器是 GLM 的
+    期间成立）。
+    2026-09-30 起本地主标注器为 `glm-5.3-flash`、VPS 仍回落 deepseek → 若真在 VPS 上跑，
+    `analyzer_version` 会是 `llm:deepseek-*@…`、与本地 `llm:glm-5.3-flash@…` 一眼可辨。
+    但**分叉只是"事后可识别"，不是护栏** —— 事中照样烧 token、照样白干。
     """
     from src.pipeline import run_pipeline
 
@@ -328,3 +331,27 @@ def test_web_app_logging_is_configured(monkeypatch):
     finally:
         root.handlers[:] = saved_handlers
         root.setLevel(saved_level)
+
+
+# ---------------------------------------------------------------- 6. 登录失败桶容量（P2#5）
+
+def test_login_failure_bucket_has_capacity_cap(monkeypatch):
+    """P2#5：登录失败限流桶有容量上限，且不给「从未失败」的 IP 建 key
+
+    原实现 `_LOGIN_FAILURES[ip] = dq` 让**每个登录尝试**都新增一个 key（过期也不回收）
+    → 异常流量下内存无界增长；其它限流桶都有 max_keys 保护，唯独这个没有。
+    """
+    from src.api import auth
+
+    auth._LOGIN_FAILURES.clear()
+    monkeypatch.setattr(auth, "_LOGIN_MAX_KEYS", 10)
+
+    # check_login_rate 只读不写：不应为「零失败」的 IP 注册 key
+    auth.check_login_rate("1.1.1.1")
+    assert "1.1.1.1" not in auth._LOGIN_FAILURES
+
+    for i in range(50):
+        auth.record_login_failure(f"9.9.9.{i}")
+    assert len(auth._LOGIN_FAILURES) <= 10, "超上限必须淘汰/清空，不得无界增长"
+
+    auth._LOGIN_FAILURES.clear()

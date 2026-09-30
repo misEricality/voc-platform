@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../architecture/STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-09-10（P11 bogus 清理执行 + 计划外进度入库：原声分析 Agent / 静态快照部署 / 每日采集哨兵；测试 219 例）
+> **最后更新**：2026-09-21（对抗式审查报告 P1×2 + P2×3 + P3×4 全量收口；pytest **271 / 0 failed**）
 
 ---
 
@@ -139,7 +139,7 @@
 | Steam 主库覆盖 | **8 款单机** | 黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末：渊虚之羽 / 鬼武者 |
 | Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-09-10.db`（4,916 条 / 7,101 观点 / 4,915 向量，26.2 MB）** | PUBG / Apex / Dota 2 / CS2 + `steam:999` 占位；2026-09-10 **重新归档**（首次 8/23 归档后被远端 DB sync 回灌，已修复）；旧 `online_games_2026-08-23.db` 已于 2026-09-10 删除（经比对是新库的严格子集，0 条独有） |
 | B 站支持 | **5 个视频 / 4,241 评论 + 7,359 弹幕** | `bilibili:video:{aid}` 形态 target；本地 `run-due` 每日调度 |
-| 情感分析覆盖 | **18,671 / 18,716 = 99.8% 已分析** | 剩 45 条未分析（29 Steam「三轮后无观点」+ 16 B站历史遗留）；主标注器 `llm:deepseek-v4-flash@73892f47`、`glm-5.3-flash@55c003a3` |
+| 情感分析覆盖 | **18,671 / 18,716 = 99.8% 已分析** | 剩 45 条未分析（29 Steam「三轮后无观点」+ 16 B站历史遗留）；主标注器自 2026-09-30 起 `llm:glm-5.3-flash@73892f47`（备用 deepseek）；存量分段见 `analyzer_version`（`glm-5.3-flash@55c003a3` / `deepseek-v4-flash@73892f47` / `deepseek-v4-flash@55c003a3`） |
 | 观点级标注 | **40,404 条** | `comment_opinions` 表（程序匹配观点短语） |
 | 语义向量 | **17,713 条** | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
 | 已支持游戏/视频 | **8 单机 Steam + 5 B 站视频** | 4 款网游已归档到独立 DB，可单独查询 |
@@ -149,7 +149,7 @@
 | 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）+ 公网静态快照（EdgeOne Pages，每日 04:30 自动发布）+ VPS 只读服务（①b，内测上线）** | FastAPI + 原生 SPA 5 页 + Agent 抽屉；Streamlit 并存；方案 ③ 已上线并自动化（`VOC-Local-Publish-Snapshot`）；方案 ①b 已落地：VPS `voc-web.service` + Caddy `:8443` 内测，DB 每日随 02:00 采集推库（`--push-db`） |
 | 平台覆盖 | **Steam（单机 8）+ B站（5 视频）** | 微博为下一主扩展 |
 | 数据存储 | SQLite 单文件（`data/voc.db`，**117.2 MB / 2026-09-11**）| WAL 模式；前端服务读 × cron 写并发；GH Actions 采集 workflow **已删除**（2026-09-11，仓库仅留 `ci.yml` 回归门禁）；①b 每日 `VACUUM INTO` 快照推 VPS（远端原位 `.backup()`） |
-| 测试门禁 | **pytest 236 例** | 黄金集 + API + 队列 + 每日采集（含推库 8 例）+ 哨兵 + monitored 白名单 + Agent |
+| 测试门禁 | **pytest 271 例** | 黄金集 + API + 队列 + 每日采集（含推库 8 例）+ 哨兵 + monitored 白名单 + Agent + 对抗审查回归 |
 
 ---
 

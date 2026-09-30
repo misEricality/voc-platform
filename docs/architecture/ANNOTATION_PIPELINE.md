@@ -20,6 +20,10 @@
   + 评论级 sentiment（供兜底）
     ↓
 第 1 步：解析批量输出（index 对齐 + 容错）
+  · 撞 max_tokens（finish_reason=length）/ JSON 取不出对象 / results 缺 index 或为空
+    → 抛 BatchOutputError → **批次对半降批重试**（拆到 1 条为止，2026-09-30）
+  · 单条仍答不动 → 失败占位（conf=0 且无观点）→ 不落库、下轮重试（不抛，防 target 卡死）
+  · **整批一条都拿不到**（真·故障夜）→ 抛 → target 判失败、次日哨兵补采
     ↓
 第 2 步：程序匹配（normalize.match_l3）
   phrase → L3（优先级）：

@@ -80,7 +80,9 @@ def get_analyzer(provider: str | None = None) -> BaseAnalyzer:
     """根据配置获取分析器实例
 
     Args:
-        provider: deepseek / qwen / glm / local
+        provider: glm-5.3-flash（**主标注器**，2026-09-30 起）/ deepseek（备用）
+            / qwen / glm / local。不传则读 `.env` 的 ``ANALYZER_PROVIDER``，
+            未配置时回落 ``deepseek``。
     """
     provider = (provider or os.getenv("ANALYZER_PROVIDER", "deepseek")).lower()
 

@@ -118,7 +118,7 @@ def _get_llm_config() -> dict:
     return {
         "api_key": api_key,
         "base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-        "model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+        "model": os.getenv("DEEPSEEK_MODEL", "deepseek-flash"),
     }
 
 

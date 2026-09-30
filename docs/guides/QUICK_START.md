@@ -32,11 +32,12 @@ pip install -r requirements.txt
 3. 填写域名（个人项目填 `localhost` 或留空）
 4. 获得 API Key
 
-### 3.2 DeepSeek-V4-Flash API Key（**默认主标注器，2026-09-08 切换**）
-1. 访问 https://platform.deepseek.com/
-2. 注册并充值（谷时价格优，02:00 采集天然谷时）
-3. 创建 API Key
-4. 备选：GLM_API_KEY（https://open.bigmodel.cn/，2026-08-31~09-08 曾为主标注器，仍可用）
+### 3.2 GLM-5.3-Flash API Key（**主标注器，2026-09-30 切换**）
+1. 访问 https://open.bigmodel.cn/ ，开通 **GLM Coding Plan 套餐**并创建套餐 Key
+2. ⚠️ 套餐 Key 必须配 **Coding 专属端点** `https://open.bigmodel.cn/api/coding/paas/v4/`
+   （标准端点 `/api/paas/v4/` 会 429「余额不足或无可用资源包」）
+3. 不能用套餐时备选 DeepSeek：https://platform.deepseek.com/ （**备用标注器**，
+   官方现名 `deepseek-flash`；02:00 采集天然谷时）
 
 ### 3.3 配置环境变量
 
@@ -47,11 +48,13 @@ cp .env.example .env
 编辑 `.env`：
 ```bash
 STEAM_API_KEY=你的steam_key
-DEEPSEEK_API_KEY=你的deepseek_key
-ANALYZER_PROVIDER=deepseek   # 默认主标注器（2026-09-08 切换）
+GLM_API_KEY=你的glm_套餐_key
+GLM_5_3_FLASH_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4/
+ANALYZER_PROVIDER=glm-5.3-flash   # 主标注器（2026-09-30 切换）
 ```
 
-> 备选标注器：`glm` / `qwen` / `glm-5.3-flash` / `local`，切换成本为 0。
+> 备用标注器：`deepseek`（改成 `ANALYZER_PROVIDER=deepseek` 即回切）；其余备选
+> `qwen` / `glm` / `local`，切换成本为 0。
 
 ## 步骤 4：跑通第一个流程
 
@@ -109,10 +112,13 @@ python -m src.pipeline --platform bilibili --target BV1UpwaeNESx --count 1000
 - 改用 `--language english` 测试英文评测
 - 检查网络是否能访问 store.steampowered.com
 
-### Q2：AI 分析报错 "API Key 无效"？
+### Q2：AI 分析报错 "API Key 无效" / 429「余额不足或无可用资源包」？
 - 检查 `.env` 文件中的 API Key 是否正确
-- DeepSeek 注册地址：https://platform.deepseek.com/（默认标注器，2026-09-08 切换）
-- 备选：GLM_API_KEY（https://open.bigmodel.cn/，旧主标注器，仍兼容）
+- GLM（主标注器）：https://open.bigmodel.cn/ —— 套餐 key **必须**配
+  `GLM_5_3_FLASH_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4/`，
+  写标准端点会报 429
+- DeepSeek（备用标注器）：https://platform.deepseek.com/ ，改
+  `ANALYZER_PROVIDER=deepseek` 即回切
 
 ### Q3：Streamlit 启动报错？
 - 检查端口 8501 是否被占用：`streamlit run app.py --server.port 8502`

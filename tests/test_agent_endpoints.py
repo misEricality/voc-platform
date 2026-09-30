@@ -74,7 +74,7 @@ def test_create_session(client):
     assert data["page"] == "agent"
     assert data["title"] == "首问"
     assert data["anon_user_id"] == "anon-1"
-    assert data["model"] == "deepseek-v4-flash"
+    assert data["model"] == "deepseek-flash"
 
 
 def test_list_sessions_isolated_by_anon(client):

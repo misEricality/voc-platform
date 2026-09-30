@@ -80,9 +80,13 @@ Steam / B站 采集 + LLM 标注                    ├─ SPA（product/web/，
   回落 `deepseek` → 写脏 `analyzer_version`」**已不成立** —— VPS 的 `.env` 里**有**
   `DEEPSEEK_API_KEY`（原声分析 Agent 对话必需，`src/agent/chat.py` 缺它直接报错），
   且没设 `ANALYZER_PROVIDER` → 取默认 `deepseek`（`src/analyzers/base.py`）→ **能真的
-  标注**；而本地生产标注器自 2026-09-08 起也是 `deepseek-v4-flash` → 写出来的
-  `analyzer_version` 与本地**口径一致、看不出异常**（旧结论成立于生产标注器是 GLM 的
-  2026-08-31 ~ 09-08 期间）。**结论反而更强**：唯一护栏是 `display_only()` 这道代码闸，
+  标注**；旧结论只在生产标注器是 GLM 的 2026-08-31 ~ 09-08 期间成立（那时本地 GLM、
+  VPS 回落 deepseek → 口径分叉）。
+  **2026-09-30 起口径又分叉了（且这次更容易发现）**：本地主标注器换成
+  `glm-5.3-flash`，VPS 仍回落 `deepseek` → 万一在 VPS 上真跑了标注，写出的
+  `analyzer_version` 是 `llm:deepseek-*@…`，与本地 `llm:glm-5.3-flash@…` **一眼可辨**。
+  但**别据此放宽**：分叉只是"事后能认出来"，事中照样烧 token、照样白干。
+  **结论不变、且更强**：唯一护栏是 `display_only()` 这道代码闸，
   **`DISPLAY_ONLY=0` 绝不是可以随手打开的调试开关** —— 那台机器有 Key、有网络，一开就
   真采集 + 真标注 + 烧 token，结果次日还被整库覆盖。
   反向（VPS → 本地）**没有任何通道**：线上改的任务/线上产生的 Agent 会话都只存在于 VPS，

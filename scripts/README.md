@@ -107,7 +107,7 @@ scripts/
 | `verify_appids.py` / `verify_appids_zh.py` | 验证 Steam appid 有效性（含中文名查询） |
 | `verify_collect.py` | 采集结果落库验证 |
 | `verify_smart_window_e2e.py` | `daily_incremental_collect.smart_window` v2 端到端验证（mock run_pipeline，看 posted_after/Before 传递是否正确；不联网不污染主库） |
-| `verify_glm_5_3_flash.py` | `glm-5.3-flash` provider 接通验证（用真实 key 跑一条样本评论，确认 analyzer_version=llm:glm-5.3-flash@xxx + 标注结果合法；切默认标注器后跑一次回归用） |
+| `verify_glm_5_3_flash.py` | **主标注器接通验证**（2026-09-30 重写）：走 `get_analyzer()` 生产入口验证**生效配置**（ANALYZER_PROVIDER=coding 端点=`GLM_5_3_FLASH_BASE_URL` 含 `/api/coding/paas/`），跑一条样本评论确认 `analyzer_version=llm:glm-5.3-flash@xxx` + 观点合法；`.env` 切回 deepseek 时会直接断言失败 |
 | `verify_today_collect.py` | ⚠️ **已停用**（依赖 GH Release sync 与 workflow 跑批，2026-09-11 后不适用）：一键验证今日 workflow 跑通后本地数据（自动 sync release + 检查 posted_at 分布/analyzer_version=v2 时间窗/6 款游戏采集率/情感分布）。现役等价做法：直接查本地权威库 + `scripts/ops/check_daily_collect.py` |
 | `verify_web_spa_load_order.js` | Web 前端冒烟：用 node `vm` 按 index.html 顺序模拟求值 `product/web/src/*.js`，断言 5 个页面全部注册进 `Routes`（防 TDZ / 加载顺序回归；无需浏览器） |
 | **`verify_dsh_web_smoke.ps1`** | **DSH web profile 冒烟**：本机起 `dsh web --port 3081 --no-open`（DSH_HOME 临时指项目内 `.dsh-home-smoke/`，避免污染 `~/.dsh`；cwd 指 `$TEMP` 避免 DSH env loader 误读项目 `.env`），解析 stdout 拿 URL → curl 主页 → 断言 HTTP 200/401 + title 含 `Harness` → 杀进程 + 清理临时目录。**目的：方案 A「DSH iframe 嵌入 dashboard」阶段 0 验证用，跑通即代表 DSH web 壳能起，可进浏览器手动看 UI 是否能接受。**退出码 0=通过；非 0=失败（带日志路径）。`-KeepHome` 保留 `.dsh-home-smoke` 便于复现 | `powershell -ExecutionPolicy Bypass -File scripts/dev/verify_dsh_web_smoke.ps1`；失败调试看 `logs/verify_dsh_web_<timestamp>.log.stderr`（常见：DSH port 被占 / Node.js 版本不匹配 / token cookie 与 loopback host 不一致） |

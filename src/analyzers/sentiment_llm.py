@@ -17,13 +17,25 @@
 - config/topics/gaming.yaml                 — 三级标签体系
 - config/topics/l3_definitions.yaml         — L3 标签定义词典（程序匹配层用）
 
-注意：当前 LLM 输出不含 sentiment_confidence，解析层硬编码 0.5 占位（见 _parse_batch）。
+批次输出健壮性（2026-09-30）：
+- 输出上限 MAX_OUTPUT_TOKENS 2500 → 8000（原值对「10 条/批 + 长评论」偏紧，实测截断）；
+- 「截断 / JSON 不可解析 / 缺 index」统一抛 BatchOutputError 子类，
+  analyze_batch 据此**自动降批重试**（对半拆到 1 条），不再把一次输出问题放大成整个 target 失败；
+- JSON 提取收敛到 extract_json_object()，**不会再从解析层抛出**（原贪婪正则兜底
+  分支的第二次 json.loads 无保护，是 2026-09-30 定位到的实际故障点）；
+- `raise_on_error` 语义收敛为「**系统性**故障才抛」：API/网络/鉴权照旧抛；
+  单条输出不可用 → 失败占位 + 告警（跳过该条、下轮重试）；**整批一条都拿不到**
+  （真·故障夜）→ 仍抛，保住 P1#1 的失败可见性。
+
+注意：评论级 sentiment_confidence 固定填 0.5 占位；观点级 sentiment_confidence
+取自 LLM 输出（缺失时用 |sentiment_score| 兜底）——见 _parse_batch。
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -38,9 +50,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PROMPTS_DIR = PROJECT_ROOT / "config" / "prompts"
 TOPICS_DIR = PROJECT_ROOT / "config" / "topics"
 
+log = logging.getLogger("voc.analyzer.llm")
+
 DEFAULT_BATCH_SIZE = 10
-# 输出上限（2026-09-08 成本优化）：10 条批量 JSON 正常 ~1-2k token，设上限防跑飞
-MAX_OUTPUT_TOKENS = 2500
+# 输出上限（2026-09-30 上调 2500 → 8000；原 2026-09-08 成本优化值 2500）：
+# 2500 对「10 条/批」偏紧 —— 2026-09-30 实测 DeepSeek 在含 2-3 条百字评论的批次上
+# finish_reason=length（completion 正好 2500），JSON 被拦腰截断 → 整批解析失败
+# → 该 target 当天判失败（靠次日哨兵补采兜）。生产库长度分布下 p90 批次总长 1215 字，
+# 已落在观测到的截断区间内，属**会真实发生**的失败。
+# 抬高上限本身几乎不增加成本：输出 token 按实际产出计费，正常批次仍只产出 ~1-2k；
+# 只有原先「截断 + 次日重试」的批次会一次跑完（反而更省）。
+# 两家 provider 实测均接受 ≤32768；8000 ≈ 观测峰值（2500）的 3 倍余量。
+MAX_OUTPUT_TOKENS = 8000
+# 输出异常（截断 / JSON 不可解析）时的自动降批下限：拆到 1 条仍失败 → 判该条失败。
+# 不再往下拆（1 条就是最小可重试单位：单条评论的输出不可能超不过 max_tokens）。
+MIN_SPLIT_BATCH_SIZE = 1
 
 # 用于 analyzer_version 溯源的 prompt 集合（任一文件内容改动 → 集合 hash 变 → version 变）。
 PROMPT_FILES_FOR_VERSION: tuple[str, ...] = (
@@ -106,6 +130,65 @@ def build_batch_user_prompt(
     )
 
 
+# ============================================================================
+# 批次输出异常与 JSON 提取（2026-09-30 修复：截断导致整批异常）
+# ============================================================================
+
+class BatchOutputError(RuntimeError):
+    """批次级「输出不可用」异常（截断 / JSON 不可解析）。
+
+    与 API / 网络 / 鉴权错误的区别在于**降批即可缓解**（批越小输出越短），
+    所以 ``analyze_batch`` 遇到它先自动降批重试，而不是直接把整个 target 判失败。
+    """
+
+
+class OutputTruncated(BatchOutputError):
+    """``finish_reason == 'length'``：输出被 ``max_tokens`` 截断，JSON 必然残缺。"""
+
+
+class OutputUnparsable(BatchOutputError):
+    """返回内容里取不出可用 JSON 对象。"""
+
+
+class OutputIncomplete(BatchOutputError):
+    """JSON 合法，但 results 数组缺 index（或为空）—— 模型没按约定回答每一条。
+
+    归到「可降批」一类：批次变小后模型更不容易漏；降批仍漏则按失败占位跳过该条。
+    """
+
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*")
+
+
+def extract_json_object(content: str | None) -> dict | None:
+    """从模型返回文本里尽力取出 JSON 对象；**任何情况下都不抛异常**（取不到返回 None）。
+
+    这是 2026-09-30 修复的核心：原实现对「整段解析失败」会退到贪婪正则 ``\\{.*\\}``
+    再 ``json.loads`` 一次，而**第二次解析没有任何保护** —— 输出被 max_tokens 截断时
+    这里会抛 ``JSONDecodeError`` 穿透到 ``analyze_batch`` 之外，把一次「输出太长」放大成
+    「整个 target 当天失败」。现在统一收敛为返回 None，由调用方转成可降批重试的
+    :class:`OutputUnparsable`。
+
+    两级尝试：① 去掉 ```json 围栏后的整段；② 首个 ``{`` 到末个 ``}`` 的切片
+    （模型在 JSON 前后加了说明文字时用）。
+    """
+    if not content:
+        return None
+    text = _FENCE_RE.sub("", content).strip().rstrip("`").strip()
+    candidates = [text]
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if m and m.group(0) != text:
+        candidates.append(m.group(0))
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 class LLMSentimentAnalyzer(BaseAnalyzer):
     """基于大模型的批量情感分析器（v3）"""
 
@@ -126,7 +209,7 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             "base_url_env": "DEEPSEEK_BASE_URL",
             "default_base_url": "https://api.deepseek.com/v1",
             "model_env": "DEEPSEEK_MODEL",
-            "default_model": "deepseek-v4-flash",
+            "default_model": "deepseek-flash",
             # V4-Flash 默认 thinking 开启（此时 temperature 无效）→ 标注任务显式禁用，保快+稳
             "extra_body": {"thinking": {"type": "disabled"}},
         },
@@ -145,16 +228,15 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             "model_env": "GLM_MODEL",
             "default_model": "glm-4-flash",
         },
-        # 备选 LLM：智谱 BigModel GLM-5.3-Flash（VLM 范畴）。
-        # 与「glm」provider 共享 OpenAI 兼容端点，但走独立凭据
-        # （用户变量「glm_api_voc_platform」→ .env 用 GLM_API_KEY），
-        # 方便与主 GLM API Key 解耦（额度隔离 / 失败回退 / 配额黑洞排查）。
+        # 主标注器：智谱 BigModel GLM-5.3-Flash（VLM 范畴）。2026-09-30 起为默认。
+        # 与「glm」provider 共享 Key，但端点/模型独立（GLM_5_3_FLASH_*）。
+        # 凭据来源：用户变量「glm_plan」（GLM Coding Plan 套餐 key）→ .env 的 GLM_API_KEY。
         # 文档：https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash
         #      https://docs.bigmodel.cn/cn/api/introduction#python-sdk
         # 注：api_key_env 统一为 GLM_API_KEY（2026-08-31 决策：与 DEEPSEEK/QWEN/STEAM
         #     命名一致；保留独立 GLM_5_3_FLASH_BASE_URL/MODEL 因为端点/模型独立）。
         "glm-5.3-flash": {
-            "api_key_env": "GLM_API_KEY",  # 用户变量 glm_api_voc_platform（Windows 大小写不敏感）
+            "api_key_env": "GLM_API_KEY",  # 用户变量 glm_plan（Windows 大小写不敏感）
             "base_url_env": "GLM_5_3_FLASH_BASE_URL",
             "default_base_url": "https://open.bigmodel.cn/api/paas/v4/",
             "model_env": "GLM_5_3_FLASH_MODEL",
@@ -226,58 +308,143 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             context: 上下文（忽略，批量模式下每条 context 由调用方管理）
             batch_size: 批大小
             strict: True 时用 strict prompt（收敛第 2/3 轮：强制至少 1 条观点）
-            raise_on_error: True 时批次级异常直接抛出（调用方决定重试策略）；
-                False（默认，兼容）→ 该批返回失败标记结果（neutral）。
+            raise_on_error: True 时**系统性故障**抛出（调用方决定重试策略）；
+                False（默认，兼容）→ 返回失败标记结果（neutral）。
                 ⚠️ 失败标记结果若被 update_analysis 落库会固化 analyzed_at，
-                下轮跳过不重试——**主链路应传 True**（2026-09-08：GLM 400 等错误
-                曾被静默吞掉并固化 neutral）。
+                下轮跳过不重试。**主链路（src/pipeline.py）自 2026-09-21 起
+                已显式传 True**，并对「零置信度且无观点」的占位结果跳过落库，
+                双保险防固化（2026-09-08：GLM 400 等错误曾被静默吞掉并固化 neutral）。
+                2026-09-30 起「系统性」的口径收紧为三类：
+                ① API / 网络 / 鉴权异常（原语义，不降批）；
+                ② 整批一条都拿不到结果（`ok_total == 0`，真·故障夜）；
+                ③ 单条调用（len(texts)==1）输出不可用。
+                **个别条答不动**（其余条正常）→ 仅该条失败占位 + 告警，不抛 ——
+                否则一条模型答不动的评论会让 target 每天失败、哨兵每天补采而永久卡死。
 
         Returns:
-            list[AnalysisResult]（长度 == len(texts)，缺失的评论返回空结果）
+            list[AnalysisResult]，长度 == len(texts)。
+            单条输出不可用时该位置是失败占位（conf=0 且无观点），由调用方决定跳过。
         """
         results: list[AnalysisResult] = [self._empty_result() for _ in texts]
 
+        ok_total = 0
+        last_error: Exception | None = None
         for start in range(0, len(texts), batch_size):
             chunk = texts[start : start + batch_size]
-            prompt = build_batch_user_prompt(chunk, strict=strict)
-            try:
-                kwargs: dict = dict(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.1,
-                    response_format={"type": "json_object"},
-                    max_tokens=MAX_OUTPUT_TOKENS,
-                    timeout=60,
-                )
-                # provider 级额外参数（如 deepseek 禁用 thinking，使 temperature 生效）
-                if self.extra_body:
-                    kwargs["extra_body"] = self.extra_body
-                resp = self.client.chat.completions.create(**kwargs)
-                content = resp.choices[0].message.content
-                parsed = self._parse_batch(content, batch_size=len(chunk))
-            except Exception as e:
-                if raise_on_error:
-                    raise
-                # 整个批次失败 → 该批所有评论标记失败（进下一轮）
-                for i in range(len(chunk)):
-                    results[start + i] = AnalysisResult(
-                        sentiment="neutral",
-                        sentiment_score=0.0,
-                        sentiment_confidence=0.0,
-                        opinions=[],
-                        reasoning=f"批量分析失败: {str(e)[:100]}",
-                        raw={"error": str(e)},
-                    )
-                continue
+            ok, err = self._analyze_chunk(
+                chunk, results, start, strict=strict, raise_on_error=raise_on_error
+            )
+            ok_total += ok
+            last_error = err or last_error
 
-            # 合并批次结果（含映射 + core 判定 + 空观点程序兜底）
-            for local_idx, r in enumerate(parsed):
-                results[start + local_idx] = self._finalize(r, text=chunk[local_idx])
+        # 系统性输出故障才抛（2026-09-30 决策）：**整批一条都拿不到**（例如 provider 开始
+        # 对所有请求返回不可用内容）→ 与 API 故障同级，抛出去让 target 判失败、次日补采，
+        # 保住 P1#1 的「故障夜必须可见」。而**个别条**答不动只是跳过该条 + 告警计数 ——
+        # 若为单条抛错，`run_pipeline` 会让整个 target 每天失败、哨兵每天补采，
+        # 而那条评论模型就是答不动 → 永久卡死。
+        if raise_on_error and texts and ok_total == 0:
+            raise last_error or BatchOutputError(f"整批输出不可用（{len(texts)} 条全部未取到结果）")
 
         return results
+
+    def _analyze_chunk(
+        self,
+        chunk: list[str],
+        results: list[AnalysisResult],
+        start: int,
+        *,
+        strict: bool,
+        raise_on_error: bool,
+    ) -> tuple[int, Exception | None]:
+        """处理单个批次并写入 ``results[start:start+len(chunk)]``。
+
+        **降批重试（2026-09-30）**：输出异常（截断 / JSON 不可解析 / 缺 index）时把批次
+        对半拆开各自重试，直到 :data:`MIN_SPLIT_BATCH_SIZE`。「输出太长写坏了 JSON」这个问题
+        本身就随批次变小而消失 —— 截断是不可重试的（重跑同样撞上限），但**降批是可解的**，
+        所以这里不去猜「该调多大 max_tokens」，而是让失败的那一批自己变小。
+
+        降批只发生在异常路径：正常批次仍是一次请求打满 ``batch_size``。
+        API / 网络 / 鉴权等异常**不降批**（拆开照样失败，只会把一次失败放大成 N 次请求）。
+
+        Returns:
+            ``(成功解析的条数, 最后一个输出类异常)`` —— 供 :meth:`analyze_batch`
+            判断是否属于「整批都拿不到结果」的系统性故障。
+        """
+        try:
+            parsed = self._request_batch(chunk, strict=strict)
+        except BatchOutputError as e:
+            if len(chunk) > MIN_SPLIT_BATCH_SIZE:
+                mid = len(chunk) // 2
+                log.warning(
+                    "批次输出异常（%s），降批重试 %d → %d + %d", e, len(chunk), mid, len(chunk) - mid
+                )
+                ok_l, err_l = self._analyze_chunk(
+                    chunk[:mid], results, start, strict=strict, raise_on_error=raise_on_error
+                )
+                ok_r, err_r = self._analyze_chunk(
+                    chunk[mid:], results, start + mid, strict=strict, raise_on_error=raise_on_error
+                )
+                return ok_l + ok_r, err_l or err_r
+            # 单条仍答不动 → 失败占位（不抛：见 analyze_batch 末尾说明）。占位形状与
+            # pipeline._is_analysis_failure 判据一致 → 跳过落库 + 告警计数 + 下轮重试。
+            log.warning("单条输出不可用（%s），跳过该条（保持未分析）", e)
+            results[start] = self._failure_result(e)
+            return 0, e
+        except Exception as e:  # noqa: BLE001 — API / 网络 / 鉴权：保持既有语义，不降批
+            if raise_on_error:
+                raise
+            for i in range(len(chunk)):
+                results[start + i] = self._failure_result(e)
+            return 0, e
+
+        # 合并批次结果（含映射 + core 判定 + 空观点程序兜底）
+        for local_idx, r in enumerate(parsed):
+            results[start + local_idx] = self._finalize(r, text=chunk[local_idx])
+        return len(parsed), None
+
+    def _request_batch(self, chunk: list[str], *, strict: bool) -> list[AnalysisResult]:
+        """发一次请求 + 解析；输出不可用时抛 :class:`BatchOutputError`（可降批缓解）。"""
+        prompt = build_batch_user_prompt(chunk, strict=strict)
+        kwargs: dict = dict(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+            max_tokens=MAX_OUTPUT_TOKENS,
+            timeout=60,
+        )
+        # provider 级额外参数（如 deepseek 禁用 thinking，使 temperature 生效）
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
+        resp = self.client.chat.completions.create(**kwargs)
+        choice = resp.choices[0]
+        # 截断必须显式判掉：此时 JSON 一定残缺，直接解析只会得到「JSON 坏了」这种
+        # 误导性错误（真实原因是输出不够长），分不清就无从降批。
+        if getattr(choice, "finish_reason", None) == "length":
+            raise OutputTruncated(
+                f"输出被 max_tokens={MAX_OUTPUT_TOKENS} 截断（finish_reason=length），"
+                f"completion_tokens={getattr(getattr(resp, 'usage', None), 'completion_tokens', '?')}"
+            )
+        return self._parse_batch(choice.message.content, batch_size=len(chunk))
+
+    @staticmethod
+    def _failure_result(error: Exception) -> AnalysisResult:
+        """失败占位：零置信度 + 无观点。
+
+        形状与 ``pipeline._is_analysis_failure`` 的判据一致 →
+        ``analyzed_at`` 留空、下轮重试，不会被固化成 neutral 假标注。
+        """
+        return AnalysisResult(
+            sentiment="neutral",
+            sentiment_score=0.0,
+            sentiment_confidence=0.0,
+            opinions=[],
+            reasoning=f"批量分析失败: {str(error)[:100]}",
+            raw={"error": str(error)},
+        )
 
     def _empty_result(self) -> AnalysisResult:
         return AnalysisResult(
@@ -288,38 +455,45 @@ class LLMSentimentAnalyzer(BaseAnalyzer):
             reasoning="未返回",
         )
 
-    def _parse_batch(self, content: str, *, batch_size: int) -> list[AnalysisResult]:
+    def _parse_batch(self, content: str | None, *, batch_size: int) -> list[AnalysisResult]:
         """解析批量 JSON（results 数组，按 index 对齐）
 
         Returns:
             list[AnalysisResult]，长度 == batch_size
-            缺失 index 的评论返回空结果
-        """
-        content = re.sub(r"```(?:json)?\s*", "", content).strip().rstrip("`")
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            m = re.search(r"\{.*\}", content, re.DOTALL)
-            if not m:
-                return [self._empty_result() for _ in range(batch_size)]
-            data = json.loads(m.group(0))
 
-        raw_results = data.get("results") or []
+        Raises:
+            OutputUnparsable: 取不出 JSON 对象（可降批重试缓解）。
+            OutputIncomplete: JSON 合法但 results 缺 index / 为空数组（可降批重试缓解）。
+                **两条都刻意不再「返回整批空结果」** —— 静默空结果经 `_finalize` 的
+                整条评论兜底匹配后，会变成「1 个观点 + 置信度 0」的**假标注**：形状上
+                不像失败，`pipeline._is_analysis_failure` 放行 → 固化落库（2026-09-30 收口）。
+        """
+        data = extract_json_object(content)
+        if data is None:
+            raise OutputUnparsable(f"返回内容无法解析为 JSON（前 200 字符: {(content or '')[:200]!r}）")
+
+        raw_results = data.get("results")
+        if not isinstance(raw_results, list) or not raw_results:
+            raise OutputIncomplete(
+                f"results 数组缺失或为空（batch_size={batch_size}，"
+                f"实际 type={type(raw_results).__name__}）"
+            )
+
         bucket: dict[int, dict] = {}
-        if isinstance(raw_results, list):
-            for item in raw_results:
-                if not isinstance(item, dict):
-                    continue
-                idx = item.get("index")
-                if isinstance(idx, int) and 0 <= idx < batch_size:
-                    bucket[idx] = item
+        for item in raw_results:
+            if not isinstance(item, dict):
+                continue
+            idx = item.get("index")
+            if isinstance(idx, int) and 0 <= idx < batch_size:
+                bucket[idx] = item
+
+        missing = [i for i in range(batch_size) if i not in bucket]
+        if missing:
+            raise OutputIncomplete(f"results 缺 index {missing}（batch_size={batch_size}）")
 
         out: list[AnalysisResult] = []
         for i in range(batch_size):
-            item = bucket.get(i)
-            if not item:
-                out.append(self._empty_result())
-                continue
+            item = bucket[i]  # 上面保证 index 齐全（缺任何一个都已在 OutputIncomplete 处抛出）
 
             # 方案4：LLM 输出 opinions（phrase + sentiment + score + is_core）+ 评论级 sentiment
             comments_sentiment = str(item.get("sentiment", "neutral")).lower()

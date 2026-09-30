@@ -34,7 +34,7 @@ def create_session(
     page: str,
     page_context: str | None = None,
     title: str | None = None,
-    model: str = "deepseek-v4-flash",
+    model: str = "deepseek-flash",
     anon_user_id: str | None = None,
 ) -> AgentSession:
     """新建一个 session（id 用 uuid4，前端立即可用）"""

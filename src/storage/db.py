@@ -88,7 +88,7 @@ class Comment(Base):
     developer_response_refreshed_at = Column(DateTime)
     analyzed_at = Column(DateTime)
     # 分析溯源（2026-08-21 P10 · 分析结果无版本）：格式 "{provider}:{model}@{prompt_hash8}"
-    # provider: llm/local；model: deepseek-v4-flash/qwen3.7-plus/... 或本地模型标识；
+    # provider: llm/local；model: deepseek-flash/qwen3.7-plus/... 或本地模型标识；
     # prompt_hash8: 三个 prompt 文件内容拼接的 SHA256 前 8 位（任一文件改动 → hash 变 → version 变）。
     # 换模型/换 prompt 后存量数据可按此字段分组重打或比对。
     analyzer_version = Column(String(64), nullable=True, index=True)
@@ -423,7 +423,7 @@ class AgentSession(Base):
     page = Column(String(32), nullable=False)  # dashboard / compare / bilibili / data / admin / agent / global
     page_context = Column(Text)  # JSON 字符串
     title = Column(String(120))  # 自动标题（前 30 字 + 省略号）
-    model = Column(String(64), nullable=False, default="deepseek-v4-flash")
+    model = Column(String(64), nullable=False, default="deepseek-flash")
     anon_user_id = Column(Text)  # 匿名用户 UUID；NULL = 旧记录（未带标识）
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

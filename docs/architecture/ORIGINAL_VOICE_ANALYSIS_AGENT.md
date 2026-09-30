@@ -32,8 +32,8 @@
 | # | 决策点 | 结论 | 理由 |
 |---|---|---|---|
 | 1 | 集成路径 | **方案 B（自写 FastAPI chat + Lynx 原生抽屉 UI）** | DSH iframe 评估：DSH UI 是"侧栏+主区"壳，抽屉式嵌入需 fork client；DSH 的 subagent/workflow/skill 生态强大但 P0/P1/P2 场景用不到，借壳成本 > 自写成本 |
-| 2 | LLM 协议 | **OpenAI 兼容 SSE chat completion + function calling** | DeepSeek-V4-Flash（2026-09-08 起主标注器）原生支持；零依赖 |
-| 3 | 默认 LLM | **DeepSeek-V4-Flash**（与离线打标同源） | 凭据 `DEEPSEEK_API_KEY` 已就位；共享 prompt 规范；谷时 0.05 元/M 缓存命中 + 输出 4.5 元/M，便宜 |
+| 2 | LLM 协议 | **OpenAI 兼容 SSE chat completion + function calling** | DeepSeek 原生支持；零依赖（GLM 同为 OpenAI 兼容，将来换也零改造） |
+| 3 | 默认 LLM | **DeepSeek（`DEEPSEEK_MODEL`，官方现名 `deepseek-flash`）** | Agent 侧独立于离线标注器：`DEEPSEEK_API_KEY` 已就位；谷时 0.05 元/M 缓存命中 + 输出 4.5 元/M，便宜。（2026-09-30 离线主标注器已切 GLM-5.3-Flash，**不影响本 Agent**——它仍走 DeepSeek，故 VPS 上的 `DEEPSEEK_API_KEY` 依旧是必需项） |
 | 4 | tool 数量 | **首版 4 个**：`query_overview` / `query_topics` / `query_comments` / `search_docs` | 覆盖 P0（数据查询/统计） + P2（项目文档 FAQ），够 demo |
 | 5 | skill 系统形态 | **YAML prompt 模板 + Python tool 包装**（轻量版） | agent 调 tool 时自动匹配 skill prompt；不引入 DSH skill 协议 |
 | 6 | 抽屉 UI 位置 | **悬浮球 + 向左上铺开**（右下 inset 32px / 80px，大圆角 + 阴影，scale+opacity 动画） | 工程师 2026-09-09 反馈：原"贴右下角"太"贴边"，要"漂浮在界面上"的视觉感；不接触右、下边缘 |
@@ -99,7 +99,7 @@
                           │
                           ▼
          ┌────────────────────────────────────────────────────┐
-         │  DeepSeek-V4-Flash（外部 LLM API）                   │
+         │  DeepSeek-Flash（外部 LLM API）                      │
          │  └─ OpenAI 兼容协议 + SSE + function calling          │
          └─────────────────────────────────────────────────────┘
 ```
@@ -121,7 +121,7 @@ id              TEXT PRIMARY KEY       -- uuid（生成时直接给客户端，�
 page            TEXT NOT NULL          -- dashboard / compare / bilibili / data / admin / agent / global
 page_context    TEXT                   -- JSON：当时的 window.__pageAgentContext 快照
 title           TEXT                   -- 自动生成（首轮 user message 前 30 字）
-model           TEXT NOT NULL          -- "deepseek-v4-flash"
+model           TEXT NOT NULL          -- "deepseek-flash"
 anon_user_id    TEXT                   -- 匿名用户 UUID（前端 localStorage 生成）；列表/导出严格按此过滤
 created_at      DATETIME
 updated_at      DATETIME
@@ -198,7 +198,7 @@ def prune():
 
 ```
 event: meta
-data: {"session_id": "abc-123", "model": "deepseek-v4-flash"}
+data: {"session_id": "abc-123", "model": "deepseek-flash"}
 
 event: token
 data: {"delta": "玩家"}
@@ -617,6 +617,7 @@ async function exportMyHistory() {
 | **anon_user_id 跨设备失效**（2026-09-09 新增） | localStorage 清空/换设备/换浏览器 = 失去历史 | 文档告知"anon_user_id 是本机标识"；导出兜底；未来登录态平滑接管 |
 | **30 天裁剪误删**（2026-09-09 新增） | cron 异常把活跃会话删了 | 裁剪只看 `created_at`（不用 `updated_at`），用户每天活跃的会话仍可保 30 天；测试覆盖裁剪逻辑；prune 跑前后输出 rowcount 日志 |
 | **冷启动示例提到隐藏游戏**（2026-09-09 新增） | 若 derive 白名单逻辑出错可能展示被隐藏的游戏 | 从 `/api/games/meta` 取（已经过滤 `visible!=false`），二次校验 `(g.total || 0) > 0` 兜底 |
+| **提示注入残留（已知可接受）**（2026-09-21 对抗审查 P2#4 明示） | 评论原文经 tool 结果进入 LLM 上下文（`src/agent/chat.py`）：精心构造的评论理论上可操纵 Agent 的回答口径，给出误导性分析结论 | 缓解已到位：tool **全只读**（无写/无外发通道）、输出经 marked + **DOMPurify**、双层日额度 + 并发闸 + 单轮 token 上限。**风险上限是「答错数据」，不是越权或外泄** —— 故列为可接受项而非待修；结论仍需使用者对照看板的原始数据复核 |
 
 ---
 
@@ -652,7 +653,7 @@ async function exportMyHistory() {
 # Agent LLM（与离线打标同源）
 DEEPSEEK_API_KEY=sk-xxx          # 已有
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1   # 已有
-DEEPSEEK_MODEL=deepseek-v4-flash                 # 已有
+DEEPSEEK_MODEL=deepseek-flash                    # 已有（官方现名；旧名 deepseek-v4-flash 已下线）
 
 # Agent 速率限制（可选；默认 60 req/min/IP）
 AGENT_RATE_LIMIT_PER_MIN=60

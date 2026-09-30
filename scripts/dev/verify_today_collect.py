@@ -128,9 +128,8 @@ def main() -> int:
     if not rows:
         print(f"[WARN] 今日无已分析评论")
     for ver, cnt in rows:
-        marker = " [OK] GLM" if "glm-5.3-flash" in ver else ""
-        marker += " [v2 默认标注器]" if "glm-5.3-flash" in ver else ""
-        marker += " [WARN] 回退到旧 provider" if "deepseek" in ver or "glm" == ver.split(":")[1].split("@")[0] else ""
+        marker = " [OK] 主标注器 GLM-5.3-Flash" if "glm-5.3-flash" in ver else ""
+        marker += " [备用/回退 provider]" if "deepseek" in ver else ""
         print(f"  {ver}: {cnt} 条{marker}")
 
     # 2.3 按 target 看 fetched / analyzed
