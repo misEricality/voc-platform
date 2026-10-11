@@ -12,7 +12,7 @@ docs/
 ├── CHANGELOG.md            📋 项目变更记录（原 AGENTS.md「版本记录」全量史；AGENTS.md 只留最近 3 条）
 ├── architecture/           🏗️ 架构设计（给工程师看的"系统是怎么搭的"）
 │   ├── ANNOTATION_PIPELINE.md      方案4 标注流程（GDT v3.1.1：观点短语→程序匹配）
-│   ├── AUTOMATION_PIPELINE.md      P6 自动化流水线落地架构（GH Release 累积 DB + 多目标驱动 + 故障排查）
+│   ├── AUTOMATION_PIPELINE.md      每日采集调度架构（**现役＝本地直采**：计划任务 02:00 + 03:00 哨兵 + 推 VPS；§0 现役状态 / §8 历史决策与故障排查）
 │   ├── STEAM_API_FIELDS.md         🎮 Steam 官方 API 字段权威清单（实拉实测）
 │   ├── DATA_FIELDS.md              字段四级分类（A/B/C/D 前缀约定，D=本地模型派生向量）
 │   ├── DATA_STORAGE_DESIGN.md      数据分层架构 + 表设计（设计稿，含目标迁移路径）
@@ -64,8 +64,8 @@ docs/
 | **数据是怎么分层流转的、表怎么设计** | [architecture/DATA_STORAGE_DESIGN.md](./architecture/DATA_STORAGE_DESIGN.md) |
 | **为什么选这个数据源、不选别的** | [research/VOC_COMPETITOR_RESEARCH.md](./research/VOC_COMPETITOR_RESEARCH.md) |
 | **国内外 VoC 平台都在做什么** | [research/VOC_COMPETITOR_RESEARCH.md](./research/VOC_COMPETITOR_RESEARCH.md) |
-| **src/ 代码模块结构（pipeline / analyzers / collectors / queue / storage / visualizer 的职责）** | [../src/README.md](../src/README.md) |
-| **tests/ 测试用例索引（271 例 pytest + 黄金集门禁 + ML skip）** | [../tests/README.md](../tests/README.md) |
+| **src/ 代码模块结构（pipeline / api / agent / analyzers / collectors / queue / storage / visualizer 的职责）** | [../src/README.md](../src/README.md) |
+| **tests/ 测试用例索引（300 例 pytest + 黄金集门禁 + ML skip）** | [../tests/README.md](../tests/README.md) |
 | **某次改动的来龙去脉 / 项目变更历史** | [CHANGELOG.md](./CHANGELOG.md)（原 AGENTS.md 版本记录；AGENTS.md 只留最近 3 条） |
 
 ---
@@ -89,7 +89,7 @@ docs/
 | 规则 | 说明 |
 |------|------|
 | **A/B/C 字段前缀** | 与架构文档同步：原始 / 派生 / LLM 标注 |
-| **里程碑编号 M1-M10** | 与 DEVELOPMENT_PLAN 一致，不重复定义 |
+| **里程碑编号 M1-M13** | 与 DEVELOPMENT_PLAN 一致，不重复定义 |
 | **重大决策记录** | 沉淀在 `docs/plan/` 相关计划文档（如 DEVELOPMENT_PLAN 的"决策/复盘"小节、ANNOTATION_SYSTEM_UPGRADE_PLAN 的评审结论） |
 | **调研资料归档** | 归 `research/` 子目录，命名用"<主题>调研报告.md" |
 

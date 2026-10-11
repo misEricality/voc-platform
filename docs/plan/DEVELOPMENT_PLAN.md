@@ -10,7 +10,7 @@
 > - 存储设计：[DATA_STORAGE_DESIGN.md](../architecture/DATA_STORAGE_DESIGN.md)
 > - Steam API 字段：[STEAM_API_FIELDS.md](../architecture/STEAM_API_FIELDS.md)
 >
-> **最后更新**：2026-09-30（主标注器切 GLM-5.3-Flash、DeepSeek 备用；标注输出截断自动降批；标注并发默认 3；pytest **300 例 / 299 passed**）
+> **最后更新**：2026-10-11（数据快照按运行态刷新：Steam 10 个目标 / 26,586 评论 / **1,126 条未分析待处理**；主标注器 GLM-5.3-Flash；pytest **300 例 / 299 passed**）
 
 ---
 
@@ -131,25 +131,25 @@
 
 ---
 
-## 📊 三、当前数据快照（2026-09-10）
+## 📊 三、当前数据快照（2026-10-11）
 
 | 指标 | 数值 | 业务解读 |
 |---|---|---|
-| 总评论数 | **18,716 条** | Steam 单机 14,475 + B 站 5 视频 4,241 |
-| Steam 主库覆盖 | **8 款单机** | 黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末：渊虚之羽 / 鬼武者 |
-| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-09-10.db`（4,916 条 / 7,101 观点 / 4,915 向量，26.2 MB）** | PUBG / Apex / Dota 2 / CS2 + `steam:999` 占位；2026-09-10 **重新归档**（首次 8/23 归档后被远端 DB sync 回灌，已修复）；旧 `online_games_2026-08-23.db` 已于 2026-09-10 删除（经比对是新库的严格子集，0 条独有） |
-| B 站支持 | **5 个视频 / 4,241 评论 + 7,359 弹幕** | `bilibili:video:{aid}` 形态 target；本地 `run-due` 每日调度 |
-| 情感分析覆盖 | **18,671 / 18,716 = 99.8% 已分析** | 剩 45 条未分析（29 Steam「三轮后无观点」+ 16 B站历史遗留）；主标注器自 2026-09-30 起 `llm:glm-5.3-flash@73892f47`（备用 deepseek）；存量分段见 `analyzer_version`（`glm-5.3-flash@55c003a3` / `deepseek-v4-flash@73892f47` / `deepseek-v4-flash@55c003a3`） |
-| 观点级标注 | **40,404 条** | `comment_opinions` 表（程序匹配观点短语） |
-| 语义向量 | **17,713 条** | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
-| 已支持游戏/视频 | **8 单机 Steam + 5 B 站视频** | 4 款网游已归档到独立 DB，可单独查询 |
-| 数据截至 | 2026-09-10 | 本地直采 02:00 + 03:00 补采哨兵；7 天回看窗口幂等补齐 |
+| 总评论数 | **26,586 条** | Steam 10 个目标 22,345 + B 站 5 视频 4,241 |
+| Steam 主库覆盖 | **10 个目标**（9 款在采 + 鬼武者暂停并隐藏） | 黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末：渊虚之羽 / **神之天平** / **BALL x PIT — 球比伦战记**（后两款 2026-09 下旬新增）+ **鬼武者**（`collect_tasks` enabled=0 / visible=0） |
+| Steam 归档库 | **4 款网游 → `data/archive/online_games_2026-09-10.db`（4,916 条 / 7,101 观点 / 4,915 向量，26.2 MB）** | PUBG / Apex / Dota 2 / CS2 + `steam:999` 占位；2026-09-10 **重新归档**（首次 8/23 归档后被远端 DB sync 回灌，已修复）；旧 `online_games_2026-08-23.db` 已删除（经比对是新库的严格子集，0 条独有） |
+| B 站支持 | **5 个视频 / 4,241 评论 + 7,359 弹幕** | `bilibili:video:{aid}` 形态 target；本地 `run-due` 每日调度（单日上限 5，见 `BILIBILI_AUTOMATION.md §1.3.1`） |
+| 情感分析覆盖 | **25,460 / 26,586 = 95.8% 已分析** | ⚠️ **1,126 条未分析**（巫师3 988 / 底特律 122 / B站 16）——根因见 §六；主标注器自 2026-09-30 起 `llm:glm-5.3-flash@73892f47`（备用 deepseek）；存量分段见 `analyzer_version` |
+| 观点级标注 | **54,412 条** | `comment_opinions` 表（程序匹配观点短语） |
+| 语义向量 | **25,583 条** | `comment_embeddings` 表（bge-small-zh-v1.5，全量回填） |
+| 已支持游戏/视频 | **10 Steam 目标 + 5 B 站视频** | 4 款网游已归档到独立 DB，可单独查询 |
+| 数据截至 | 2026-10-11 | 本地直采 02:00 + 03:00 补采哨兵；7 天回看窗口幂等补齐 |
 | 兜底占比 | topic 67.6% / opinion 67.4%（**2026-09-10 重打后未复测**） | GDT v3.1.1 锁定；复测脚本已归档到 `scripts/dev/archive/one_shot_curate/stage1_report.py` |
 | 主题 TOP1 | 见 DB | L1-L3 三级标签（GDT v3.1.1：L1 10 / L2 28 / L3 111） |
 | 部署方式 | **本地直采 + Web 实时看板（uvicorn :8000）+ 公网静态快照（EdgeOne Pages，每日 04:30 自动发布）+ VPS 只读服务（①b，内测上线）** | FastAPI + 原生 SPA 5 页 + Agent 抽屉；Streamlit 并存；方案 ③ 已上线并自动化（`VOC-Local-Publish-Snapshot`）；方案 ①b 已落地：VPS `voc-web.service` + Caddy `:8443` 内测，DB 每日随 02:00 采集推库（`--push-db`） |
-| 平台覆盖 | **Steam（单机 8）+ B站（5 视频）** | 微博为下一主扩展 |
-| 数据存储 | SQLite 单文件（`data/voc.db`，**117.2 MB / 2026-09-11**）| WAL 模式；前端服务读 × cron 写并发；GH Actions 采集 workflow **已删除**（2026-09-11，仓库仅留 `ci.yml` 回归门禁）；①b 每日 `VACUUM INTO` 快照推 VPS（远端原位 `.backup()`） |
-| 测试门禁 | **pytest 271 例** | 黄金集 + API + 队列 + 每日采集（含推库 8 例）+ 哨兵 + monitored 白名单 + Agent + 对抗审查回归 |
+| 平台覆盖 | **Steam（10 个目标）+ B站（5 视频）** | 微博为下一主扩展 |
+| 数据存储 | SQLite 单文件（`data/voc.db`，**159.6 MB / 2026-10-11**）| WAL 模式；前端服务读 × cron 写并发；GH Actions 采集 workflow **已删除**（2026-09-11，仓库仅留 `ci.yml` 回归门禁）；①b 每日 `VACUUM INTO` 快照推 VPS（远端原位 `.backup()`） |
+| 测试门禁 | **pytest 300 例**（2026-10-11 收集 300；最近全量 299 passed / 1 skipped @2026-09-30） | 黄金集 + API + 队列 + 每日采集（含推库 8 例）+ 哨兵 + monitored 白名单 + Agent + 对抗审查回归 |
 
 ---
 
@@ -428,6 +428,8 @@
 | 🟢 **LLM 标注降本④项（2026-09-08 立项）**——前置已完成：批量调用（10 条/批）、`reasoning_effort=low`、前缀缓存友好、`update_analysis` flush 修复（见 AGENTS.md 2026-09-08 行） | ① **Batch API 半价**：GLM/通义均支持异步批量（输入输出半价），标注是离线场景完美匹配——把分析阶段改为「积攒待标 → 异步提交 → 次日取结果」或独立批量任务；② **内容去重缓存**：短评重复率高（"好评""111"），按 content hash 复用标注结果（comments 加 hash 列或独立缓存表，analyze 前查重）；③ **短文本走本地模型**：极短/无具体维度评论（约占 2/3）走 `sentiment_local`（零边际成本），LLM 只标长评/高赞——需先用 golden set 评测 local 准确率；④ **Qwen3-8B/14B 评测**：SiliconFlow/百炼免费额度跑 golden set 对比 GLM-5.3-Flash（0.8/2.8 元每百万），达标则成本降至 1/5~1/10——⚠️ 用百炼正式端点，勿用 token-plan 个人版（8/25 模型名 404 事故） | 标注成本（8 游戏 × 每日数百条 + B站千条级首采，LLM 调用为最大可变成本） |
 | 🟠 **Steam 代理断网 → 02:00 采集与 03:00 哨兵同时失效（2026-09-07 发现）** | 本机依赖代理 `127.0.0.1:7877`（Python 不走系统代理）；可选根治：`SteamCollector` 直连失败回落 `STEAM_PROXY` env。**已知局限**：哨兵与主任务仅隔 1h，整夜断网时补采同样失败 | 每日数据完整性（观察中） |
 | 🟠 **本机 Web 服务无守护进程** | uvicorn 靠手动重启（且必须用 `.venv-ml` 解释器，否则 backfill 线程静默 ModuleNotFoundError）；方案 ①b 落地后由 VPS `voc-web.service` 接管 | 本地看板可用性 |
+| 🔴 **巫师3 长期积压 988 条未分析（2026-10-11 发现）** | 证据：`logs/collect.log` 2026-10-11 02:06 记录 `steam:292030` 失败，错误为 GLM **内容审核**拦截 —— `Error code: 400 - {'error': {'code': '1301', 'message': '系统检测到输入或生成内容可能包含不安全或敏感内容…'}}`。机制：批次级 API 错误 → 按现行设计向上抛 → 该 target 当日判失败、整批不落库；次日重试仍会撞到同一条评论 ⇒ 自 2026-09-29 起累积 988 条（底特律另有 122 条）。**待定**：把「内容审核」类错误归入「跳过该条」而非整批失败，或先加 `analysis_error` 列留痕（09-30 讨论过但未做） | 情感/观点覆盖率（当前 95.8%）、巫师3 看板数据完整性 |
+| 🔴 **黑神话 / 底特律 02:00 失败：ORM 对象失效（2026-10-11 发现）** | 证据：同日 `collect.log` 两目标错误均为 `Instance '<Comment at 0x…>' has been deleted, or its row is otherwise not present.`（`fetched=0`）。属 SQLAlchemy 会话/对象生命周期类错误；与 2026-09-30 引入的标注并发（`ANALYZER_CONCURRENCY`）时间相近但**未证实因果**。**待排查**（需复现 + 看 `_persist_chunk_results` 的会话边界） | 当日增量入库（两目标当天无新数据） |
 | ~~🔴 4 款网游回灌主库（2026-09-10 发现 → 当日修复）~~ | ✅ **已重新归档（2026-09-10）**：`ops/archive_online_games.py` 抽到 `data/archive/online_games_2026-09-10.db`（4,916 条 / 7,101 观点 / 4,915 向量，26.2 MB）后从主库删除 + VACUUM（144.2 → **115.7 MB**）；主库 steam 目标 13 → **8**、网游残留 **0**；操作前备份 `data/backups/voc.pre-rearchive-20260910.db`。**复发防御**：GH Release 上的 `voc-daily-*` asset 仍是归档前 DB，**不要再跑 `sync_local_from_release` / `smart_sync_release` 覆盖本地库**（如需恢复云端累积，先重建 release baseline）；已确认当前无 VOC sync 计划任务 | 数据口径（「主库聚焦 8 单机」）/ 看板默认目标 |
 
 ---

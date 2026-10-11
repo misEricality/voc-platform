@@ -74,6 +74,36 @@ $env:GITHUB_TOKEN = 'github_pat_...'
 
 ## 3. 已知坑清单（按时间倒序）
 
+### 🆕 坑 7：本机直连 GitHub 被重置 → 用本机代理做**单次**推送（2026-10-11；2026-09-10 亦出现）
+
+**症状**：`git push origin main` 报
+
+```
+fatal: unable to access 'https://github.com/<repo>.git/': Recv failure: Connection was reset
+# 重试常见变为：
+fatal: unable to access '...': Failed to connect to github.com port 443 after 21092 ms
+```
+
+**判别（三步，约 30 秒）**：
+
+```powershell
+git config --get http.proxy   # 空 = 未配代理
+(Test-NetConnection 127.0.0.1 -Port 7877 -WarningAction SilentlyContinue).TcpTestSucceeded   # 本机代理是否存活
+(Test-NetConnection github.com -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded   # 直连是否通
+```
+
+典型结果：代理 `True` / 直连 `False` ⇒ 走代理。
+
+**解法（不写持久 git 配置）**：
+
+```powershell
+git -c http.proxy=http://127.0.0.1:7877 -c https.proxy=http://127.0.0.1:7877 push origin main
+```
+
+成功输出形如 `4696be8..e23a2c4  main -> main`。
+
+**注意**：`-c` 只对本次命令生效。**不要** `git config --global http.proxy …` —— 代理重启或换端口后会把推送彻底卡死，且排查时容易忘记这条残留配置。
+
 ### 🆕 坑 5：root 目录排序 bug（2026-08-31）
 
 **症状**：
@@ -232,11 +262,11 @@ print('remote main =', json.loads(urllib.request.urlopen(req).read())['object'][
 "
 # 期望 = git rev-parse HEAD
 
-# 2. 文件数 = 158（本地 ls-files）
+# 2. 文件数 = 243（本地 ls-files；2026-10-11 实测，随功能增长，请以实测为准）
 # 3. 关键 10 文件 SHA 全匹配（用 git ls-tree -r HEAD 与远端 tree 对比）
 
 # 4. src/ 不被污染（应为 Python 源码，无 .js/.html）
-# 5. .github/workflows/ 含新 workflow 文件
+# 5. .github/workflows/ 只有 ci.yml（2026-09-11 起两份采集 workflow 已删除）
 ```
 
 完整验证脚本：临时用 `scripts/ops/_verify_proper.py`（提交时删除），或抄 §4 进 push_via_api.py 的 step 7。

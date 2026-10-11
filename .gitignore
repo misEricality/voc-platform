@@ -55,6 +55,8 @@ data/covers/
 data/covers_specimen/
 # 前端评审截图（运行时/评审产物，按 data/ 不入库约定；2026-09-10 补 ignore）
 data/screenshots/
+# 清理/归档前的 DB 快照目录（运行时产物；此前仅靠 *.db 兜住文件，2026-10-11 补目录级 ignore）
+data/backups/
 data/uvicorn.log
 data/uvicorn.err.log
 # API 服务运行时 stderr 重定向（与 uvicorn 日志同类，不入库；2026-09-05 补充）

@@ -25,7 +25,7 @@
 
 | 维度 | 当前（v0.8，2026-09-09） |
 |---|---|
-| **✅ 已完成** | Steam 8 单机（含新加明末/鬼武者）+ B 站 5 视频采集（~22K 评论）；L1-L3 三级标签标注管线（方案4）；本地 bge 语义向量化；Streamlit 仪表盘（单目标 / 多目标对比 / 明细核查）；B 站单视频看板；**Web 实时看板**（FastAPI + 原生 SPA：单游戏看板/游戏对比/B站视频/数据管理/系统管理 5 页，2026-09-02~07）；**公网静态快照部署**（方案 ③，EdgeOne Pages 三看板只读门面，2026-09-07）；**本地直采计划任务**（`VOC-Local-Daily-Collect` 02:00 直写 voc.db）+ **03:00 补采哨兵**（`check_daily_collect.py`）；**P6 自动化流水线**（本地直采；GH Actions 采集 workflow 已于 2026-09-11 删除，仓库仅留 `ci.yml` CI 护栏）；**DESIGN_TOKENS v1.0**（三原型迁移版已上线）；**原声分析 Agent**（自然语言问数据：悬浮球两段式抽屉（小窗 + 大窗历史栏，一级页已下线）+ 4 tool function calling + skill 系统 + 引用当前查询 + 30 天滚动保留 + Markdown 导出，2026-09-08~10 落地并经过对抗审查加固）；**P11 bogus 清理已执行**（2542 条 QWEN-flash 假标注重置 + 重打，2026-09-10）；**271 例 pytest** 全绿 |
+| **✅ 已完成** | Steam 10 个目标（9 款在采 + 鬼武者暂停并隐藏）+ B 站 5 视频采集（~26.6K 评论）；L1-L3 三级标签标注管线（方案4）；本地 bge 语义向量化；Streamlit 仪表盘（单目标 / 多目标对比 / 明细核查）；B 站单视频看板；**Web 实时看板**（FastAPI + 原生 SPA：单游戏看板/游戏对比/B站视频/数据管理/系统管理 5 页，2026-09-02~07）；**公网静态快照部署**（方案 ③，EdgeOne Pages 三看板只读门面，2026-09-07）；**本地直采计划任务**（`VOC-Local-Daily-Collect` 02:00 直写 voc.db）+ **03:00 补采哨兵**（`check_daily_collect.py`）；**P6 自动化流水线**（本地直采；GH Actions 采集 workflow 已于 2026-09-11 删除，仓库仅留 `ci.yml` CI 护栏）；**DESIGN_TOKENS v1.0**（三原型迁移版已上线）；**原声分析 Agent**（自然语言问数据：悬浮球两段式抽屉（小窗 + 大窗历史栏，一级页已下线）+ 4 tool function calling + skill 系统 + 引用当前查询 + 30 天滚动保留 + Markdown 导出，2026-09-08~10 落地并经过对抗审查加固）；**P11 bogus 清理已执行**（2542 条 QWEN-flash 假标注重置 + 重打，2026-09-10）；**300 例 pytest**（2026-10-11 收集 300 例；最近一次全量为 299 passed / 1 skipped @2026-09-30） |
 | **🔜 接下来（v1.0 前主线）** | **P9 阶段 2 L3.5 微话题聚类**（`l35_cluster.py` 骨架就绪）；**P9 阶段 3 PEDM 负向观点试点**（黄金集一致率 ≥80% 才放量）；**公网部署方案 ①b**（VPS 只读服务 + 实时查询/Agent 对话，**2026-09-11 内测上线**；域名 ICP 备案通过后切 HTTPS）；README v1.0 作品化（架构图 + 技术博客 + 演示视频） |
 | **🎯 最终目标（v1.0 作品集发布）** | 完整文档（README 进阶版）+ mermaid 架构图；1-2 篇复盘博客（踩坑 + 经验）；演示视频/GIF；求职作品集重点项目 |
 
@@ -37,7 +37,7 @@
 
 | 模块 | 状态 | 备注 |
 |------|------|------|
-| Steam 评测采集 | ✅ | 官方API + 翻页去重 + 验证页防漏采（主库 **8 款单机**；4 款网游已归档至 `data/archive/online_games_2026-09-10.db`，可单独查询） |
+| Steam 评测采集 | ✅ | 官方API + 翻页去重 + 验证页防漏采（主库 **10 个目标**：9 款在采 + 鬼武者暂停并隐藏；4 款网游已归档至 `data/archive/online_games_2026-09-10.db`，可单独查询） |
 | **B站采集** | ✅ | 公开 Web 接口（免申请），7 天稳态快照 + 弹幕分片；**5 视频 / 4,241 评论 + 7,359 弹幕**已落库 |
 | SQLite 存储 | ✅ | SQLAlchemy 2.x，冷启动 NULL + 7 天回采机制 |
 | LLM 情感分析 | ✅ | **GLM-5.3-Flash 主标注器**（2026-09-30 起，走 GLM Coding Plan 套餐 + Coding 专属端点；备用 `deepseek-flash`。2026-09-30 实测：两模型情感判断持平，GLM 标签重复率约为 DeepSeek 一半、长评批次不触发输出截断，但延迟方差更大。与 GLM/QWEN 共享 GDT v3.1.1 prompt 集合，不污染 `analyzer_version` 溯源） |
@@ -54,7 +54,7 @@
 | 自动化流水线 | ✅ | P6 已落地；**2026-09-02 起切本地直采**（`VOC-Local-Daily-Collect` 02:00 直写 voc.db + 03:00 哨兵补采），GH Actions 采集 workflow **已于 2026-09-11 删除**（仓库仅留 `ci.yml` CI 护栏）；silent 失败防御 `verify_release_upload.py` 保留，但其 workflow 调用方随删除消失、现仅手动可用 |
 | **公网部署** | ✅ | **方案 ③ 静态快照已上线**（EdgeOne Pages，三看板只读门面，2026-09-07）；**方案 ①b VPS 只读服务内测上线**（腾讯云轻量 + systemd + Caddy `:8443`，DB 每日随 02:00 采集推库，2026-09-11；域名 ICP 备案通过后切 HTTPS）——详见 [DEPLOYMENT_OPTIONS.md](docs/architecture/DEPLOYMENT_OPTIONS.md) |
 
-> 📊 **当前数据**（2026-09-10 收口）：**18,716 条**评论（Steam 8 款单机 14,475 + B 站 5 视频 4,241；另有 4 款网游 4,916 条归档在独立 DB），已分析 **18,671 条 = 99.8%**（P11 bogus 清理 + 2,519 条重打后），观点级标注 40,404 条，语义向量 17,713 条（单模型 `bge-small-zh-v1.5`，已全量回填），弹幕 7,359 条，库体 115.7 MB。主标注器自 2026-09-30 起为 `glm-5.3-flash`（新数据写 `llm:glm-5.3-flash@73892f47`；存量按 `analyzer_version` 分段：`glm-5.3-flash@55c003a3` / `deepseek-v4-flash@73892f47` / `deepseek-v4-flash@55c003a3`）。GDT v3.1.1 词典已扩充（兜底占比 topic 67.6% / opinion 67.4%，重打后待复测），P3 多目标对比已上线，本地直采每日增量入库（7 天回看 + smart_window v2），P10 analyzer_version 溯源已上线（老数据 NULL = 未溯源）。DESIGN_TOKENS v1.0 已落地三原型 v2 迁移版。
+> 📊 **当前数据**（2026-10-11 实测）：**26,586 条**评论（Steam **10 个目标** —— 黑神话 / 巫师3 / 文明6 / 底特律 / 33号远征队 / 星际拓荒 / 明末 / 神之天平 / BALL x PIT 在采，鬼武者已暂停并隐藏；B 站 5 视频；另有 4 款网游 4,916 条归档在独立 DB），已分析 **25,460 条 = 95.8%**，观点级标注 54,412 条，语义向量 25,583 条（单模型 `bge-small-zh-v1.5`），弹幕 7,359 条，库体 159.6 MB。⚠️ **1,126 条未分析**（巫师3 988 / 底特律 122 / B站 16）—— 与 02:00 链路的失败目标相关，见 [DEVELOPMENT_PLAN §六](docs/plan/DEVELOPMENT_PLAN.md)。主标注器自 2026-09-30 起为 `glm-5.3-flash`（新数据写 `llm:glm-5.3-flash@73892f47`；存量按 `analyzer_version` 分段：`glm-5.3-flash@55c003a3` / `deepseek-v4-flash@73892f47` / `deepseek-v4-flash@55c003a3`）。GDT v3.1.1 词典已扩充（兜底占比 topic 67.6% / opinion 67.4%，重打后待复测），P3 多目标对比已上线，本地直采每日增量入库（7 天回看 + smart_window v2），P10 analyzer_version 溯源已上线（老数据 NULL = 未溯源）。DESIGN_TOKENS v1.0 已落地三原型 v2 迁移版。
 
 ## 🏷️ L1-L3 三级标签标注管线（方案4）
 
@@ -127,8 +127,8 @@ voc-platform/
 │   └── monitoring/                     自动化采集目标清单（P6）
 │
 ├── data/                            # 【运行时数据】（gitignore，不入库）
-│   ├── voc.db                            SQLite 主库（2026-09-07：~21,917 条评论 / 129 MB）
-│   ├── archive/                          4 款网游归档（2026-08-23）
+│   ├── voc.db                            SQLite 主库（2026-10-11：26,586 条评论 / 159.6 MB）
+│   ├── archive/                          4 款网游归档（2026-09-10 重新归档）
 │   └── exports/                          导出产物（gitignored）
 │
 ├── docs/                            # 【研发文档】（技术视角）
@@ -151,7 +151,7 @@ voc-platform/
 │   ├── dev/                             开发期活跃脚本（13 个 + archive/ 43 个已归档）
 │   └── ops/                             长期运维脚本（13 个：daily_incremental_collect / check_daily_collect / smart_sync_release / push_via_api 等）
 │
-├── tests/                           # 【测试】pytest 271 例（含黄金集回归 + ML 环境依赖时 skip）
+├── tests/                           # 【测试】pytest 300 例（含黄金集回归 + ML 环境依赖时 skip）
 │   ├── README.md                        测试索引
 │   └── fixtures/                        黄金集 410 条 + 校正项
 │
